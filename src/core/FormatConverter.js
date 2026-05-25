@@ -2151,6 +2151,7 @@ class FormatConverter {
                 if (toolResults.length > 0) {
                     for (const toolResult of toolResults) {
                         let responseContent;
+                        const toolImageParts = [];
                         if (typeof toolResult.content === "string") {
                             try {
                                 responseContent = JSON.parse(toolResult.content);
@@ -2169,6 +2170,45 @@ class FormatConverter {
                             } catch {
                                 responseContent = { result: textParts };
                             }
+
+                            // Extract image parts if they exist (multi-modal tool results)
+                            const imageBlocks = toolResult.content.filter(c => c.type === "image");
+                            for (const block of imageBlocks) {
+                                if (block.source && block.source.type === "base64") {
+                                    this.logger.info(`[Adapter] Find Image source: ${block.source.data.length}`);
+                                    toolImageParts.push({
+                                        inlineData: {
+                                            data: block.source.data,
+                                            mimeType: block.source.media_type,
+                                        },
+                                    });
+                                } else if (block.source && block.source.type === "url") {
+                                    try {
+                                        this.logger.info(
+                                            `[Adapter] Downloading image in tool_result from URL: ${block.source.url}`
+                                        );
+                                        const response = await axios.get(block.source.url, {
+                                            responseType: "arraybuffer",
+                                        });
+                                        const imageBuffer = Buffer.from(response.data, "binary");
+                                        const base64Data = imageBuffer.toString("base64");
+                                        let mimeType = response.headers["content-type"];
+                                        if (!mimeType || mimeType === "application/octet-stream") {
+                                            mimeType = mime.lookup(block.source.url) || "image/jpeg";
+                                        }
+                                        toolImageParts.push({
+                                            inlineData: {
+                                                data: base64Data,
+                                                mimeType,
+                                            },
+                                        });
+                                    } catch (error) {
+                                        this.logger.error(
+                                            `[Adapter] Failed to download image inside tool_result: ${error.message}`
+                                        );
+                                    }
+                                }
+                            }
                         } else {
                             responseContent = toolResult.content || { result: "" };
                         }
@@ -2184,11 +2224,17 @@ class FormatConverter {
                             functionName = "unknown_function";
                         }
 
+                        const functionResponse = {
+                            name: functionName,
+                            response: responseContent,
+                        };
+
+                        if (toolImageParts.length > 0) {
+                            functionResponse.parts = toolImageParts;
+                        }
+
                         pendingToolParts.push({
-                            functionResponse: {
-                                name: functionName,
-                                response: responseContent,
-                            },
+                            functionResponse,
                         });
                     }
 
