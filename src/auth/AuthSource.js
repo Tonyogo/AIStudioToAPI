@@ -24,6 +24,8 @@ class AuthSource {
         this.duplicateIndices = [];
         // Expired auth indices (valid JSON but marked as expired, excluded from rotation)
         this.expiredIndices = [];
+        // Disabled auth indices (valid JSON but marked as disabled, excluded from rotation)
+        this.disabledIndices = [];
         this.initialIndices = [];
         this.accountNameMap = new Map();
         // Map any valid index -> canonical (latest) index for the same account email
@@ -123,6 +125,7 @@ class AuthSource {
         this.canonicalIndexMap.clear();
         this.duplicateGroups = [];
         this.expiredIndices = [];
+        this.disabledIndices = [];
 
         for (const index of this.initialIndices) {
             // Iterate over initial to check all, not just previously available
@@ -135,6 +138,10 @@ class AuthSource {
                     // Track expired status from auth file
                     if (authData.expired === true) {
                         this.expiredIndices.push(index);
+                    }
+                    // Track disabled status from auth file
+                    if (authData.disabled === true) {
+                        this.disabledIndices.push(index);
                     }
                 } catch (e) {
                     invalidSourceDescriptions.push(`auth-${index} (parse error)`);
@@ -176,10 +183,12 @@ class AuthSource {
 
         const emailKeyToIndices = new Map();
 
-        // Only process non-expired accounts for rotation and deduplication
-        const nonExpiredIndices = this.availableIndices.filter(idx => !this.expiredIndices.includes(idx));
+        // Only process non-expired and non-disabled accounts for rotation and deduplication
+        const nonExpiredOrDisabledIndices = this.availableIndices.filter(
+            idx => !this.expiredIndices.includes(idx) && !this.disabledIndices.includes(idx)
+        );
 
-        for (const index of nonExpiredIndices) {
+        for (const index of nonExpiredOrDisabledIndices) {
             const accountName = this.accountNameMap.get(index);
             const emailKey = this._normalizeEmailKey(accountName);
 
@@ -230,6 +239,13 @@ class AuthSource {
         if (this.expiredIndices.length > 0) {
             this.logger.warn(
                 `[Auth] Detected ${this.expiredIndices.length} expired auth files: [${this.expiredIndices.join(", ")}]. ` +
+                    `These accounts are excluded from automatic rotation.`
+            );
+        }
+
+        if (this.disabledIndices.length > 0) {
+            this.logger.warn(
+                `[Auth] Detected ${this.disabledIndices.length} disabled auth files: [${this.disabledIndices.join(", ")}]. ` +
                     `These accounts are excluded from automatic rotation.`
             );
         }
@@ -373,6 +389,102 @@ class AuthSource {
      */
     isExpired(index) {
         return this.expiredIndices.includes(index);
+    }
+
+    /**
+     * Mark an auth as disabled
+     *
+     * Side effects:
+     * - Adds "disabled": true to the auth file (configs/auth/auth-{index}.json)
+     * - Adds index to this.disabledIndices array
+     * - Rebuilds rotation indices (calls this._buildRotationIndices()) to exclude the disabled account from rotation
+     * - Updates canonicalIndexMap to reflect the new rotation state
+     *
+     * @param {number} index - Auth index to mark as disabled
+     * @returns {Promise<boolean>} True if successfully marked as disabled, false if auth doesn't exist, is already disabled, or file operation fails
+     */
+    async markAsDisabled(index) {
+        if (!this.availableIndices.includes(index)) {
+            this.logger.warn(`[Auth] Cannot mark non-existent auth #${index} as disabled`);
+            return false;
+        }
+
+        if (this.disabledIndices.includes(index)) {
+            this.logger.debug(`[Auth] Auth #${index} is already marked as disabled`);
+            return false;
+        }
+
+        const authFilePath = path.join(process.cwd(), "configs", "auth", `auth-${index}.json`);
+        try {
+            const fileContent = await fsPromises.readFile(authFilePath, "utf-8");
+            const authData = JSON.parse(fileContent);
+            authData.disabled = true;
+            await fsPromises.writeFile(authFilePath, JSON.stringify(authData, null, 2));
+
+            this.disabledIndices.push(index);
+
+            // Rebuild rotation indices to exclude this disabled account
+            // This will properly rebuild canonicalIndexMap and handle duplicate relationships
+            this._buildRotationIndices();
+
+            this.logger.warn(`[Auth] 🚫 Marked auth #${index} as disabled`);
+            return true;
+        } catch (error) {
+            this.logger.error(`[Auth] Failed to mark auth #${index} as disabled: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Unmark an auth as disabled (restore it to active status)
+     *
+     * Side effects:
+     * - Removes "disabled" field from the auth file (configs/auth/auth-{index}.json)
+     * - Removes index from this.disabledIndices array
+     * - Rebuilds rotation indices (calls this._buildRotationIndices()) to include the restored account in rotation
+     * - Updates canonicalIndexMap to reflect the new rotation state
+     *
+     * @param {number} index - Auth index to restore
+     * @returns {Promise<boolean>} True if successfully restored, false if auth doesn't exist, is not disabled, or file operation fails
+     */
+    async unmarkAsDisabled(index) {
+        if (!this.availableIndices.includes(index)) {
+            this.logger.warn(`[Auth] Cannot unmark non-existent auth #${index}`);
+            return false;
+        }
+
+        if (!this.disabledIndices.includes(index)) {
+            this.logger.debug(`[Auth] Auth #${index} is not marked as disabled`);
+            return false;
+        }
+
+        const authFilePath = path.join(process.cwd(), "configs", "auth", `auth-${index}.json`);
+        try {
+            const fileContent = await fsPromises.readFile(authFilePath, "utf-8");
+            const authData = JSON.parse(fileContent);
+            delete authData.disabled;
+            await fsPromises.writeFile(authFilePath, JSON.stringify(authData, null, 2));
+
+            this.disabledIndices = this.disabledIndices.filter(idx => idx !== index);
+
+            // Rebuild rotation indices to include this restored account
+            this._buildRotationIndices();
+
+            this.logger.info(`[Auth] ✅ Restored auth #${index} from disabled status`);
+            return true;
+        } catch (error) {
+            this.logger.error(`[Auth] Failed to restore auth #${index}: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Check if an auth is disabled
+     * @param {number} index - Auth index to check
+     * @returns {boolean}
+     */
+    isDisabled(index) {
+        return this.disabledIndices.includes(index);
     }
 }
 

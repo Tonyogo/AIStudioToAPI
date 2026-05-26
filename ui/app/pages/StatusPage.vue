@@ -775,6 +775,7 @@
                                 :class="{
                                     'is-current': item.index === state.currentAuthIndex,
                                     'is-selected': isAccountSelected(item.index),
+                                    'is-disabled': item.isDisabled,
                                 }"
                                 @click="toggleSelectAccount(item.index)"
                             >
@@ -804,6 +805,9 @@
                                         </span>
                                         <span v-if="item.isExpired" class="expired-badge">
                                             {{ t("tagExpired") }}
+                                        </span>
+                                        <span v-if="item.isDisabled" class="disabled-badge">
+                                            {{ t("tagDisabled") }}
                                         </span>
                                     </div>
                                 </el-tooltip>
@@ -849,6 +853,45 @@
                                             stroke-linejoin="round"
                                         >
                                             <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                    </button>
+                                    <button
+                                        :class="item.isDisabled ? 'btn-switch' : 'btn-warning'"
+                                        :disabled="isBusy"
+                                        :title="item.isDisabled ? t('btnEnableAccount') : t('btnDisableAccount')"
+                                        @click.stop="toggleAccountDisabled(item.index, item.isDisabled)"
+                                    >
+                                        <svg
+                                            v-if="item.isDisabled"
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                            <circle cx="12" cy="12" r="3"></circle>
+                                        </svg>
+                                        <svg
+                                            v-else
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path
+                                                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                                            ></path>
+                                            <line x1="1" y1="1" x2="23" y2="23"></line>
                                         </svg>
                                     </button>
                                     <button
@@ -4303,6 +4346,63 @@ const handleStreamingModeBeforeChange = async () => {
     }
 };
 
+// Toggle account disabled status
+const toggleAccountDisabled = async (targetIndex, currentlyDisabled) => {
+    if (targetIndex === null || targetIndex === undefined) {
+        ElMessage.warning(t("noAccountSelected"));
+        return;
+    }
+
+    const performToggle = async () => {
+        const notification = ElNotification({
+            duration: 0,
+            message: t("operationInProgress"),
+            title: t("warningTitle"),
+            type: "warning",
+        });
+        state.isSwitchingAccount = true;
+        try {
+            const res = await fetch(`/api/accounts/${targetIndex}/disabled`, {
+                body: JSON.stringify({ disabled: !currentlyDisabled }),
+                headers: { "Content-Type": "application/json" },
+                method: "PUT",
+            });
+            const data = await res.json();
+            const message = t(data.message, data);
+            if (res.ok) {
+                ElMessage.success(message);
+            } else {
+                ElMessage.error(message);
+            }
+        } catch (err) {
+            ElMessage.error(
+                t(currentlyDisabled ? "accountEnableFailed" : "accountDisableFailed", { error: err.message || err })
+            );
+        } finally {
+            notification.close();
+            state.isSwitchingAccount = false;
+            updateContent();
+        }
+    };
+
+    if (!currentlyDisabled && targetIndex === state.currentAuthIndex) {
+        ElMessageBox.confirm(t("warningDisableCurrentAccount"), t("warningTitle"), {
+            cancelButtonText: t("cancel"),
+            confirmButtonText: t("ok"),
+            lockScroll: false,
+            type: "warning",
+        })
+            .then(() => performToggle())
+            .catch(e => {
+                if (e !== "cancel") {
+                    console.error(e);
+                }
+            });
+    } else {
+        performToggle();
+    }
+};
+
 // Switch account by index
 const switchAccountByIndex = targetIndex => {
     if (state.currentAuthIndex === targetIndex) {
@@ -5422,6 +5522,10 @@ watchEffect(() => {
         background: rgba(var(--color-primary-rgb), 0.25); // Use blue background like selected
         border: 1px solid @success-color;
     }
+
+    &.is-disabled {
+        opacity: 0.55;
+    }
 }
 
 .account-checkbox {
@@ -5476,6 +5580,17 @@ watchEffect(() => {
     font-size: 0.75rem;
     padding: 2px 8px;
     background: @error-color;
+    color: @text-on-primary;
+    border-radius: 12px;
+    flex-shrink: 0;
+    margin-left: 0;
+    margin-right: 6px;
+}
+
+.disabled-badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    background: @text-secondary;
     color: @text-on-primary;
     border-radius: 12px;
     flex-shrink: 0;

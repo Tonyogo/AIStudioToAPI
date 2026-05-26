@@ -223,6 +223,13 @@ class AuthSwitcher {
             };
         }
 
+        if (this.authSource.isDisabled && this.authSource.isDisabled(targetIndex)) {
+            return {
+                reason: `Switch failed: Account #${targetIndex} is disabled. Please enable it first.`,
+                success: false,
+            };
+        }
+
         this.isSystemBusy = true;
         try {
             this.logger.info(`🔄 [Auth] Starting switch to specified account #${targetIndex}...`);

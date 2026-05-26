@@ -699,6 +699,109 @@ class StatusRoutes {
             }
         });
 
+        app.put("/api/accounts/:index/disabled", isAuthenticated, async (req, res) => {
+            if (this._rejectIfSystemBusy(res)) return;
+
+            const rawIndex = req.params.index;
+            const targetIndex = Number(rawIndex);
+            const { disabled } = req.body;
+            const currentAuthIndex = this.serverSystem.requestHandler.currentAuthIndex;
+
+            if (!Number.isInteger(targetIndex)) {
+                return res.status(400).json({ message: "errorInvalidIndex" });
+            }
+
+            const { authSource } = this.serverSystem;
+
+            if (!authSource.initialIndices.includes(targetIndex)) {
+                return res.status(404).json({ index: targetIndex, message: "errorAccountNotFound" });
+            }
+
+            try {
+                // Abort any ongoing background preload task before modifying accounts
+                await this.serverSystem.browserManager.abortBackgroundPreload();
+
+                let success = false;
+                if (disabled) {
+                    success = await authSource.markAsDisabled(targetIndex);
+                } else {
+                    success = await authSource.unmarkAsDisabled(targetIndex);
+                }
+
+                if (!success) {
+                    return res.status(400).json({
+                        error: "Failed to update auth file status",
+                        message: disabled ? "accountDisableFailed" : "accountEnableFailed",
+                    });
+                }
+
+                // If we disabled the account, close its context and WebSocket connection
+                if (disabled) {
+                    this.logger.info(`[WebUI] Account #${targetIndex} disabled. Closing context and connection...`);
+
+                    if (targetIndex === currentAuthIndex) {
+                        // Set system busy flag to prevent new requests during switching/cleanup
+                        const previousBusy = this.serverSystem.isSystemBusy === true;
+                        if (!previousBusy) {
+                            this.serverSystem.isSystemBusy = true;
+                        }
+                        try {
+                            // 1. Terminate pending requests for the current account
+                            this.serverSystem.connectionRegistry.closeMessageQueuesForAuth(
+                                targetIndex,
+                                "account_disabled"
+                            );
+                            // 2. Close context first
+                            await this.serverSystem.browserManager.closeContext(targetIndex);
+                            // 3. Then close WebSocket connection
+                            this.serverSystem.connectionRegistry.closeConnectionByAuth(targetIndex);
+                        } finally {
+                            if (!previousBusy) {
+                                this.serverSystem.isSystemBusy = false;
+                            }
+                        }
+
+                        // Try to switch to another active/enabled account if possible
+                        const available = authSource.getRotationIndices();
+                        if (available.length > 0) {
+                            this.logger.info(`[WebUI] Switching away from disabled current account #${targetIndex}...`);
+                            await this.serverSystem.requestHandler._switchToNextAuth().catch(err => {
+                                this.logger.error(
+                                    `[WebUI] Failed to auto-switch after disabling current account: ${err.message}`
+                                );
+                            });
+                        } else {
+                            // No other accounts available, reset currentAuthIndex to -1
+                            this.serverSystem.requestHandler.currentAuthIndex = -1;
+                        }
+                    } else {
+                        // Non-current account: close its context and connection
+                        await this.serverSystem.browserManager.closeContext(targetIndex);
+                        this.serverSystem.connectionRegistry.closeConnectionByAuth(targetIndex);
+                    }
+                }
+
+                // Rebalance context pool after status change
+                this.serverSystem.browserManager.rebalanceContextPool().catch(err => {
+                    this.logger.error(`[Auth] Background rebalance failed: ${err.message}`);
+                });
+
+                return res.status(200).json({
+                    disabled,
+                    index: targetIndex,
+                    message: disabled ? "accountDisableSuccess" : "accountEnableSuccess",
+                });
+            } catch (error) {
+                this.logger.error(
+                    `[WebUI] Failed to toggle disabled state for account #${targetIndex}: ${error.message}`
+                );
+                return res.status(500).json({
+                    error: error.message,
+                    message: disabled ? "accountDisableFailed" : "accountEnableFailed",
+                });
+            }
+        });
+
         app.put("/api/settings/streaming-mode", isAuthenticated, (req, res) => {
             const newMode = req.body.mode;
             if (newMode === "fake" || newMode === "real") {
@@ -957,6 +1060,7 @@ class StatusRoutes {
         const rotationIndices = authSource.getRotationIndices();
         const duplicateIndices = authSource.duplicateIndices || [];
         const expiredIndices = authSource.expiredIndices || [];
+        const disabledIndices = authSource.disabledIndices || [];
         const limit = this.logger.displayLimit || 100;
         const allLogs = this.logger.logBuffer || [];
         const displayLogs = allLogs.slice(-limit);
@@ -969,10 +1073,21 @@ class StatusRoutes {
             const isDuplicate = canonicalIndex !== null && canonicalIndex !== index;
             const isRotation = rotationIndices.includes(index);
             const isExpired = expiredIndices.includes(index);
+            const isDisabled = disabledIndices.includes(index);
 
             const hasContext = browserManager.contexts.has(index);
 
-            return { canonicalIndex, hasContext, index, isDuplicate, isExpired, isInvalid, isRotation, name };
+            return {
+                canonicalIndex,
+                hasContext,
+                index,
+                isDisabled,
+                isDuplicate,
+                isExpired,
+                isInvalid,
+                isRotation,
+                name,
+            };
         });
 
         const currentAuthIndex = requestHandler.currentAuthIndex;
@@ -1000,6 +1115,7 @@ class StatusRoutes {
                 currentAccountName,
                 currentAuthIndex,
                 debugMode: LoggingService.isDebugEnabled(),
+                disabledIndicesRaw: disabledIndices,
                 duplicateIndicesRaw: duplicateIndices,
                 enableAuthUpdate: config.enableAuthUpdate,
                 expiredIndicesRaw: expiredIndices,
