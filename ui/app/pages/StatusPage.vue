@@ -1706,6 +1706,7 @@
                                 class="time-range-select stats-time-range-select"
                             >
                                 <el-option :label="t('timeRangeAll')" value="all" />
+                                <el-option :label="t('timeRangeToday')" value="today" />
                                 <el-option :label="t('timeRange1h')" value="1h" />
                                 <el-option :label="t('timeRange6h')" value="6h" />
                                 <el-option :label="t('timeRange24h')" value="24h" />
@@ -1747,6 +1748,7 @@
                                 class="time-range-select stats-time-range-select"
                             >
                                 <el-option :label="t('timeRangeAll')" value="all" />
+                                <el-option :label="t('timeRangeToday')" value="today" />
                                 <el-option :label="t('timeRange1h')" value="1h" />
                                 <el-option :label="t('timeRange6h')" value="6h" />
                                 <el-option :label="t('timeRange24h')" value="24h" />
@@ -2848,8 +2850,8 @@ const statsState = reactive({
     },
 });
 
-// Time range filter: 'all' | '1h' | '6h' | '24h' | '7d' | '30d' | 'custom'
-const timeRange = ref("all");
+// Time range filter: 'all' | 'today' | '1h' | '6h' | '24h' | '7d' | '30d' | 'custom'
+const timeRange = ref("today");
 const customTimeRange = ref([]);
 const recordFilters = reactive({
     apiFormat: [""],
@@ -2960,6 +2962,18 @@ const getAccountStatsKey = (authIndex, accountName) => {
 
 const timeFilteredRecords = computed(() => {
     if (timeRange.value === "all") return statsState.records;
+    if (timeRange.value === "today") {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15, 0, 0, 0);
+        if (now.getTime() < startOfToday.getTime()) {
+            startOfToday.setDate(startOfToday.getDate() - 1);
+        }
+        const startTs = startOfToday.getTime();
+        return statsState.records.filter(record => {
+            const ts = record.startedAt ? new Date(record.startedAt).getTime() : 0;
+            return ts >= startTs;
+        });
+    }
     if (timeRange.value === "custom") {
         const range = normalizedCustomTimeRange.value;
         if (!range) return statsState.records;

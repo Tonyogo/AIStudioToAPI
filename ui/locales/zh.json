@@ -262,6 +262,7 @@
     "timeRange30d": "\u6700\u8fd1 30 \u5929",
     "timeRangeAll": "全部",
     "timeRangeCustom": "自定义范围",
+    "timeRangeToday": "今天",
     "total": "总计",
     "totalScanned": "已扫描账号总数",
     "true": "已启用",

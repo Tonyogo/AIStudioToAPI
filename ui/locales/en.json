@@ -262,6 +262,7 @@
     "timeRange30d": "Last 30 Days",
     "timeRangeAll": "All Time",
     "timeRangeCustom": "Custom Range",
+    "timeRangeToday": "Today",
     "total": "Total",
     "totalScanned": "Total Scanned Accounts",
     "true": "Enabled",
