@@ -765,7 +765,7 @@ class BrowserManager {
         // - Initial wait: give popups time to render after page load
         // - Consecutive idle tracking: exit after N consecutive iterations with no new popups
         const maxIterations = 12; // Max polling iterations
-        const pollInterval = 500; // Interval between polls (ms)
+        const pollInterval = 3000; // Interval between polls (ms)
         const minIterations = 6; // Min iterations (3s), ensure slow popups have time to load
         const idleThreshold = 4; // Exit after N consecutive iterations with no new popups
         const handledPopups = new Set();
@@ -851,6 +851,7 @@ class BrowserManager {
             }
 
             if (i < maxIterations - 1) {
+                this.logger.info(`${logPrefix} Wait ${pollInterval}ms for popup`);
                 await page.waitForTimeout(pollInterval);
             }
         }
