@@ -588,7 +588,8 @@ class RequestHandler {
             return false;
         }
 
-        if (!this.connectionRegistry.getConnectionByAuth(this.currentAuthIndex)) {
+        const connection = this.connectionRegistry.getConnectionByAuth(this.currentAuthIndex);
+        if (!connection || connection.readyState !== 1) {
             const connectionReady = await this._waitForConnection(connectionTimeoutMs);
             if (!connectionReady) {
                 if (typeof onConnectionTimeout === "function") {
@@ -621,12 +622,32 @@ class RequestHandler {
         }
 
         // Check current account's browser connection
-        if (!this.connectionRegistry.getConnectionByAuth(this.currentAuthIndex)) {
-            this.logger.warn(`[${logPrefix}] No WebSocket connection for current account #${this.currentAuthIndex}`);
-            const recovered = await this._handleBrowserRecovery(res);
-            if (!recovered) {
-                this._markTrackedEarlyExitIfNeeded(res, "Service temporarily unavailable: Browser recovery failed.");
-                return false;
+        let connection = this.connectionRegistry.getConnectionByAuth(this.currentAuthIndex);
+        if (!connection || connection.readyState !== 1) {
+            this.logger.warn(
+                `[${logPrefix}] WebSocket connection for current account #${this.currentAuthIndex} is missing or not ready (readyState=${connection?.readyState})`
+            );
+
+            // If connection exists but is not ready, wait for it first
+            if (connection) {
+                this.logger.info(`[${logPrefix}] Waiting for existing WebSocket connection to become ready...`);
+                const connectionReady = await this._waitForConnection(WS_CONNECTION_READY_TIMEOUT_MS);
+                if (connectionReady) {
+                    this.logger.info(`[${logPrefix}] Existing WebSocket connection successfully became ready.`);
+                    connection = this.connectionRegistry.getConnectionByAuth(this.currentAuthIndex);
+                }
+            }
+
+            // If still not ready, trigger full browser recovery
+            if (!connection || connection.readyState !== 1) {
+                const recovered = await this._handleBrowserRecovery(res);
+                if (!recovered) {
+                    this._markTrackedEarlyExitIfNeeded(
+                        res,
+                        "Service temporarily unavailable: Browser recovery failed."
+                    );
+                    return false;
+                }
             }
         }
 
