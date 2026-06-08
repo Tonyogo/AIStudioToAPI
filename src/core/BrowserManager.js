@@ -772,6 +772,34 @@ class BrowserManager {
         let consecutiveIdleCount = 0; // Counter for consecutive idle iterations
 
         for (let i = 0; i < maxIterations; i++) {
+            // If "Continue to the app" was previously clicked, verify if it has successfully cleared.
+            // If it is gone, we can exit early. If it is still visible (click swallowed), we delete it from
+            // handledPopups so we can perform an adaptive retry click.
+            if (handledPopups.has("Continue to the app")) {
+                const isStillVisible = await page.evaluate(text => {
+                    // eslint-disable-next-line no-undef
+                    const buttons = document.querySelectorAll("button");
+                    for (const btn of buttons) {
+                        const rect = btn.getBoundingClientRect();
+                        const isVisible = rect.width > 0 && rect.height > 0;
+                        if (isVisible && (btn.innerText || "").trim() === text) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }, "Continue to the app");
+
+                if (!isStillVisible) {
+                    this.logger.info(`${logPrefix} "Continue to the app" popup has successfully cleared from DOM.`);
+                    return;
+                } else {
+                    this.logger.warn(
+                        `${logPrefix} "Continue to the app" popup is still visible after previous click. Retrying click...`
+                    );
+                    handledPopups.delete("Continue to the app");
+                }
+            }
+
             let foundAny = false;
 
             for (const popup of popupConfigs) {
@@ -803,9 +831,12 @@ class BrowserManager {
                         handledPopups.add(popup.name);
                         foundAny = true;
 
-                        // "Continue to the app" confirms entry, exit popup detection early
+                        // "Continue to the app" confirms entry, wait for next poll iteration
+                        // to verify if it has actually disappeared from the DOM before exiting.
                         if (popup.name === "Continue to the app") {
-                            return;
+                            // Short pause after clicking to let transition start
+                            await page.waitForTimeout(800);
+                            continue;
                         }
 
                         // Short pause after clicking to let next popup appear
