@@ -609,6 +609,17 @@ class RequestHandler {
     async _ensureBrowserBackedRequestReady(res, options = {}) {
         const { logPrefix = "Request", waitErrorType = null, waitOptions } = options;
 
+        if (this.authSource.getRotationIndices().length === 0) {
+            this.logger.warn(`[${logPrefix}] No active accounts available in rotation. Rejecting request.`);
+            this._sendErrorResponse(
+                res,
+                404,
+                "No active accounts available in rotation.",
+                waitErrorType || "service_unavailable"
+            );
+            return false;
+        }
+
         // Check current account's browser connection
         if (!this.connectionRegistry.getConnectionByAuth(this.currentAuthIndex)) {
             this.logger.warn(`[${logPrefix}] No WebSocket connection for current account #${this.currentAuthIndex}`);
