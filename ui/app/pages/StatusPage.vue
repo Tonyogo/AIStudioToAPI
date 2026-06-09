@@ -71,7 +71,9 @@
                         stroke-linecap="round"
                         stroke-linejoin="round"
                     >
-                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+                        <path
+                            d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"
+                        ></path>
                     </svg>
                 </button>
                 <button
@@ -964,6 +966,27 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- DEBUG VIEW -->
+            <div v-if="activeTab === 'debug'" class="view-container">
+                <header class="page-header">
+                    <h1>Debug</h1>
+                    <el-button :loading="state.snapshotsLoading" @click="fetchSnapshots">Refresh</el-button>
+                </header>
+                <el-table v-loading="state.snapshotsLoading" :data="state.snapshots">
+                    <el-table-column prop="id" label="ID" />
+                    <el-table-column prop="name" label="Name" :formatter="row => formatSceneName(row.name)" />
+                    <el-table-column label="Actions">
+                        <template #default="scope">
+                            <el-button size="small" @click="viewScreenshot(scope.row.id)">Screenshot</el-button>
+                            <el-button size="small" @click="viewHtml(scope.row.id)">HTML</el-button>
+                            <el-button size="small" type="danger" @click="deleteSnapshot(scope.row.id)"
+                                >Delete</el-button
+                            >
+                        </template>
+                    </el-table-column>
+                </el-table>
             </div>
 
             <!-- SETTINGS VIEW -->
@@ -2819,6 +2842,19 @@
                 </button>
             </div>
         </el-affix>
+
+        <!-- Modals -->
+        <el-dialog v-model="state.screenshotDialogVisible" title="Screenshot" width="80%">
+            <img :src="`/api/snapshots/${state.currentSnapshotId}/screenshot`" style="width: 100%" />
+        </el-dialog>
+
+        <el-dialog v-model="state.htmlDialogVisible" title="HTML" width="80%">
+            <iframe
+                :src="`/api/snapshots/${state.currentSnapshotId}/html`"
+                sandbox="allow-same-origin"
+                style="width: 100%; height: 600px; border: none"
+            ></iframe>
+        </el-dialog>
     </div>
 </template>
 
@@ -3697,6 +3733,44 @@ const getApiErrorMessage = data => {
     return t("unknownError");
 };
 
+const fetchSnapshots = async () => {
+    state.snapshotsLoading = true;
+    try {
+        const res = await fetch("/api/snapshots");
+        state.snapshots = await res.json();
+    } catch (e) {
+        ElMessage.error("Failed to fetch snapshots");
+    } finally {
+        state.snapshotsLoading = false;
+    }
+};
+
+const formatSceneName = name =>
+    name
+        .split("-")
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+
+const viewScreenshot = id => {
+    state.currentSnapshotId = id;
+    state.screenshotDialogVisible = true;
+};
+
+const viewHtml = id => {
+    state.currentSnapshotId = id;
+    state.htmlDialogVisible = true;
+};
+
+const deleteSnapshot = async id => {
+    try {
+        await fetch(`/api/snapshots/${id}`, { method: "DELETE" });
+        await fetchSnapshots();
+        ElMessage.success("Deleted");
+    } catch (e) {
+        ElMessage.error("Failed to delete");
+    }
+};
+
 const switchTab = tabName => {
     if (activeTab.value === "logs") {
         const logContainer = document.getElementById("log-container");
@@ -3706,6 +3780,8 @@ const switchTab = tabName => {
     }
 
     activeTab.value = tabName;
+
+    if (tabName === "debug") fetchSnapshots();
 
     if (tabName === "logs") {
         nextTick(() => {
@@ -3746,17 +3822,24 @@ const state = reactive({
     maxContexts: 1,
     maxRetries: 3,
     releaseUrl: null,
+    currentSnapshotId: "",
     safetySettingsThreshold: "OFF",
-    selectedAccounts: new Set(), // Selected account indices
+    htmlDialogVisible: false,
+
+    screenshotDialogVisible: false,
+
+    selectedAccounts: new Set(),
+
+    // Selected account indices
     serviceConnected: false,
+
+    snapshots: [],
+
+    snapshotsLoading: false,
+
     streamingModeReal: false,
     // theme: handled by useTheme
     usageCount: 0,
-    snapshots: [],
-    snapshotsLoading: false,
-    screenshotDialogVisible: false,
-    htmlDialogVisible: false,
-    currentSnapshotId: "",
 });
 
 const safetySettingsThresholdOptions = [
@@ -5202,8 +5285,18 @@ watchEffect(() => {
         transform: translateY(0);
     }
 }
+.debug-actions-cell {
+    display: flex;
+    gap: 8px;
+}
+.snapshot-preview-container {
+    width: 100%;
+}
+.snapshot-html-container {
+    width: 100%;
+    height: 600px;
+}
 
-/* Dashboard Grid */
 .dashboard-grid {
     display: grid;
     gap: 24px;
