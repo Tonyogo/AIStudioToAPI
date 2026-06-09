@@ -29,6 +29,10 @@ cache/
 
 # Usage statistics data
 data/
+!/data/debug/
+
+# Debug Failure Snapshots
+/data/debug/
 
 # Temporary files
 tmp/
