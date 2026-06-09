@@ -802,7 +802,7 @@ class StatusRoutes {
             }
         });
 
-        app.get("/api/debug/snapshots", isAuthenticated, async (req, res) => {
+        app.get("/api/snapshots", isAuthenticated, async (req, res) => {
             try {
                 const debugDir = path.join(process.cwd(), "data", "debug");
                 if (!fs.existsSync(debugDir)) return res.json([]);
@@ -833,7 +833,7 @@ class StatusRoutes {
             }
         });
 
-        app.get("/api/debug/snapshots/:id/screenshot", isAuthenticated, (req, res) => {
+        app.get("/api/snapshots/:id/screenshot", isAuthenticated, (req, res) => {
             const { id } = req.params;
             const debugDir = path.join(process.cwd(), "data", "debug");
             const files = fs.readdirSync(debugDir);
@@ -843,7 +843,7 @@ class StatusRoutes {
             res.sendFile(path.join(debugDir, file));
         });
 
-        app.get("/api/debug/snapshots/:id/html", isAuthenticated, (req, res) => {
+        app.get("/api/snapshots/:id/html", isAuthenticated, (req, res) => {
             const { id } = req.params;
             const debugDir = path.join(process.cwd(), "data", "debug");
             const files = fs.readdirSync(debugDir);
@@ -853,7 +853,7 @@ class StatusRoutes {
             res.sendFile(path.join(debugDir, file));
         });
 
-        app.delete("/api/debug/snapshots/:id", isAuthenticated, (req, res) => {
+        app.delete("/api/snapshots/:id", isAuthenticated, (req, res) => {
             const { id } = req.params;
             const debugDir = path.join(process.cwd(), "data", "debug");
             const files = fs.readdirSync(debugDir);
@@ -863,7 +863,7 @@ class StatusRoutes {
             res.json({ message: "Snapshot deleted" });
         });
 
-        app.delete("/api/debug/snapshots", isAuthenticated, (req, res) => {
+        app.delete("/api/snapshots", isAuthenticated, (req, res) => {
             const debugDir = path.join(process.cwd(), "data", "debug");
             if (fs.existsSync(debugDir)) {
                 fs.readdirSync(debugDir).forEach(f => fs.unlinkSync(path.join(debugDir, f)));
