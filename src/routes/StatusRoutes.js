@@ -802,6 +802,75 @@ class StatusRoutes {
             }
         });
 
+        app.get("/api/debug/snapshots", isAuthenticated, async (req, res) => {
+            try {
+                const debugDir = path.join(process.cwd(), "data", "debug");
+                if (!fs.existsSync(debugDir)) return res.json([]);
+
+                const files = fs.readdirSync(debugDir);
+                const regex =
+                    /^debug_(screenshot|page_source)_(?:auth_(\d+)_)?([a-zA-Z0-9_-]+)_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\.(png|html)$/;
+
+                const snapshots = new Map();
+
+                files.forEach(filename => {
+                    const match = filename.match(regex);
+                    if (!match) return;
+
+                    const [type, authIndex, scene, timestamp] = [match[1], match[2], match[3], match[4]];
+                    const id = `${authIndex || "any"}_${scene}_${timestamp}`;
+
+                    if (!snapshots.has(id)) {
+                        snapshots.set(id, { authIndex, files: {}, id, scene, timestamp });
+                    }
+                    snapshots.get(id).files[type] = filename;
+                });
+
+                res.json(Array.from(snapshots.values()));
+            } catch (error) {
+                this.logger.error(`[Debug] Failed to list snapshots: ${error.message}`);
+                res.status(500).json({ error: "Failed to list snapshots" });
+            }
+        });
+
+        app.get("/api/debug/snapshots/:id/screenshot", isAuthenticated, (req, res) => {
+            const { id } = req.params;
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            const files = fs.readdirSync(debugDir);
+            const file = files.find(f => f.includes(id) && f.endsWith(".png"));
+
+            if (!file) return res.status(404).json({ error: "Screenshot not found" });
+            res.sendFile(path.join(debugDir, file));
+        });
+
+        app.get("/api/debug/snapshots/:id/html", isAuthenticated, (req, res) => {
+            const { id } = req.params;
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            const files = fs.readdirSync(debugDir);
+            const file = files.find(f => f.includes(id) && f.endsWith(".html"));
+
+            if (!file) return res.status(404).json({ error: "HTML not found" });
+            res.sendFile(path.join(debugDir, file));
+        });
+
+        app.delete("/api/debug/snapshots/:id", isAuthenticated, (req, res) => {
+            const { id } = req.params;
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            const files = fs.readdirSync(debugDir);
+            const toDelete = files.filter(f => f.includes(id));
+
+            toDelete.forEach(f => fs.unlinkSync(path.join(debugDir, f)));
+            res.json({ message: "Snapshot deleted" });
+        });
+
+        app.delete("/api/debug/snapshots", isAuthenticated, (req, res) => {
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            if (fs.existsSync(debugDir)) {
+                fs.readdirSync(debugDir).forEach(f => fs.unlinkSync(path.join(debugDir, f)));
+            }
+            res.json({ message: "All snapshots deleted" });
+        });
+
         app.put("/api/settings/streaming-mode", isAuthenticated, (req, res) => {
             const newMode = req.body.mode;
             if (newMode === "fake" || newMode === "real") {
