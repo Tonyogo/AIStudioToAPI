@@ -3803,6 +3803,7 @@ const state = reactive({
     checkUpdateEnabled: true,
     currentAuthIndex: -1,
     currentLang: I18n.getLang(),
+    currentSnapshotId: "",
     debugModeEnabled: false,
     enableAuthUpdateEnabled: true,
     failureCount: 0,
@@ -3811,6 +3812,7 @@ const state = reactive({
     forceUrlContextEnabled: false,
     forceWebSearchEnabled: false,
     hasUpdate: false,
+    htmlDialogVisible: false,
     isSwitchingAccount: false,
     isSystemBusy: false,
     isUpdating: false,
@@ -3822,10 +3824,7 @@ const state = reactive({
     maxContexts: 1,
     maxRetries: 3,
     releaseUrl: null,
-    currentSnapshotId: "",
     safetySettingsThreshold: "OFF",
-    htmlDialogVisible: false,
-
     screenshotDialogVisible: false,
 
     selectedAccounts: new Set(),
