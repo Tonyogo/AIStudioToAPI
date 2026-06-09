@@ -102,28 +102,16 @@ class StatusRoutes {
             res.sendFile(this.distIndexPath);
         });
 
-        // Version check endpoint - separate from status to avoid frequent calls
-        app.get("/api/version/check", isAuthenticated, async (req, res) => {
-            // Check if update checking is disabled via environment variable
-            const checkUpdate = this.config.checkUpdate !== false;
-            if (!checkUpdate) {
-                return res.status(200).json({
-                    current: this.versionChecker.getCurrentVersion(),
-                    disabled: true,
-                    hasUpdate: false,
-                    latest: null,
-                    releaseUrl: null,
-                });
-            }
-
-            try {
-                const result = await this.versionChecker.checkForUpdates();
-                res.status(200).json(result);
-            } catch (error) {
-                this.logger.error(`[VersionCheck] Error: ${error.message}`);
-                res.status(500).json({ error: "Failed to check for updates" });
-            }
-        });
+        // Version check endpoint - completely disabled as requested
+        app.get("/api/version/check", isAuthenticated, async (req, res) =>
+            res.status(200).json({
+                current: this.versionChecker.getCurrentVersion(),
+                disabled: true,
+                hasUpdate: false,
+                latest: null,
+                releaseUrl: null,
+            })
+        );
 
         app.get("/api/status", isAuthenticated, async (req, res) => {
             // Force a reload of auth sources on each status check for real-time accuracy
