@@ -1107,15 +1107,24 @@ class BrowserManager {
         }
         if (!targetPage || targetPage.isClosed()) return;
         try {
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+            }
+
             const timestamp = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
-            const screenshotPath = path.join(process.cwd(), `debug_screenshot_${suffix}_${timestamp}.png`);
+            const authPrefix = authIndex !== null ? `auth_${authIndex}_` : "";
+
+            const screenshotName = `debug_screenshot_${authPrefix}${suffix}_${timestamp}.png`;
+            const screenshotPath = path.join(debugDir, screenshotName);
             await targetPage.screenshot({
                 fullPage: true,
                 path: screenshotPath,
             });
             this.logger.info(`[Debug] Failure screenshot saved to: ${screenshotPath}`);
 
-            const htmlPath = path.join(process.cwd(), `debug_page_source_${suffix}_${timestamp}.html`);
+            const htmlName = `debug_page_source_${authPrefix}${suffix}_${timestamp}.html`;
+            const htmlPath = path.join(debugDir, htmlName);
             const htmlContent = await targetPage.content();
             fs.writeFileSync(htmlPath, htmlContent);
             this.logger.info(`[Debug] Failure page source saved to: ${htmlPath}`);
