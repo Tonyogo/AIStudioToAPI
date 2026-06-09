@@ -209,3 +209,5 @@ Edit `configs/models.json` to customize available models and their settings.
 ### Git Workflow
 
 - Main branch: `main`
+- **STRICT RULE**: Direct code commits or automatic merging into the `main` branch by AI agents is **STRICTLY PROHIBITED**. 
+- All feature implementation and bug fixes must remain on isolated development branches (e.g., `dev` or dedicated topic branches like `dev-*`). Merges back to `main` must be handled manually by the user or explicitly requested per transaction.
