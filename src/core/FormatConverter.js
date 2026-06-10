@@ -508,8 +508,20 @@ class FormatConverter {
             FormatConverter.parseModelWebSearchSuffix(rawModel);
         const { cleanModelName: streamStrippedModel, streamingMode: modelStreamingMode } =
             FormatConverter.parseModelStreamingModeSuffix(searchStrippedModel);
-        const { cleanModelName, thinkingLevel: modelThinkingLevel } =
+        const { cleanModelName: parsedModelName, thinkingLevel: modelThinkingLevel } =
             FormatConverter.parseModelThinkingLevel(streamStrippedModel);
+
+        // Map Codex model names (gpt-5.5, gpt-5.4, gpt-5.4-mini) to Gemini
+        const CODEX_MODEL_MAP = {
+            "gpt-5.4": "models/gemini-2.5-pro",
+            "gpt-5.4-mini": "models/gemini-2.5-flash",
+            "gpt-5.5": "models/gemini-3.5-flash",
+        };
+        const cleanModelName = CODEX_MODEL_MAP[parsedModelName] || parsedModelName;
+
+        if (cleanModelName !== parsedModelName) {
+            this.logger.info(`[Adapter] Mapped Codex model "${parsedModelName}" to "${cleanModelName}"`);
+        }
 
         if (modelForceWebSearch) {
             this.logger.info(
@@ -523,7 +535,7 @@ class FormatConverter {
         }
         if (modelThinkingLevel) {
             this.logger.info(
-                `[Adapter] Detected thinkingLevel suffix in model name: "${streamStrippedModel}" -> model="${cleanModelName}", thinkingLevel="${modelThinkingLevel}"`
+                `[Adapter] Detected thinkingLevel suffix in model name: "${streamStrippedModel}" -> model="${parsedModelName}", thinkingLevel="${modelThinkingLevel}"`
             );
         }
 
