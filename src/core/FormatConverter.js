@@ -2959,10 +2959,16 @@ class FormatConverter {
                 return { [fallbackKey]: value };
             }
 
+            const trimmed = value.trim();
+            if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+                // Clearly plain text, not JSON. Skip parse and return fallback directly.
+                return { [fallbackKey]: value };
+            }
+
             try {
-                return JSON.parse(value || "{}");
+                return JSON.parse(trimmed || "{}");
             } catch (e) {
-                this.logger.warn(`[Adapter] Failed to parse JSON for ${fallbackKey}: ${e.message}`);
+                this.logger.debug(`[Adapter] Failed to parse JSON for ${fallbackKey}: ${e.message}`);
                 return { [fallbackKey]: value };
             }
         };
