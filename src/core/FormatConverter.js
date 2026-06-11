@@ -1587,23 +1587,39 @@ class FormatConverter {
                             output_index: messageItem.output_index,
                         });
                     } else if (part?.inlineData) {
-                        // This proxy intentionally does not expose image outputs in Responses API because many
-                        // clients treat `image_generation_call` as a hosted tool call and may initiate a second
-                        // tool-execution roundtrip that Gemini image models cannot support (function calling).
-                        // Emit a one-time text note so clients don't get an empty response.
-                        if (!streamState.imageOutputSuppressedNoticeSent) {
-                            streamState.imageOutputSuppressedNoticeSent = true;
-                            const messageItem = ensureMessageItem();
-                            const note =
-                                "[Image output omitted: Responses API image outputs are disabled by this proxy.]";
-                            streamState.messageText += note;
-                            pushEvent("response.output_text.delta", {
-                                content_index: messageItem.content_index,
-                                delta: note,
-                                item_id: messageItem.id,
-                                output_index: messageItem.output_index,
-                            });
-                        }
+                        const messageItem = ensureMessageItem();
+                        const mimeType = part.inlineData.mimeType || "image/png";
+                        const base64Data = part.inlineData.data;
+
+                        // Emit the image part added event
+                        pushEvent("response.content_part.added", {
+                            content_index: messageItem.content_index + 1,
+                            item_id: messageItem.id,
+                            output_index: messageItem.output_index,
+                            part: {
+                                source: {
+                                    data: base64Data,
+                                    media_type: mimeType,
+                                    type: "base64",
+                                },
+                                type: "image",
+                            },
+                        });
+
+                        // Emit the image part done event
+                        pushEvent("response.content_part.done", {
+                            content_index: messageItem.content_index + 1,
+                            item_id: messageItem.id,
+                            output_index: messageItem.output_index,
+                            part: {
+                                source: {
+                                    data: base64Data,
+                                    media_type: mimeType,
+                                    type: "base64",
+                                },
+                                type: "image",
+                            },
+                        });
                     } else if (part?.functionCall) {
                         const funcCall = part.functionCall;
                         const itemId = `fc_${this._generateRequestId()}`;
@@ -1611,6 +1627,7 @@ class FormatConverter {
                         const outputIndex = streamState.nextOutputIndex++;
                         const args = JSON.stringify(funcCall.args || {});
 
+                        // 1. Emit function_call output_item added
                         pushEvent("response.output_item.added", {
                             item: {
                                 arguments: "",
@@ -1623,6 +1640,20 @@ class FormatConverter {
                             output_index: outputIndex,
                         });
 
+                        // 2. Emulate high-frequency logical delta stream for function arguments
+                        // Divide the full JSON string arguments into 3 chunks and stream them sequentially
+                        const chunkSize = Math.max(1, Math.ceil(args.length / 3));
+                        for (let idx = 0; idx < args.length; idx += chunkSize) {
+                            const delta = args.substring(idx, idx + chunkSize);
+                            pushEvent("response.function_call_arguments.delta", {
+                                arguments: delta,
+                                call_id: callId,
+                                item_id: itemId,
+                                output_index: outputIndex,
+                            });
+                        }
+
+                        // 3. Emit function_call_arguments done
                         pushEvent("response.function_call_arguments.done", {
                             arguments: args,
                             item_id: itemId,
@@ -1692,13 +1723,27 @@ class FormatConverter {
         };
 
         // Google streaming might concatenate multiple SSE frames; handle them safely.
-        const frames = String(googleChunk)
-            .split(/\n\n+/)
-            .map(s => s.trim())
-            .filter(Boolean);
+        // Use an active chunk buffer on streamState to support TCP fragmentation/split packages seamlessly.
+        if (streamState.chunkBuffer === undefined) {
+            streamState.chunkBuffer = "";
+        }
+
+        const rawChunk = streamState.chunkBuffer + String(googleChunk);
+        streamState.chunkBuffer = "";
+
+        const frames = rawChunk.split(/\n\n+/);
+
+        // If the raw packet doesn't terminate cleanly with an empty newline, the last SSE frame
+        // might be split/fragmented. We slice it off and hold it in the buffer for next chunk merge.
+        if (!rawChunk.endsWith("\n") && frames.length > 0) {
+            streamState.chunkBuffer = frames.pop();
+        }
 
         for (const frame of frames) {
-            let jsonString = frame;
+            const cleanFrame = frame.trim();
+            if (!cleanFrame) continue;
+
+            let jsonString = cleanFrame;
             if (jsonString.startsWith("data:")) {
                 jsonString = jsonString.replace(/^data:\s*/i, "").trim();
             }
@@ -1711,7 +1756,9 @@ class FormatConverter {
                 const googleResponse = JSON.parse(jsonString);
                 handleGoogleResponseObject(googleResponse);
             } catch (e) {
-                this.logger.warn(`[Adapter] Unable to parse Google JSON chunk for Response API: ${jsonString}`);
+                // Keep the frame in buffer to wait for complete segments if parse fails
+                this.logger.debug(`[Adapter] Response API JSON frame parsing postponed, buffer merged: ${jsonString}`);
+                streamState.chunkBuffer = cleanFrame;
             }
         }
 

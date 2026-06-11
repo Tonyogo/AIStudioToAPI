@@ -3423,6 +3423,28 @@ class RequestHandler {
                     this.logger.info(
                         `✅ [Request] Response completed (OpenAI Response API real stream), request ID: ${requestId}`
                     );
+
+                    // Self-healing: if the stream ends but was never officially completed (Google closed abruptly)
+                    // inject a fallback completion candidate to force clean SSE closures
+                    if (streamState.initialized && !streamState.completed) {
+                        this.logger.warn(
+                            `[Request] Stream ended without normal finishReason. Triggering auto-recovery end sequence.`
+                        );
+                        const endChunk = this.formatConverter.translateGoogleToResponseAPIStream(
+                            JSON.stringify({ candidates: [{ finishReason: "STOP" }] }),
+                            model,
+                            streamState
+                        );
+                        if (endChunk && this._isResponseWritable(res)) {
+                            try {
+                                res.write(endChunk);
+                            } catch (writeError) {
+                                this.logger.debug(
+                                    `[Request] Failed to write fallback completion chunk: ${writeError.message}`
+                                );
+                            }
+                        }
+                    }
                     break;
                 }
 
