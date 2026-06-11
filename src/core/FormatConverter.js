@@ -3309,7 +3309,7 @@ class FormatConverter {
                     this.logger.debug(
                         "[Adapter] computer_use_preview tool detected but not supported by Gemini, skipping..."
                     );
-                } else if (tool.type === "function") {
+                } else if (tool.type === "function" || tool.name || tool.function) {
                     // Custom function tool (Responses API: {type:"function", name, description, parameters})
                     // Also accept Chat Completions style: {type:"function", function:{name, description, parameters}}
                     const funcDef = tool.function && typeof tool.function === "object" ? tool.function : tool;
@@ -3391,10 +3391,11 @@ class FormatConverter {
                     // If the allowed tool set includes functions, restrict to those names.
                     if (Array.isArray(tools)) {
                         const names = tools
-                            .filter(
-                                t => t && typeof t === "object" && t.type === "function" && typeof t.name === "string"
-                            )
-                            .map(t => t.name)
+                            .map(t => {
+                                if (!t || typeof t !== "object") return null;
+                                const funcDef = t.function && typeof t.function === "object" ? t.function : t;
+                                return t.type === "function" || funcDef.name ? funcDef.name : null;
+                            })
                             .filter(Boolean);
                         if (names.length > 0) {
                             functionCallingConfig.allowedFunctionNames = names;
@@ -3407,8 +3408,12 @@ class FormatConverter {
                         functionCallingConfig.allowedFunctionNames = [toolChoice.name];
                     }
                 } else if (toolChoice.type === "function") {
-                    // Back-compat with Chat Completions style: { type:"function", name:"..." }
-                    const funcName = toolChoice.name;
+                    // Back-compat with Chat Completions style: { type:"function", function:{name:"..."} } or flat { type:"function", name:"..." }
+                    const funcDef =
+                        toolChoice.function && typeof toolChoice.function === "object"
+                            ? toolChoice.function
+                            : toolChoice;
+                    const funcName = funcDef.name;
                     if (typeof funcName === "string" && funcName) {
                         functionCallingConfig.mode = "ANY";
                         functionCallingConfig.allowedFunctionNames = [funcName];
