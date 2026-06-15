@@ -8,11 +8,11 @@ async function test() {
     const bm = new BrowserManager(logger, { maxContexts: 1 }, { getAuth: () => ({}) });
 
     const mockPage = {
+        content: async () => "<html><body>Test Content</body></html>",
         isClosed: () => false,
-        screenshot: async (opts) => {
+        screenshot: async opts => {
             fs.writeFileSync(opts.path, "mock-screenshot-content");
         },
-        content: async () => "<html><body>Test Content</body></html>"
     };
 
     await bm._saveDebugArtifacts("test_run", 5, mockPage);

@@ -839,16 +839,23 @@
                                         >
                                             <template #content>
                                                 <div class="today-usage-tooltip">
-                                                    <div style="font-weight: bold; margin-bottom: 4px;">
+                                                    <div style="font-weight: bold; margin-bottom: 4px">
                                                         {{ t("todayUsageTooltipHeader") }}
                                                     </div>
-                                                    <div v-for="(count, model) in accountTodayStats[item.index]?.models" :key="model">
+                                                    <div
+                                                        v-for="(count, model) in accountTodayStats[item.index]?.models"
+                                                        :key="model"
+                                                    >
                                                         {{ model }}: {{ count }}
                                                     </div>
                                                 </div>
                                             </template>
                                             <span class="today-usage-badge" @click.stop>
-                                                {{ t("todayUsage", { count: accountTodayStats[item.index].totalSuccess }) }}
+                                                {{
+                                                    t("todayUsage", {
+                                                        count: accountTodayStats[item.index].totalSuccess,
+                                                    })
+                                                }}
                                             </span>
                                         </el-tooltip>
                                     </div>
@@ -3508,7 +3515,7 @@ const accountTodayStats = computed(() => {
             if (key === null || key === undefined) return;
 
             if (!statsMap[key]) {
-                statsMap[key] = { totalSuccess: 0, models: {} };
+                statsMap[key] = { models: {}, totalSuccess: 0 };
             }
             statsMap[key].totalSuccess += 1;
 
