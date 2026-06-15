@@ -957,6 +957,7 @@ class RequestHandler {
             }
 
             const proxyRequest = this._buildProxyRequest(req, requestId);
+            this._saveTransactionPayload(requestId, "gem_req", req.body);
             proxyRequest.is_generative = isGenerativeRequest;
             this._initializeProxyRequestAttempt(proxyRequest);
 
@@ -1164,12 +1165,14 @@ class RequestHandler {
             }
 
             // Translate OpenAI format to Google format (also handles model name suffix parsing)
+            this._saveTransactionPayload(requestId, "open_req", req.body);
             let googleBody, model, modelStreamingMode;
             try {
                 const result = await this.formatConverter.translateOpenAIToGoogle(req.body);
                 googleBody = result.googleRequest;
                 model = result.cleanModelName;
                 modelStreamingMode = result.modelStreamingMode || null;
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
             } catch (error) {
                 this.logger.error(
                     `❌ [Adapter] OpenAI request translation failed: ${error.message}, request ID: ${requestId}`
@@ -1424,6 +1427,8 @@ class RequestHandler {
                                     model,
                                     streamState
                                 );
+                                this._saveTransactionPayload(requestId, "gem_res", fullBody);
+                                this._saveTransactionPayload(requestId, "open_res", translatedChunk);
                                 if (this._isResponseWritable(res)) {
                                     try {
                                         if (translatedChunk) {
@@ -1947,12 +1952,14 @@ class RequestHandler {
             }
 
             // Translate Claude format to Google format
+            this._saveTransactionPayload(requestId, "claude_req", req.body);
             let googleBody, model, modelStreamingMode;
             try {
                 const result = await this.formatConverter.translateClaudeToGoogle(req.body);
                 googleBody = result.googleRequest;
                 model = result.cleanModelName;
                 modelStreamingMode = result.modelStreamingMode || null;
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
             } catch (error) {
                 this.logger.error(
                     `❌ [Adapter] Claude request translation failed: ${error.message}, request ID: ${requestId}`
@@ -2198,6 +2205,8 @@ class RequestHandler {
                                     model,
                                     streamState
                                 );
+                                this._saveTransactionPayload(requestId, "gem_res", fullBody);
+                                this._saveTransactionPayload(requestId, "claude_res", translatedChunk);
                                 if (this._isResponseWritable(res)) {
                                     try {
                                         if (translatedChunk) {
@@ -2269,11 +2278,13 @@ class RequestHandler {
             }
 
             // Translate Claude format to Google format
+            this._saveTransactionPayload(requestId, "claude_req", req.body);
             let googleBody, model;
             try {
                 const result = await this.formatConverter.translateClaudeToGoogle(req.body);
                 googleBody = result.googleRequest;
                 model = result.cleanModelName;
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
             } catch (error) {
                 this.logger.error(
                     `❌ [Adapter] Claude request translation failed: ${error.message}, request ID: ${requestId}`
@@ -2367,10 +2378,14 @@ class RequestHandler {
                     this.authSwitcher.failureCount = 0;
                 }
 
-                // Return Claude-compatible response
-                res.status(200).json({
+                const responseJson = {
                     input_tokens: totalTokens,
-                });
+                };
+                this._saveTransactionPayload(requestId, "gem_res", geminiResponse);
+                this._saveTransactionPayload(requestId, "claude_res", responseJson);
+
+                // Return Claude-compatible response
+                res.status(200).json(responseJson);
 
                 this.logger.info(
                     `✅ [Request] Response completed (Claude count_tokens, input tokens: ${totalTokens}), request ID: ${requestId}`
@@ -2530,9 +2545,13 @@ class RequestHandler {
                     this.authSwitcher.failureCount = 0;
                 }
 
-                res.status(200).json({
+                const responseJson = {
                     input_tokens: totalTokens,
-                });
+                };
+                this._saveTransactionPayload(requestId, "gem_res", geminiResponse);
+                this._saveTransactionPayload(requestId, "open_res", responseJson);
+
+                res.status(200).json(responseJson);
 
                 this.logger.info(
                     `✅ [Request] Response completed (OpenAI Response input_tokens, input tokens: ${totalTokens}), request ID: ${requestId}`
@@ -2552,6 +2571,8 @@ class RequestHandler {
 
     async _streamClaudeResponse(messageQueue, res, model, requestId) {
         const streamState = {};
+        let gemResponseAccumulator = "";
+        let claudeResponseAccumulator = "";
 
         try {
             // eslint-disable-next-line no-constant-condition
@@ -2559,6 +2580,8 @@ class RequestHandler {
                 const message = await messageQueue.dequeue(this.timeouts.STREAM_CHUNK);
 
                 if (message.type === "STREAM_END") {
+                    this._saveTransactionPayload(requestId, "gem_res", gemResponseAccumulator);
+                    this._saveTransactionPayload(requestId, "claude_res", claudeResponseAccumulator);
                     this.logger.info(`✅ [Request] Response completed (Claude real stream), request ID: ${requestId}`);
                     break;
                 }
@@ -2589,12 +2612,14 @@ class RequestHandler {
                 }
 
                 if (message.data) {
+                    gemResponseAccumulator += message.data;
                     const claudeChunk = this.formatConverter.translateGoogleToClaudeStream(
                         message.data,
                         model,
                         streamState
                     );
                     if (claudeChunk) {
+                        claudeResponseAccumulator += claudeChunk;
                         // Before writing, ensure the response is still writable to avoid
                         // throwing if the client disconnected mid-stream.
                         if (!this._isResponseWritable(res)) {
@@ -2653,6 +2678,8 @@ class RequestHandler {
         try {
             const googleResponse = JSON.parse(fullBody);
             const claudeResponse = this.formatConverter.convertGoogleToClaudeNonStream(googleResponse, model);
+            this._saveTransactionPayload(requestId, "gem_res", googleResponse);
+            this._saveTransactionPayload(requestId, "claude_res", claudeResponse);
             res.type("application/json").send(JSON.stringify(claudeResponse));
             this.logger.info(`✅ [Request] Response completed (Claude non-stream), request ID: ${requestId}`);
         } catch (e) {
@@ -2785,6 +2812,7 @@ class RequestHandler {
 
             try {
                 const googleResponse = JSON.parse(fullData);
+                this._saveTransactionPayload(proxyRequest.request_id, "gem_res", googleResponse);
                 this._logGeminiNativeResponseDebug(googleResponse, "pseudo-stream");
                 const candidate = googleResponse.candidates?.[0];
 
@@ -3042,6 +3070,7 @@ class RequestHandler {
             res.type("text/event-stream");
         }
         this.logger.info(`[Request] Gemini streaming response (Real Mode) started...`);
+        let responseAccumulator = "";
         try {
             // eslint-disable-next-line no-constant-condition
             while (true) {
@@ -3050,6 +3079,7 @@ class RequestHandler {
                     this.logger.info(
                         `✅ [Request] Response completed (Gemini real stream), request ID: ${proxyRequest.request_id}`
                     );
+                    this._saveTransactionPayload(proxyRequest.request_id, "gem_res", responseAccumulator);
                     break;
                 }
 
@@ -3073,6 +3103,7 @@ class RequestHandler {
 
                 if (dataMessage.data) {
                     this._logGeminiNativeChunkDebug(dataMessage.data, "stream");
+                    responseAccumulator += dataMessage.data;
                     if (!this._isResponseWritable(res)) {
                         this.logger.debug(
                             "[Request] Response no longer writable during Gemini real stream; stopping stream."
@@ -3173,6 +3204,7 @@ class RequestHandler {
 
             try {
                 const fullResponse = JSON.parse(responseBodyBuffer.toString());
+                this._saveTransactionPayload(proxyRequest.request_id, "gem_res", fullResponse);
                 this._logGeminiNativeResponseDebug(fullResponse, "non-stream");
             } catch (e) {
                 // Ignore JSON parsing errors for finish reason
@@ -3547,12 +3579,16 @@ class RequestHandler {
 
     async _streamOpenAIResponse(messageQueue, res, model, requestId) {
         const streamState = {};
+        let gemResponseAccumulator = "";
+        let openResponseAccumulator = "";
 
         try {
             // eslint-disable-next-line no-constant-condition
             while (true) {
                 const message = await messageQueue.dequeue(this.timeouts.STREAM_CHUNK);
                 if (message.type === "STREAM_END") {
+                    this._saveTransactionPayload(requestId, "gem_res", gemResponseAccumulator);
+                    this._saveTransactionPayload(requestId, "open_res", openResponseAccumulator);
                     if (this._isResponseWritable(res)) {
                         try {
                             res.write("data: [DONE]\n\n");
@@ -3586,12 +3622,14 @@ class RequestHandler {
                 }
 
                 if (message.data) {
+                    gemResponseAccumulator += message.data;
                     const openAIChunk = this.formatConverter.translateGoogleToOpenAIStream(
                         message.data,
                         model,
                         streamState
                     );
                     if (openAIChunk) {
+                        openResponseAccumulator += openAIChunk;
                         if (!this._isResponseWritable(res)) {
                             this.logger.debug(
                                 "[Request] Response no longer writable during OpenAI stream; stopping stream."
@@ -3694,6 +3732,8 @@ class RequestHandler {
         try {
             const googleResponse = JSON.parse(fullBody);
             const openAIResponse = this.formatConverter.convertGoogleToOpenAINonStream(googleResponse, model);
+            this._saveTransactionPayload(requestId, "gem_res", googleResponse);
+            this._saveTransactionPayload(requestId, "open_res", openAIResponse);
             res.type("application/json").send(JSON.stringify(openAIResponse));
             this.logger.info(`✅ [Request] Response completed (OpenAI non-stream), request ID: ${requestId}`);
         } catch (e) {
@@ -4343,6 +4383,9 @@ class RequestHandler {
     }
 
     _saveTransactionPayload(requestId, type, data) {
+        if (!this.config.enableTranslationLogging) {
+            return;
+        }
         try {
             const debugDir = path.join(process.cwd(), "data", "debug");
             if (!fs.existsSync(debugDir)) {

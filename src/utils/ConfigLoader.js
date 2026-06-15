@@ -25,6 +25,7 @@ class ConfigLoader {
             browserExecutablePath: null,
             checkUpdate: true,
             enableAuthUpdate: true,
+            enableTranslationLogging: false,
             enableUsageStats: true,
             failureThreshold: 3,
             fakeStreamTimeoutMs: 300000,
@@ -120,6 +121,8 @@ class ConfigLoader {
         }
         if (process.env.ENABLE_AUTH_UPDATE)
             config.enableAuthUpdate = process.env.ENABLE_AUTH_UPDATE.toLowerCase() !== "false";
+        if (process.env.ENABLE_TRANSLATION_LOGGING)
+            config.enableTranslationLogging = process.env.ENABLE_TRANSLATION_LOGGING.toLowerCase() === "true";
         if (process.env.ENABLE_USAGE_STATS)
             config.enableUsageStats = process.env.ENABLE_USAGE_STATS.toLowerCase() !== "false";
 
@@ -203,6 +206,7 @@ class ConfigLoader {
         this.logger.info(`  Check Update: ${config.checkUpdate}`);
         this.logger.info(`  Default Safety Threshold: ${config.safetySettingsThreshold}`);
         this.logger.info(`  Auto Update Auth: ${config.enableAuthUpdate}`);
+        this.logger.info(`  Translation Payload Logging: ${config.enableTranslationLogging ? "Enabled" : "Disabled"}`);
         this.logger.info(`  Usage Stats: ${config.enableUsageStats}`);
         this.logger.info(`  Max Contexts: ${config.maxContexts === 0 ? "Unlimited" : config.maxContexts}`);
         this.logger.info(
