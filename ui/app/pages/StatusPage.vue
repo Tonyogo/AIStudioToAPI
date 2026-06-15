@@ -831,6 +831,26 @@
                                         <span v-if="item.isDisabled" class="disabled-badge">
                                             {{ t("tagDisabled") }}
                                         </span>
+                                        <el-tooltip
+                                            v-if="accountTodayStats[item.index]?.totalSuccess > 0"
+                                            placement="top"
+                                            effect="dark"
+                                            :hide-after="0"
+                                        >
+                                            <template #content>
+                                                <div class="today-usage-tooltip">
+                                                    <div style="font-weight: bold; margin-bottom: 4px;">
+                                                        {{ t("todayUsageTooltipHeader") }}
+                                                    </div>
+                                                    <div v-for="(count, model) in accountTodayStats[item.index]?.models" :key="model">
+                                                        {{ model }}: {{ count }}
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <span class="today-usage-badge" @click.stop>
+                                                {{ t("todayUsage", { count: accountTodayStats[item.index].totalSuccess }) }}
+                                            </span>
+                                        </el-tooltip>
                                     </div>
                                 </el-tooltip>
                                 <div class="account-actions">
