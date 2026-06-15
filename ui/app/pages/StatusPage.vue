@@ -2608,6 +2608,7 @@
                                         <th>{{ t("requestAccount") }}</th>
                                         <th>{{ t("requestAttempts") }}</th>
                                         <th>{{ t("requestIp") }}</th>
+                                        <th>{{ t("actionsPanel") }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2653,6 +2654,29 @@
                                                     {{ record.clientIp || "-" }}
                                                 </span>
                                             </el-tooltip>
+                                        </td>
+                                        <td>
+                                            <button
+                                                class="btn-switch btn-inspect-action"
+                                                type="button"
+                                                :title="t('btnInspectPayload')"
+                                                @click.stop="openPayloadInspector(record.requestId)"
+                                            >
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    width="14"
+                                                    height="14"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                >
+                                                    <circle cx="11" cy="11" r="8"></circle>
+                                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                                </svg>
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -2881,6 +2905,90 @@
                 sandbox="allow-same-origin"
                 style="width: 100%; height: 600px; border: none"
             ></iframe>
+        </el-dialog>
+
+        <!-- API Transaction Inspector Modal -->
+        <el-dialog
+            v-model="inspectorState.visible"
+            :title="t('inspectTitle')"
+            width="90%"
+            class="inspector-dialog"
+            top="5vh"
+        >
+            <p class="subtitle" style="margin-top: -15px; margin-bottom: 20px">
+                {{ t("inspectSub") }}
+                <span class="mono" style="margin-left: 8px; font-weight: bold; color: var(--el-color-primary)"
+                    >ID: {{ inspectorState.currentRequestId }}</span
+                >
+            </p>
+            <div v-loading="inspectorState.loading" class="inspector-grid" style="min-height: 400px">
+                <!-- Left: Request Translation -->
+                <div class="inspector-col">
+                    <div class="payload-box">
+                        <div class="payload-box-header">
+                            {{ t("clientReqHeader") }}
+                            <button
+                                class="payload-copy-btn"
+                                type="button"
+                                @click="copyPayload(inspectorState.payloads.open_req)"
+                            >
+                                {{ t("copy") }}
+                            </button>
+                        </div>
+                        <pre
+                            class="payload-pre"
+                        ><code>{{ formatPayloadText(inspectorState.payloads.open_req) }}</code></pre>
+                    </div>
+                    <div class="payload-box">
+                        <div class="payload-box-header">
+                            {{ t("gemReqHeader") }}
+                            <button
+                                class="payload-copy-btn"
+                                type="button"
+                                @click="copyPayload(inspectorState.payloads.gem_req)"
+                            >
+                                {{ t("copy") }}
+                            </button>
+                        </div>
+                        <pre
+                            class="payload-pre"
+                        ><code>{{ formatPayloadText(inspectorState.payloads.gem_req) }}</code></pre>
+                    </div>
+                </div>
+                <!-- Right: Response Translation -->
+                <div class="inspector-col">
+                    <div class="payload-box">
+                        <div class="payload-box-header">
+                            {{ t("gemResHeader") }}
+                            <button
+                                class="payload-copy-btn"
+                                type="button"
+                                @click="copyPayload(inspectorState.payloads.gem_res)"
+                            >
+                                {{ t("copy") }}
+                            </button>
+                        </div>
+                        <pre
+                            class="payload-pre"
+                        ><code>{{ formatPayloadText(inspectorState.payloads.gem_res) }}</code></pre>
+                    </div>
+                    <div class="payload-box">
+                        <div class="payload-box-header">
+                            {{ t("clientResHeader") }}
+                            <button
+                                class="payload-copy-btn"
+                                type="button"
+                                @click="copyPayload(inspectorState.payloads.open_res)"
+                            >
+                                {{ t("copy") }}
+                            </button>
+                        </div>
+                        <pre
+                            class="payload-pre"
+                        ><code>{{ formatPayloadText(inspectorState.payloads.open_res) }}</code></pre>
+                    </div>
+                </div>
+            </div>
         </el-dialog>
     </div>
 </template>
@@ -4360,6 +4468,65 @@ const deduplicateAuth = () => {
 };
 
 const handleForceThinkingBeforeChange = () => handleSettingChange("/api/settings/force-thinking", "forceThinking");
+
+const inspectorState = reactive({
+    currentRequestId: "",
+    loading: false,
+    payloads: {
+        gem_req: null,
+        gem_res: null,
+        open_req: null,
+        open_res: null,
+    },
+    visible: false,
+});
+
+const openPayloadInspector = async requestId => {
+    inspectorState.currentRequestId = requestId || "";
+    inspectorState.visible = true;
+    inspectorState.loading = true;
+    inspectorState.payloads = {
+        gem_req: null,
+        gem_res: null,
+        open_req: null,
+        open_res: null,
+    };
+
+    try {
+        const res = await fetch(`/api/transactions/${requestId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        inspectorState.payloads = {
+            gem_req: data.gem_req,
+            gem_res: data.gem_res,
+            open_req: data.open_req,
+            open_res: data.open_res,
+        };
+    } catch (e) {
+        ElMessage.error(`Failed to load payloads: ${e.message}`);
+    } finally {
+        inspectorState.loading = false;
+    }
+};
+
+const formatPayloadText = val => {
+    if (val === null || val === undefined) return t("noPayload");
+    if (typeof val === "object") {
+        return JSON.stringify(val, null, 2);
+    }
+    return String(val);
+};
+
+const copyPayload = async val => {
+    if (val === null || val === undefined) return;
+    const text = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
+    try {
+        await navigator.clipboard.writeText(text);
+        ElMessage.success(t("copySuccess"));
+    } catch (e) {
+        ElMessage.error(t("copyFailed"));
+    }
+};
 
 const handleForceUrlContextBeforeChange = () =>
     handleSettingChange("/api/settings/force-url-context", "forceUrlContext");
@@ -7233,6 +7400,98 @@ watchEffect(() => {
 
     .sticky-time-col {
         max-width: 90px;
+    }
+}
+
+.btn-inspect-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 4px !important;
+    cursor: pointer;
+    border: 1px solid @border-color !important;
+    background: @background-white !important;
+    color: @text-secondary !important;
+    transition: all 0.2s;
+
+    &:hover {
+        border-color: @primary-color !important;
+        color: @primary-color !important;
+        background-color: rgba(var(--color-primary-rgb), 0.05) !important;
+    }
+}
+
+.inspector-grid {
+    display: flex;
+    gap: 20px;
+    width: 100%;
+}
+
+.inspector-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    min-width: 0;
+}
+
+.payload-box {
+    border: 1px solid @border-light;
+    border-radius: 6px;
+    background: #1e1e1e;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.payload-box-header {
+    background: #252526;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    color: #9cdcfe;
+    font-weight: 600;
+    border-bottom: 1px solid #2d2d2d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.payload-copy-btn {
+    background: transparent;
+    border: 1px solid #3c3c3c;
+    color: #858585;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+        border-color: #007acc;
+        color: #ffffff;
+        background: #007acc;
+    }
+}
+
+.payload-pre {
+    margin: 0;
+    padding: 12px;
+    overflow: auto;
+    max-height: 280px;
+    font-family: @font-family-mono;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    background: #1e1e1e;
+    color: #ce9178;
+    text-align: left;
+}
+
+/* Adjust dialog sizing on mobile */
+@media (max-width: 767px) {
+    .inspector-grid {
+        flex-direction: column;
     }
 }
 
