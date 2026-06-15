@@ -859,6 +859,38 @@ class StatusRoutes {
             res.json({ message: "All snapshots deleted" });
         });
 
+        app.get("/api/transactions/:id", isAuthenticated, (req, res) => {
+            const { id } = req.params;
+            const debugDir = path.join(process.cwd(), "data", "debug");
+
+            const payloads = {
+                gem_req: null,
+                gem_res: null,
+                open_req: null,
+                open_res: null,
+            };
+
+            try {
+                if (fs.existsSync(debugDir)) {
+                    ["open_req", "gem_req", "gem_res", "open_res"].forEach(type => {
+                        const filePath = path.join(debugDir, `transaction_${id}_${type}.json`);
+                        if (fs.existsSync(filePath)) {
+                            const content = fs.readFileSync(filePath, "utf-8");
+                            try {
+                                payloads[type] = JSON.parse(content);
+                            } catch {
+                                payloads[type] = content; // Fallback to raw string if it's SSE text
+                            }
+                        }
+                    });
+                }
+                res.json(payloads);
+            } catch (error) {
+                this.logger.error(`[Debug] Failed to load transaction debug payloads: ${error.message}`);
+                res.status(500).json({ error: "Failed to load transaction payloads" });
+            }
+        });
+
         app.put("/api/settings/streaming-mode", isAuthenticated, (req, res) => {
             const newMode = req.body.mode;
             if (newMode === "fake" || newMode === "real") {
