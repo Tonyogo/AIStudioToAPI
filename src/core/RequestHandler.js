@@ -9,6 +9,8 @@
  * Request Handler Module (Refactored)
  * Main request handler that coordinates between other modules
  */
+const fs = require("fs");
+const path = require("path");
 const AuthSwitcher = require("../auth/AuthSwitcher");
 const FormatConverter = require("./FormatConverter");
 const { isUserAbortedError } = require("../utils/CustomErrors");
@@ -1558,6 +1560,9 @@ class RequestHandler {
                 }
             }
 
+            // Save original Client request
+            this._saveTransactionPayload(requestId, "open_req", req.body);
+
             // Translate OpenAI Response format to Google format
             let googleBody, model, modelStreamingMode;
             try {
@@ -1565,6 +1570,9 @@ class RequestHandler {
                 googleBody = result.googleRequest;
                 model = result.cleanModelName;
                 modelStreamingMode = result.modelStreamingMode || null;
+
+                // Save translated Google payload
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
             } catch (error) {
                 this.logger.error(
                     `❌ [Adapter] OpenAI Response request translation failed: ${error.message}, request ID: ${requestId}`
@@ -1843,6 +1851,9 @@ class RequestHandler {
                                     model,
                                     streamState
                                 );
+
+                                this._saveTransactionPayload(requestId, "gem_res", fullBody);
+                                this._saveTransactionPayload(requestId, "open_res", translatedChunk);
                                 if (this._isResponseWritable(res)) {
                                     try {
                                         if (translatedChunk) {
@@ -2393,12 +2404,18 @@ class RequestHandler {
                 return;
             }
 
+            // Save original Client count-tokens request
+            this._saveTransactionPayload(requestId, "open_req", req.body);
+
             // Translate OpenAI Response format to Google format (so we can use Gemini countTokens)
             let googleBody, model;
             try {
                 const result = await this.formatConverter.translateOpenAIResponseToGoogle(req.body);
                 googleBody = result.googleRequest;
                 model = result.cleanModelName;
+
+                // Save translated Google count-tokens payload
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
             } catch (error) {
                 this.logger.error(
                     `❌ [Adapter] OpenAI Response input_tokens translation failed: ${error.message}, request ID: ${requestId}`
@@ -3408,6 +3425,8 @@ class RequestHandler {
 
     async _streamOpenAIResponseAPIResponse(messageQueue, res, model, streamOptions = {}) {
         const streamState = {
+            gemResponseAccumulator: "",
+            openResponseAccumulator: "",
             responseDefaults: streamOptions.responseDefaults || {},
         };
         const requestId = streamOptions.requestId;
@@ -3435,6 +3454,9 @@ class RequestHandler {
                             model,
                             streamState
                         );
+                        if (endChunk) {
+                            streamState.openResponseAccumulator += endChunk;
+                        }
                         if (endChunk && this._isResponseWritable(res)) {
                             try {
                                 res.write(endChunk);
@@ -3445,6 +3467,11 @@ class RequestHandler {
                             }
                         }
                     }
+
+                    // Save accumulated payloads
+                    this._saveTransactionPayload(requestId, "gem_res", streamState.gemResponseAccumulator);
+                    this._saveTransactionPayload(requestId, "open_res", streamState.openResponseAccumulator);
+
                     break;
                 }
 
@@ -3475,11 +3502,16 @@ class RequestHandler {
                 }
 
                 if (message.data) {
+                    streamState.gemResponseAccumulator += message.data;
+
                     const responseAPIChunk = this.formatConverter.translateGoogleToResponseAPIStream(
                         message.data,
                         model,
                         streamState
                     );
+                    if (responseAPIChunk) {
+                        streamState.openResponseAccumulator += responseAPIChunk;
+                    }
                     if (typeof streamState.sequenceNumber === "number") {
                         res.__responseApiSeq = streamState.sequenceNumber;
                     }
@@ -3622,6 +3654,10 @@ class RequestHandler {
                 model,
                 responseDefaults
             );
+
+            this._saveTransactionPayload(requestId, "gem_res", googleResponse);
+            this._saveTransactionPayload(requestId, "open_res", responseAPIResponse);
+
             res.type("application/json").send(JSON.stringify(responseAPIResponse));
             this.logger.info(
                 `✅ [Request] Response completed (OpenAI Response API non-stream), request ID: ${requestId}`
@@ -4303,6 +4339,30 @@ class RequestHandler {
             throw new Error(
                 `Unable to forward request: No WebSocket connection found for authIndex=${this.currentAuthIndex}`
             );
+        }
+    }
+
+    _saveTransactionPayload(requestId, type, data) {
+        try {
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+            }
+            const filePath = path.join(debugDir, `transaction_${requestId}_${type}.json`);
+
+            let contentToWrite = data;
+            if (typeof data === "object" && data !== null) {
+                contentToWrite = JSON.stringify(data, null, 2);
+            } else if (typeof data === "string") {
+                try {
+                    contentToWrite = JSON.stringify(JSON.parse(data), null, 2);
+                } catch {
+                    // Fail-safe: write raw string if it's not valid JSON
+                }
+            }
+            fs.writeFileSync(filePath, contentToWrite || "", "utf-8");
+        } catch (err) {
+            this.logger.debug(`[Debug] Failed to save transaction payload: ${err.message}`);
         }
     }
 
