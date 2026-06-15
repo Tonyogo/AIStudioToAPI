@@ -3468,6 +3468,38 @@ const filteredModels = computed(() => {
         .sort((a, b) => b.totalRequests - a.totalRequests);
 });
 
+const getTodayStartTimestamp = () => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15, 0, 0, 0);
+    if (now.getTime() < startOfToday.getTime()) {
+        startOfToday.setDate(startOfToday.getDate() - 1);
+    }
+    return startOfToday.getTime();
+};
+
+const accountTodayStats = computed(() => {
+    const startTs = getTodayStartTimestamp();
+    const statsMap = {};
+
+    statsState.records.forEach(record => {
+        const ts = record.startedAt ? new Date(record.startedAt).getTime() : 0;
+        if (ts >= startTs && record.outcome === "success") {
+            const key = record.finalAuthIndex;
+            if (key === null || key === undefined) return;
+
+            if (!statsMap[key]) {
+                statsMap[key] = { totalSuccess: 0, models: {} };
+            }
+            statsMap[key].totalSuccess += 1;
+
+            const modelName = record.model || t("unknown");
+            statsMap[key].models[modelName] = (statsMap[key].models[modelName] || 0) + 1;
+        }
+    });
+
+    return statsMap;
+});
+
 const translateLabel = value => {
     if (!value) return "-";
     if (value === EMPTY_FILTER_VALUE) return t("emptyValue");
