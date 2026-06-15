@@ -5780,6 +5780,31 @@ watchEffect(() => {
     margin-right: 6px;
 }
 
+.today-usage-badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    background-color: rgba(var(--color-primary-rgb), 0.1);
+    color: @primary-color;
+    border: 1px solid rgba(var(--color-primary-rgb), 0.2);
+    border-radius: 12px;
+    flex-shrink: 0;
+    margin-left: 6px;
+    margin-right: 6px;
+    font-weight: 500;
+    cursor: help;
+    transition: all 0.2s;
+
+    &:hover {
+        background-color: @primary-color;
+        color: #ffffff;
+    }
+}
+
+.today-usage-tooltip {
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
 .account-actions {
     display: flex;
     gap: 6px;
