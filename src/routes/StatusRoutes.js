@@ -863,28 +863,30 @@ class StatusRoutes {
             const { id } = req.params;
             const debugDir = path.join(process.cwd(), "data", "debug");
 
-            const payloads = {
-                gem_req: null,
-                gem_res: null,
-                open_req: null,
-                open_res: null,
-            };
+            const rawPayloads = {};
 
             try {
                 if (fs.existsSync(debugDir)) {
-                    ["open_req", "gem_req", "gem_res", "open_res"].forEach(type => {
+                    ["open_req", "claude_req", "gem_req", "gem_res", "claude_res", "open_res"].forEach(type => {
                         const filePath = path.join(debugDir, `transaction_${id}_${type}.json`);
                         if (fs.existsSync(filePath)) {
                             const content = fs.readFileSync(filePath, "utf-8");
                             try {
-                                payloads[type] = JSON.parse(content);
+                                rawPayloads[type] = JSON.parse(content);
                             } catch {
-                                payloads[type] = content; // Fallback to raw string if it's SSE text
+                                rawPayloads[type] = content; // Fallback to raw string if it's SSE text
                             }
                         }
                     });
                 }
-                res.json(payloads);
+
+                // Map down to generic client fields
+                res.json({
+                    client_req: rawPayloads.claude_req || rawPayloads.open_req || null,
+                    client_res: rawPayloads.claude_res || rawPayloads.open_res || null,
+                    gem_req: rawPayloads.gem_req || null,
+                    gem_res: rawPayloads.gem_res || null,
+                });
             } catch (error) {
                 this.logger.error(`[Debug] Failed to load transaction debug payloads: ${error.message}`);
                 res.status(500).json({ error: "Failed to load transaction payloads" });

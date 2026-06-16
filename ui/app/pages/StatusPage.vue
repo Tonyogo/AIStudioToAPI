@@ -2660,7 +2660,7 @@
                                                 class="btn-switch btn-inspect-action"
                                                 type="button"
                                                 :title="t('btnInspectPayload')"
-                                                @click.stop="openPayloadInspector(record.requestId)"
+                                                @click.stop="openPayloadInspector(record)"
                                             >
                                                 <svg
                                                     xmlns="http://www.w3.org/2000/svg"
@@ -2926,18 +2926,18 @@
                 <div class="inspector-col">
                     <div class="payload-box">
                         <div class="payload-box-header">
-                            {{ t("clientReqHeader") }}
+                            {{ t("clientReqHeader") }}{{ getApiFormatSuffix }}
                             <button
                                 class="payload-copy-btn"
                                 type="button"
-                                @click="copyPayload(inspectorState.payloads.open_req)"
+                                @click="copyPayload(inspectorState.payloads.client_req)"
                             >
                                 {{ t("copy") }}
                             </button>
                         </div>
                         <pre
                             class="payload-pre"
-                        ><code>{{ formatPayloadText(inspectorState.payloads.open_req) }}</code></pre>
+                        ><code>{{ formatPayloadText(inspectorState.payloads.client_req) }}</code></pre>
                     </div>
                     <div class="payload-box">
                         <div class="payload-box-header">
@@ -2974,18 +2974,18 @@
                     </div>
                     <div class="payload-box">
                         <div class="payload-box-header">
-                            {{ t("clientResHeader") }}
+                            {{ t("clientResHeader") }}{{ getApiFormatSuffix }}
                             <button
                                 class="payload-copy-btn"
                                 type="button"
-                                @click="copyPayload(inspectorState.payloads.open_res)"
+                                @click="copyPayload(inspectorState.payloads.client_res)"
                             >
                                 {{ t("copy") }}
                             </button>
                         </div>
                         <pre
                             class="payload-pre"
-                        ><code>{{ formatPayloadText(inspectorState.payloads.open_res) }}</code></pre>
+                        ><code>{{ formatPayloadText(inspectorState.payloads.client_res) }}</code></pre>
                     </div>
                 </div>
             </div>
@@ -4470,37 +4470,48 @@ const deduplicateAuth = () => {
 const handleForceThinkingBeforeChange = () => handleSettingChange("/api/settings/force-thinking", "forceThinking");
 
 const inspectorState = reactive({
+    apiFormat: "",
     currentRequestId: "",
     loading: false,
     payloads: {
+        client_req: null,
+        client_res: null,
         gem_req: null,
         gem_res: null,
-        open_req: null,
-        open_res: null,
     },
     visible: false,
 });
 
-const openPayloadInspector = async requestId => {
-    inspectorState.currentRequestId = requestId || "";
+const getApiFormatSuffix = computed(() => {
+    const format = inspectorState.apiFormat;
+    if (format === "claude") return " (Claude)";
+    if (format === "openai") return " (OpenAI Chat)";
+    if (format === "response_api") return " (OpenAI Response API)";
+    if (format === "gemini") return " (Gemini Native)";
+    return "";
+});
+
+const openPayloadInspector = async record => {
+    inspectorState.currentRequestId = record.requestId || "";
+    inspectorState.apiFormat = record.apiFormat || "";
     inspectorState.visible = true;
     inspectorState.loading = true;
     inspectorState.payloads = {
+        client_req: null,
+        client_res: null,
         gem_req: null,
         gem_res: null,
-        open_req: null,
-        open_res: null,
     };
 
     try {
-        const res = await fetch(`/api/transactions/${requestId}`);
+        const res = await fetch(`/api/transactions/${record.requestId}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         inspectorState.payloads = {
+            client_req: data.client_req,
+            client_res: data.client_res,
             gem_req: data.gem_req,
             gem_res: data.gem_res,
-            open_req: data.open_req,
-            open_res: data.open_res,
         };
     } catch (e) {
         ElMessage.error(`Failed to load payloads: ${e.message}`);
