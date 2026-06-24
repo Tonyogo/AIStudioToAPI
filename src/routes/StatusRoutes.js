@@ -730,7 +730,9 @@ class StatusRoutes {
                 if (success) {
                     // 若被禁用，立即物理断开网页 Context 释放系统资源
                     if (!isDisabled) {
-                        this.logger.info(`[WebUI] Account #${targetIndex} was disabled. Cleaning context and connection...`);
+                        this.logger.info(
+                            `[WebUI] Account #${targetIndex} was disabled. Cleaning context and connection...`
+                        );
                         await this.serverSystem.browserManager.closeContext(targetIndex);
                         this.serverSystem.connectionRegistry.closeConnectionByAuth(targetIndex);
                     }
@@ -749,7 +751,9 @@ class StatusRoutes {
                     return res.status(500).json({ message: "accountToggleDisabledFailed" });
                 }
             } catch (error) {
-                this.logger.error(`[WebUI] Failed to toggle disabled state for account #${targetIndex}: ${error.message}`);
+                this.logger.error(
+                    `[WebUI] Failed to toggle disabled state for account #${targetIndex}: ${error.message}`
+                );
                 return res.status(500).json({ error: error.message, message: "accountToggleDisabledFailed" });
             }
         });
@@ -1040,7 +1044,17 @@ class StatusRoutes {
 
             const hasContext = browserManager.contexts.has(index);
 
-            return { canonicalIndex, hasContext, index, isDuplicate, isExpired, isDisabled, isInvalid, isRotation, name };
+            return {
+                canonicalIndex,
+                hasContext,
+                index,
+                isDisabled,
+                isDuplicate,
+                isExpired,
+                isInvalid,
+                isRotation,
+                name,
+            };
         });
 
         const currentAuthIndex = requestHandler.currentAuthIndex;
