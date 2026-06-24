@@ -1860,9 +1860,14 @@ class BrowserManager {
             }
         }
 
-        // Priority 2: Expired accounts (except target if target is expired)
+        // Priority 2: Expired or Disabled accounts (except target)
+        const disabledIndices = this.authSource.disabledIndices || [];
         for (const idx of allContextIndices) {
-            if (expiredIndices.includes(idx) && idx !== targetAuthIndex && !removalPriority.includes(idx)) {
+            if (
+                (expiredIndices.includes(idx) || disabledIndices.includes(idx)) &&
+                idx !== targetAuthIndex &&
+                !removalPriority.includes(idx)
+            ) {
                 removalPriority.push(idx);
             }
         }
@@ -1923,12 +1928,14 @@ class BrowserManager {
         }
 
         // Targets = first maxContexts from ordered (or all available if unlimited)
-        // In unlimited mode, include all valid accounts (rotation + duplicates), excluding expired
+        // In unlimited mode, include all valid accounts (rotation + duplicates), excluding expired and disabled
         let targets;
         if (isUnlimited) {
-            // Filter out expired accounts from availableIndices
-            const nonExpiredAvailable = this.authSource.availableIndices.filter(idx => !this.authSource.isExpired(idx));
-            targets = new Set(nonExpiredAvailable);
+            // Filter out expired or disabled accounts from availableIndices
+            const activeAvailable = this.authSource.availableIndices.filter(
+                idx => !this.authSource.isExpired(idx) && !this.authSource.isDisabled(idx)
+            );
+            targets = new Set(activeAvailable);
         } else {
             targets = new Set(ordered.slice(0, maxContexts));
         }
