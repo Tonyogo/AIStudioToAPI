@@ -253,6 +253,9 @@ class StatusRoutes {
 
                 const { targetIndex } = req.body;
                 if (targetIndex !== undefined && targetIndex !== null) {
+                    if (this.serverSystem.authSource.isDisabled(targetIndex)) {
+                        return res.status(400).json({ message: "accountSwitchFailed", reason: "Account is disabled." });
+                    }
                     this.logger.info(`[WebUI] Received request to switch to specific account #${targetIndex}...`);
                     const result = await this.serverSystem.requestHandler._switchToSpecificAuth(targetIndex);
                     if (result.success) {
@@ -699,6 +702,62 @@ class StatusRoutes {
             }
         });
 
+        app.put("/api/accounts/:index/toggle-disabled", isAuthenticated, async (req, res) => {
+            if (this._rejectIfSystemBusy(res)) return;
+
+            const rawIndex = req.params.index;
+            const targetIndex = Number(rawIndex);
+
+            if (!Number.isInteger(targetIndex)) {
+                return res.status(400).json({ message: "errorInvalidIndex" });
+            }
+
+            const { authSource } = this.serverSystem;
+
+            if (!authSource.initialIndices.includes(targetIndex)) {
+                return res.status(404).json({ index: targetIndex, message: "errorAccountNotFound" });
+            }
+
+            try {
+                const isDisabled = authSource.isDisabled(targetIndex);
+                let success = false;
+                if (isDisabled) {
+                    success = await authSource.unmarkAsDisabled(targetIndex);
+                } else {
+                    success = await authSource.markAsDisabled(targetIndex);
+                }
+
+                if (success) {
+                    // 若被禁用，立即物理断开网页 Context 释放系统资源
+                    if (!isDisabled) {
+                        this.logger.info(
+                            `[WebUI] Account #${targetIndex} was disabled. Cleaning context and connection...`
+                        );
+                        await this.serverSystem.browserManager.closeContext(targetIndex);
+                        this.serverSystem.connectionRegistry.closeConnectionByAuth(targetIndex);
+                    }
+
+                    // 重新平衡 Context 预加载队列
+                    this.serverSystem.browserManager.rebalanceContextPool().catch(err => {
+                        this.logger.error(`[Auth] Background rebalance failed: ${err.message}`);
+                    });
+
+                    return res.status(200).json({
+                        index: targetIndex,
+                        isDisabled: !isDisabled,
+                        message: !isDisabled ? "accountDisabledSuccess" : "accountEnabledSuccess",
+                    });
+                } else {
+                    return res.status(500).json({ message: "accountToggleDisabledFailed" });
+                }
+            } catch (error) {
+                this.logger.error(
+                    `[WebUI] Failed to toggle disabled state for account #${targetIndex}: ${error.message}`
+                );
+                return res.status(500).json({ error: error.message, message: "accountToggleDisabledFailed" });
+            }
+        });
+
         app.put("/api/settings/streaming-mode", isAuthenticated, (req, res) => {
             const newMode = req.body.mode;
             if (newMode === "fake" || newMode === "real") {
@@ -968,6 +1027,7 @@ class StatusRoutes {
         const rotationIndices = authSource.getRotationIndices();
         const duplicateIndices = authSource.duplicateIndices || [];
         const expiredIndices = authSource.expiredIndices || [];
+        const disabledIndices = authSource.disabledIndices || [];
         const limit = this.logger.displayLimit || 100;
         const allLogs = this.logger.logBuffer || [];
         const displayLogs = allLogs.slice(-limit);
@@ -980,10 +1040,21 @@ class StatusRoutes {
             const isDuplicate = canonicalIndex !== null && canonicalIndex !== index;
             const isRotation = rotationIndices.includes(index);
             const isExpired = expiredIndices.includes(index);
+            const isDisabled = authSource.isDisabled(index);
 
             const hasContext = browserManager.contexts.has(index);
 
-            return { canonicalIndex, hasContext, index, isDuplicate, isExpired, isInvalid, isRotation, name };
+            return {
+                canonicalIndex,
+                hasContext,
+                index,
+                isDisabled,
+                isDuplicate,
+                isExpired,
+                isInvalid,
+                isRotation,
+                name,
+            };
         });
 
         const currentAuthIndex = requestHandler.currentAuthIndex;
@@ -1011,6 +1082,7 @@ class StatusRoutes {
                 currentAccountName,
                 currentAuthIndex,
                 debugMode: LoggingService.isDebugEnabled(),
+                disabledIndicesRaw: disabledIndices,
                 duplicateIndicesRaw: duplicateIndices,
                 enableAuthUpdate: config.enableAuthUpdate,
                 expiredIndicesRaw: expiredIndices,

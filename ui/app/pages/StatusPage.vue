@@ -823,7 +823,11 @@
                                         <span class="account-index">#{{ item.index }}</span>
                                         <span
                                             class="account-email"
-                                            :class="{ 'is-error': item.isInvalid, 'is-duplicate': item.isDuplicate }"
+                                            :class="{
+                                                'is-error': item.isInvalid,
+                                                'is-duplicate': item.isDuplicate,
+                                                'is-disabled': item.isDisabled,
+                                            }"
                                         >
                                             {{ getAccountDisplayName(item) }}
                                         </span>
@@ -833,6 +837,56 @@
                                         <span v-if="item.isExpired" class="expired-badge">
                                             {{ t("tagExpired") }}
                                         </span>
+                                        <span v-if="item.isDisabled" class="disabled-badge">
+                                            {{ t("tagDisabled") }}
+                                        </span>
+                                        <el-tooltip placement="top" effect="dark" :hide-after="0">
+                                            <template #content>
+                                                <div style="font-size: 12px; line-height: 1.5; min-width: 140px">
+                                                    <div
+                                                        style="
+                                                            font-weight: bold;
+                                                            margin-bottom: 6px;
+                                                            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+                                                            padding-bottom: 4px;
+                                                        "
+                                                    >
+                                                        {{ t("modelDistribution") }}
+                                                    </div>
+                                                    <div
+                                                        v-if="
+                                                            accountTodayStats[item.index] &&
+                                                            Object.keys(accountTodayStats[item.index].models).length > 0
+                                                        "
+                                                    >
+                                                        <div
+                                                            v-for="(count, model) in accountTodayStats[item.index]
+                                                                .models"
+                                                            :key="model"
+                                                            style="
+                                                                display: flex;
+                                                                justify-content: space-between;
+                                                                gap: 12px;
+                                                                margin-bottom: 2px;
+                                                            "
+                                                        >
+                                                            <span style="color: #a0cfff">{{ model }}:</span>
+                                                            <span style="font-weight: bold">{{ count }}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div v-else style="color: #909399; font-style: italic">
+                                                        {{ t("noModelData") }}
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <span class="today-usage-badge" @click.stop>
+                                                {{
+                                                    t("todayUsage", {
+                                                        count: accountTodayStats[item.index]?.totalSuccess || 0,
+                                                    })
+                                                }}
+                                            </span>
+                                        </el-tooltip>
                                     </div>
                                 </el-tooltip>
                                 <div class="account-actions">
@@ -842,7 +896,7 @@
                                             'is-active': item.index === state.currentAuthIndex,
                                             'is-fast': item.hasContext && item.index !== state.currentAuthIndex,
                                         }"
-                                        :disabled="isBusy || item.index === state.currentAuthIndex"
+                                        :disabled="isBusy || item.index === state.currentAuthIndex || item.isDisabled"
                                         :title="
                                             item.index === state.currentAuthIndex
                                                 ? t('currentAccount')
@@ -877,6 +931,48 @@
                                             stroke-linejoin="round"
                                         >
                                             <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                    </button>
+                                    <button
+                                        class="btn-toggle-disabled"
+                                        :class="{ 'is-disabled-status': item.isDisabled }"
+                                        :disabled="isBusy"
+                                        :title="item.isDisabled ? t('btnEnableUser') : t('btnDisableUser')"
+                                        @click.stop="toggleAccountDisabled(item.index)"
+                                    >
+                                        <!-- Eye-off (Disable) Icon when active -->
+                                        <svg
+                                            v-if="!item.isDisabled"
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path
+                                                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                                            ></path>
+                                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                                        </svg>
+                                        <!-- Eye (Enable) Icon when disabled -->
+                                        <svg
+                                            v-else
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                            <circle cx="12" cy="12" r="3"></circle>
                                         </svg>
                                     </button>
                                     <button
@@ -2968,6 +3064,46 @@ const getAccountStatsKey = (authIndex, accountName) => {
     return `${authIndex}:${isEmptyFilterField(accountName) ? "N/A" : accountName}`;
 };
 
+const accountTodayStats = computed(() => {
+    const stats = {}; // authIndex -> { totalSuccess: 0, models: { [modelName]: count } }
+
+    // 跨时区起算：北京时间 15:00:00 (UTC 07:00:00) 对应美西 00:00:00
+    const now = new Date();
+    const today15CST = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 7, 0, 0));
+
+    let boundaryTs;
+    if (now.getTime() >= today15CST.getTime()) {
+        boundaryTs = today15CST.getTime();
+    } else {
+        boundaryTs = today15CST.getTime() - 24 * 60 * 60 * 1000;
+    }
+
+    const records = statsState.records || [];
+    records.forEach(record => {
+        if (record.outcome !== "success") return;
+
+        const recordTime = record.startedAt ? new Date(record.startedAt).getTime() : 0;
+        if (recordTime < boundaryTs) return;
+
+        const authIndex = record.finalAuthIndex;
+        if (authIndex === null || authIndex === undefined) return;
+
+        if (!stats[authIndex]) {
+            stats[authIndex] = {
+                models: {},
+                totalSuccess: 0,
+            };
+        }
+
+        stats[authIndex].totalSuccess++;
+
+        const modelName = record.model || "unknown";
+        stats[authIndex].models[modelName] = (stats[authIndex].models[modelName] || 0) + 1;
+    });
+
+    return stats;
+});
+
 const timeFilteredRecords = computed(() => {
     if (timeRange.value === "all") return statsState.records;
     if (timeRange.value === "custom") {
@@ -4138,6 +4274,27 @@ const deleteAccountByIndex = async targetIndex => {
                 console.error(e);
             }
         });
+};
+
+const toggleAccountDisabled = async index => {
+    try {
+        const res = await fetch(`/api/accounts/${index}/toggle-disabled`, {
+            headers: {
+                "Content-Type": "application/json",
+            },
+            method: "PUT",
+        });
+        const data = await res.json();
+        if (res.ok) {
+            ElMessage.success(t(data.message, { index }));
+            // 立即静默触发状态数据热装载更新
+            updateContent();
+        } else {
+            ElMessage.error(t(data.message || "errorOperationFailed", { error: data.error }));
+        }
+    } catch (error) {
+        ElMessage.error(t("errorOperationFailed", { error: error.message }));
+    }
 };
 
 const deduplicateAuth = () => {
@@ -5539,6 +5696,49 @@ watchEffect(() => {
     flex-shrink: 0;
     margin-left: 0;
     margin-right: 6px;
+}
+
+.disabled-badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    background: #909399; /* 经典灰色 */
+    color: @text-on-primary;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-left: 6px;
+    display: inline-block;
+}
+
+.today-usage-badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    background: #e6f7ff; /* 浅淡雅蓝背景 */
+    color: #1890ff; /* 鲜艳蓝色字符 */
+    border: 1px solid #91d5ff;
+    border-radius: 12px; /* 药丸弧度 */
+    font-weight: bold;
+    margin-left: 6px;
+    display: inline-block;
+    cursor: help;
+    transition: all 0.2s ease;
+
+    &:hover {
+        background: #bae7ff;
+        border-color: #69c0ff;
+    }
+}
+
+.account-email.is-disabled {
+    color: #c0c4cc; /* 禁用文本置灰 */
+    text-decoration: line-through; /* 禁用划线视觉感 */
+}
+
+.btn-toggle-disabled {
+    &.is-disabled-status {
+        color: #ff4949; /* 禁用状态动作提示红色 */
+        background: #ffe9e9;
+        border-color: #ffb6b6;
+    }
 }
 
 .account-actions {
