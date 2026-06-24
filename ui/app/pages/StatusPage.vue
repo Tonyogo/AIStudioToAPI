@@ -833,6 +833,53 @@
                                         <span v-if="item.isExpired" class="expired-badge">
                                             {{ t("tagExpired") }}
                                         </span>
+                                        <el-tooltip placement="top" effect="dark" :hide-after="0">
+                                            <template #content>
+                                                <div style="font-size: 12px; line-height: 1.5; min-width: 140px">
+                                                    <div
+                                                        style="
+                                                            font-weight: bold;
+                                                            margin-bottom: 6px;
+                                                            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+                                                            padding-bottom: 4px;
+                                                        "
+                                                    >
+                                                        {{ t("modelDistribution") }}
+                                                    </div>
+                                                    <div
+                                                        v-if="
+                                                            accountTodayStats[item.index] &&
+                                                            Object.keys(accountTodayStats[item.index].models).length > 0
+                                                        "
+                                                    >
+                                                        <div
+                                                            v-for="(count, model) in accountTodayStats[item.index]
+                                                                .models"
+                                                            :key="model"
+                                                            style="
+                                                                display: flex;
+                                                                justify-content: space-between;
+                                                                gap: 12px;
+                                                                margin-bottom: 2px;
+                                                            "
+                                                        >
+                                                            <span style="color: #a0cfff">{{ model }}:</span>
+                                                            <span style="font-weight: bold">{{ count }}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div v-else style="color: #909399; font-style: italic">
+                                                        {{ t("noModelData") }}
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <span class="today-usage-badge" @click.stop>
+                                                {{
+                                                    t("todayUsage", {
+                                                        count: accountTodayStats[item.index]?.totalSuccess || 0,
+                                                    })
+                                                }}
+                                            </span>
+                                        </el-tooltip>
                                     </div>
                                 </el-tooltip>
                                 <div class="account-actions">
@@ -2967,6 +3014,46 @@ const getAccountStatsKey = (authIndex, accountName) => {
     }
     return `${authIndex}:${isEmptyFilterField(accountName) ? "N/A" : accountName}`;
 };
+
+const accountTodayStats = computed(() => {
+    const stats = {}; // authIndex -> { totalSuccess: 0, models: { [modelName]: count } }
+
+    // 跨时区起算：北京时间 15:00:00 (UTC 07:00:00) 对应美西 00:00:00
+    const now = new Date();
+    const today15CST = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 7, 0, 0));
+
+    let boundaryTs;
+    if (now.getTime() >= today15CST.getTime()) {
+        boundaryTs = today15CST.getTime();
+    } else {
+        boundaryTs = today15CST.getTime() - 24 * 60 * 60 * 1000;
+    }
+
+    const records = statsState.records || [];
+    records.forEach(record => {
+        if (record.outcome !== "success") return;
+
+        const recordTime = record.startedAt ? new Date(record.startedAt).getTime() : 0;
+        if (recordTime < boundaryTs) return;
+
+        const authIndex = record.finalAuthIndex;
+        if (authIndex === null || authIndex === undefined) return;
+
+        if (!stats[authIndex]) {
+            stats[authIndex] = {
+                models: {},
+                totalSuccess: 0,
+            };
+        }
+
+        stats[authIndex].totalSuccess++;
+
+        const modelName = record.model || "unknown";
+        stats[authIndex].models[modelName] = (stats[authIndex].models[modelName] || 0) + 1;
+    });
+
+    return stats;
+});
 
 const timeFilteredRecords = computed(() => {
     if (timeRange.value === "all") return statsState.records;
@@ -5539,6 +5626,24 @@ watchEffect(() => {
     flex-shrink: 0;
     margin-left: 0;
     margin-right: 6px;
+}
+
+.today-usage-badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    background: rgba(var(--color-primary-rgb), 0.15);
+    color: @primary-color;
+    border-radius: 12px;
+    flex-shrink: 0;
+    margin-left: 0;
+    margin-right: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    display: inline-block;
+
+    &:hover {
+        background: rgba(var(--color-primary-rgb), 0.25);
+    }
 }
 
 .account-actions {
