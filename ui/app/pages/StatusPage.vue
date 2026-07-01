@@ -1657,6 +1657,34 @@
                                         stroke-linejoin="round"
                                         style="margin-right: 6px; vertical-align: middle"
                                     >
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polyline points="10 9 9 9 8 9"></polyline>
+                                    </svg>
+                                    {{ t("enableTranslationLogging") }}
+                                </span>
+                                <el-switch
+                                    v-model="state.enableTranslationLogging"
+                                    :width="50"
+                                    :before-change="handleEnableTranslationLoggingBeforeChange"
+                                />
+                            </div>
+                            <div class="switch-container">
+                                <span class="label">
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        style="margin-right: 6px; vertical-align: middle"
+                                    >
                                         <path d="M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z"></path>
                                         <path d="M9 12h6"></path>
                                     </svg>
@@ -2620,8 +2648,33 @@
 
                 <div class="full-width-section">
                     <section class="status-card records-card">
-                        <div class="card-header-v2">
-                            <h3 class="card-title-usage">{{ t("requestRecords") }}</h3>
+                        <div class="card-header-v2" style="display: flex; align-items: center; justify-content: space-between; width: 100%">
+                            <div style="display: flex; align-items: center; gap: 12px">
+                                <h3 class="card-title-usage" style="margin: 0">{{ t("requestRecords") }}</h3>
+                                <button
+                                    class="btn-danger"
+                                    type="button"
+                                    style="padding: 4px 10px; font-size: 12px; height: 26px; display: flex; align-items: center; gap: 4px; cursor: pointer"
+                                    @click="confirmPurgeTransactions"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="12"
+                                        height="12"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <path d="M3 6h18"></path>
+                                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                                        <path d="M8 6V4c0-1 1-2 2-2h8c1 0 2 1 2 2v2"></path>
+                                    </svg>
+                                    {{ t("btnPurgeTransactions") }}
+                                </button>
+                            </div>
                             <span class="records-order">{{ t("recentToOldest") }}</span>
                         </div>
                         <div v-if="filteredRecords.length === 0" class="empty-state">
@@ -2642,6 +2695,7 @@
                                         <th>{{ t("requestAccount") }}</th>
                                         <th>{{ t("requestAttempts") }}</th>
                                         <th>{{ t("requestIp") }}</th>
+                                        <th style="text-align: center">{{ t("actionsPanel") }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2687,6 +2741,30 @@
                                                     {{ record.clientIp || "-" }}
                                                 </span>
                                             </el-tooltip>
+                                        </td>
+                                        <td style="text-align: center">
+                                            <button
+                                                class="btn-switch btn-inspect-action"
+                                                type="button"
+                                                :disabled="!record.requestId"
+                                                :title="t('apiTranslationInspector')"
+                                                @click.stop="openTransactionInspector(record.requestId)"
+                                            >
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    width="14"
+                                                    height="14"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                >
+                                                    <circle cx="11" cy="11" r="8"></circle>
+                                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                                </svg>
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -2903,6 +2981,62 @@
                 </button>
             </div>
         </el-affix>
+
+        <!-- API Translation Inspector Dialog -->
+        <el-dialog
+            v-model="inspectorState.visible"
+            :title="t('apiTranslationInspector') + (inspectorState.requestId ? ' (ID: ' + inspectorState.requestId + ')' : '')"
+            width="85%"
+            top="5vh"
+            destroy-on-close
+        >
+            <div v-loading="inspectorState.loading" class="inspector-dialog-content">
+                <div class="inspector-row">
+                    <!-- Left Column: Request-Side -->
+                    <div class="inspector-col">
+                        <div class="code-card">
+                            <div class="code-card-header">
+                                <span>{{ t("clientRequest") }}</span>
+                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.client_req)">
+                                    {{ t("copyPayload") }}
+                                </el-button>
+                            </div>
+                            <pre class="code-editor">{{ formatJson(inspectorState.data.client_req) }}</pre>
+                        </div>
+                        <div class="code-card">
+                            <div class="code-card-header">
+                                <span>{{ t("geminiInput") }}</span>
+                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.gem_req)">
+                                    {{ t("copyPayload") }}
+                                </el-button>
+                            </div>
+                            <pre class="code-editor">{{ formatJson(inspectorState.data.gem_req) }}</pre>
+                        </div>
+                    </div>
+                    <!-- Right Column: Response-Side -->
+                    <div class="inspector-col">
+                        <div class="code-card">
+                            <div class="code-card-header">
+                                <span>{{ t("geminiOutput") }}</span>
+                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.gem_res)">
+                                    {{ t("copyPayload") }}
+                                </el-button>
+                            </div>
+                            <pre class="code-editor">{{ formatJson(inspectorState.data.gem_res) }}</pre>
+                        </div>
+                        <div class="code-card">
+                            <div class="code-card-header">
+                                <span>{{ t("clientOutput") }}</span>
+                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.client_res)">
+                                    {{ t("copyPayload") }}
+                                </el-button>
+                            </div>
+                            <pre class="code-editor">{{ formatJson(inspectorState.data.client_res) }}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </el-dialog>
     </div>
 </template>
 
@@ -2932,6 +3066,125 @@ const langVersion = ref(0);
 const t = (key, options) => {
     langVersion.value; // Access to track changes
     return I18n.t(key, options);
+};
+
+// API Translation Inspector state
+const inspectorState = reactive({
+    visible: false,
+    loading: false,
+    requestId: "",
+    data: {
+        client_req: null,
+        gem_req: null,
+        gem_res: null,
+        client_res: null,
+    },
+});
+
+// JSON formatting utility
+const formatJson = (val) => {
+    if (val === null || val === undefined) return "N/A";
+    if (typeof val === "object") {
+        return JSON.stringify(val, null, 2);
+    }
+    if (typeof val === "string") {
+        try {
+            return JSON.stringify(JSON.parse(val), null, 2);
+        } catch (e) {
+            return val; // Fallback to raw string text
+        }
+    }
+    return String(val);
+};
+
+// One-click clipboard copy utility
+const copyPayloadText = (val) => {
+    if (!val) {
+        ElMessage.warning(t("noModelData"));
+        return;
+    }
+    const text = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
+    navigator.clipboard.writeText(text)
+        .then(() => {
+            ElMessage.success(t("copySuccess"));
+        })
+        .catch((err) => {
+            ElMessage.error(t("copyFailed") + ": " + err.message);
+        });
+};
+
+// Toggle translation logging configuration setting
+const handleEnableTranslationLoggingBeforeChange = () => {
+    return new Promise((resolve) => {
+        fetch("/api/settings/enable-translation-logging", { method: "PUT" })
+            .then((res) => {
+                if (res.ok) {
+                    return res.json();
+                }
+                throw new Error("HTTP failed");
+            })
+            .then((data) => {
+                state.enableTranslationLogging = data.value;
+                ElMessage.success(t(data.message));
+                updateContent();
+                resolve(true);
+            })
+            .catch((e) => {
+                ElMessage.error(t("errorOperationFailed", { error: e.message }));
+                resolve(false);
+            });
+    });
+};
+
+// One-click purge of all transaction JSON files with confirmation
+const confirmPurgeTransactions = () => {
+    ElMessageBox.confirm(t("confirmPurgeTransactions"), t("warningTitle"), {
+        confirmButtonText: t("ok"),
+        cancelButtonText: t("cancel"),
+        type: "warning",
+    }).then(() => {
+        fetch("/api/transactions", { method: "DELETE" })
+            .then((res) => {
+                if (res.ok) {
+                    return res.json();
+                }
+                throw new Error("HTTP failed");
+            })
+            .then((data) => {
+                ElMessage.success(t(data.message, { count: data.count }));
+            })
+            .catch((e) => {
+                ElMessage.error(t("errorOperationFailed", { error: e.message }));
+            });
+    }).catch(() => {});
+};
+
+// Retrieve single transaction comparison and open Inspector Dialog
+const openTransactionInspector = async (requestId) => {
+    inspectorState.requestId = requestId;
+    inspectorState.visible = true;
+    inspectorState.loading = true;
+    inspectorState.data = { client_req: null, gem_req: null, gem_res: null, client_res: null };
+
+    try {
+        const res = await fetch(`/api/transactions/${requestId}`);
+        if (res.ok) {
+            const data = await res.json();
+            // Automatically align different client request/response suffixes
+            inspectorState.data = {
+                client_req: data.client_req || data.open_req || data.claude_req || null,
+                gem_req: data.gem_req || null,
+                gem_res: data.gem_res || null,
+                client_res: data.client_res || data.open_res || data.claude_res || null,
+            };
+        } else {
+            ElMessage.error(t("transactionNotFound"));
+        }
+    } catch (e) {
+        ElMessage.error(t("errorOperationFailed", { error: e.message }));
+    } finally {
+        inspectorState.loading = false;
+    }
 };
 
 // Stats tab state (reused from UsageStatsPage)
@@ -3841,6 +4094,7 @@ const state = reactive({
     currentLang: I18n.getLang(),
     debugModeEnabled: false,
     enableAuthUpdateEnabled: true,
+    enableTranslationLogging: false,
     failureCount: 0,
     floatingActionsExpanded: false,
     forceCodeExecutionEnabled: false,
@@ -4595,6 +4849,7 @@ const updateStatus = data => {
     state.checkUpdateEnabled = isEnabled(data.status.checkUpdate);
     state.streamingModeReal = data.status.streamingMode === "real";
     state.enableAuthUpdateEnabled = isEnabled(data.status.enableAuthUpdate);
+    state.enableTranslationLogging = isEnabled(data.status.enableTranslationLogging);
     state.forceThinkingEnabled = isEnabled(data.status.forceThinking);
     state.forceCodeExecutionEnabled = isEnabled(data.status.forceCodeExecution);
     state.forceWebSearchEnabled = isEnabled(data.status.forceWebSearch);
@@ -7435,5 +7690,54 @@ watchEffect(() => {
     width: 28px;
     height: 28px;
     border-radius: 4px;
+}
+
+/* API Translation Inspector Styles */
+.inspector-dialog-content {
+    padding: 10px 0;
+}
+.inspector-row {
+    display: flex;
+    gap: 16px;
+    height: 70vh;
+}
+.inspector-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow: hidden;
+}
+.code-card {
+    flex: 1;
+    border: 1px solid @border-color;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e; /* VS Code dark background */
+    overflow: hidden;
+}
+.code-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background: #2d2d2d;
+    color: #d4d4d4;
+    font-weight: bold;
+    font-size: 13px;
+    border-bottom: 1px solid #3c3c3c;
+}
+.code-editor {
+    flex: 1;
+    margin: 0;
+    padding: 12px 16px;
+    overflow: auto;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #9cdcfe; /* light blue */
+    white-space: pre-wrap;
+    word-break: break-all;
 }
 </style>
