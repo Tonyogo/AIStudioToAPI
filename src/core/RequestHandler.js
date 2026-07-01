@@ -9,6 +9,8 @@
  * Request Handler Module (Refactored)
  * Main request handler that coordinates between other modules
  */
+const fs = require("fs");
+const path = require("path");
 const AuthSwitcher = require("../auth/AuthSwitcher");
 const FormatConverter = require("./FormatConverter");
 const { isUserAbortedError } = require("../utils/CustomErrors");
@@ -150,6 +152,15 @@ class RequestHandler {
     }
 
     _startTrackedRequest(requestId, req, meta = {}) {
+        if (req && req.res) {
+            req.res.__transactionData = {
+                client_req: req.body || null,
+                gem_req: null,
+                gem_res: "",
+                client_res: "",
+            };
+        }
+
         const usageStatsService = this._getUsageStatsService();
         if (!usageStatsService) return;
 
@@ -922,6 +933,7 @@ class RequestHandler {
             }
 
             const proxyRequest = this._buildProxyRequest(req, requestId);
+            this._saveTransactionPayload(requestId, "gem_req", req.body);
             proxyRequest.is_generative = isGenerativeRequest;
             this._initializeProxyRequestAttempt(proxyRequest);
 
@@ -1001,6 +1013,7 @@ class RequestHandler {
             const { cleanModelName, googleRequest, path } = this.formatConverter.translateOpenAIEmbeddingsToGoogle(
                 req.body
             );
+            this._saveTransactionPayload(requestId, "gem_req", googleRequest);
             const proxyRequest = {
                 body: JSON.stringify(googleRequest),
                 headers: req.headers,
@@ -1168,6 +1181,7 @@ class RequestHandler {
             try {
                 const result = await this.formatConverter.translateOpenAIToGoogle(req.body);
                 googleBody = result.googleRequest;
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
                 model = result.cleanModelName;
                 modelStreamingMode = result.modelStreamingMode || null;
             } catch (error) {
@@ -1565,6 +1579,7 @@ class RequestHandler {
             try {
                 const result = await this.formatConverter.translateOpenAIResponseToGoogle(req.body);
                 googleBody = result.googleRequest;
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
                 model = result.cleanModelName;
                 modelStreamingMode = result.modelStreamingMode || null;
             } catch (error) {
@@ -1942,6 +1957,7 @@ class RequestHandler {
             try {
                 const result = await this.formatConverter.translateClaudeToGoogle(req.body);
                 googleBody = result.googleRequest;
+                this._saveTransactionPayload(requestId, "gem_req", googleBody);
                 model = result.cleanModelName;
                 modelStreamingMode = result.modelStreamingMode || null;
             } catch (error) {
@@ -2282,6 +2298,7 @@ class RequestHandler {
                     ...googleBody,
                 },
             };
+            this._saveTransactionPayload(requestId, "gem_req", countTokensBody);
 
             const proxyRequest = {
                 body: JSON.stringify(countTokensBody),
@@ -2351,6 +2368,9 @@ class RequestHandler {
                 // Parse Gemini response
                 const geminiResponse = JSON.parse(fullBody || response.body);
                 const totalTokens = geminiResponse.totalTokens || 0;
+
+                this._saveTransactionPayload(requestId, "gem_res", geminiResponse);
+                this._saveTransactionPayload(requestId, "client_res", { input_tokens: totalTokens });
 
                 // Reset failure count on success
                 if (this.authSwitcher.failureCount > 0) {
@@ -2424,6 +2444,7 @@ class RequestHandler {
                     ...googleBody,
                 },
             };
+            this._saveTransactionPayload(requestId, "gem_req", countTokensBody);
 
             const proxyRequest = {
                 body: JSON.stringify(countTokensBody),
@@ -2511,6 +2532,9 @@ class RequestHandler {
 
                 const totalTokens = geminiResponse.totalTokens || 0;
 
+                this._saveTransactionPayload(requestId, "gem_res", geminiResponse);
+                this._saveTransactionPayload(requestId, "client_res", { input_tokens: totalTokens });
+
                 // Reset failure count on success
                 if (this.authSwitcher.failureCount > 0) {
                     this.logger.debug(
@@ -2578,12 +2602,14 @@ class RequestHandler {
                 }
 
                 if (message.data) {
+                    this._saveTransactionPayload(requestId, "gem_res", message.data);
                     const claudeChunk = this.formatConverter.translateGoogleToClaudeStream(
                         message.data,
                         model,
                         streamState
                     );
                     if (claudeChunk) {
+                        this._saveTransactionPayload(requestId, "client_res", claudeChunk);
                         // Before writing, ensure the response is still writable to avoid
                         // throwing if the client disconnected mid-stream.
                         if (!this._isResponseWritable(res)) {
@@ -2642,6 +2668,8 @@ class RequestHandler {
         try {
             const googleResponse = JSON.parse(fullBody);
             const claudeResponse = this.formatConverter.convertGoogleToClaudeNonStream(googleResponse, model);
+            this._saveTransactionPayload(requestId, "gem_res", googleResponse);
+            this._saveTransactionPayload(requestId, "client_res", claudeResponse);
             res.type("application/json").send(JSON.stringify(claudeResponse));
             this.logger.info(`✅ [Request] Response completed (Claude non-stream), request ID: ${requestId}`);
         } catch (e) {
@@ -2773,6 +2801,8 @@ class RequestHandler {
             }
 
             try {
+                this._saveTransactionPayload(proxyRequest.request_id, "gem_res", fullData);
+                this._saveTransactionPayload(proxyRequest.request_id, "client_res", fullData);
                 const googleResponse = JSON.parse(fullData);
                 this._logGeminiNativeResponseDebug(googleResponse, "pseudo-stream");
                 const candidate = googleResponse.candidates?.[0];
@@ -3062,6 +3092,8 @@ class RequestHandler {
 
                 if (dataMessage.data) {
                     this._logGeminiNativeChunkDebug(dataMessage.data, "stream");
+                    this._saveTransactionPayload(proxyRequest.request_id, "gem_res", dataMessage.data);
+                    this._saveTransactionPayload(proxyRequest.request_id, "client_res", dataMessage.data);
                     if (!this._isResponseWritable(res)) {
                         this.logger.debug(
                             "[Request] Response no longer writable during Gemini real stream; stopping stream."
@@ -3183,6 +3215,9 @@ class RequestHandler {
             if (!res.get("Content-Type")) {
                 res.type("application/json");
             }
+
+            this._saveTransactionPayload(proxyRequest.request_id, "gem_res", responseBodyBuffer.toString());
+            this._saveTransactionPayload(proxyRequest.request_id, "client_res", responseBodyBuffer.toString());
 
             res.send(responseBodyBuffer);
             this.logger.info(
@@ -3525,6 +3560,7 @@ class RequestHandler {
                 }
 
                 if (message.data) {
+                    this._saveTransactionPayload(requestId, "gem_res", message.data);
                     const responseAPIChunk = this.formatConverter.translateGoogleToResponseAPIStream(
                         message.data,
                         model,
@@ -3534,6 +3570,7 @@ class RequestHandler {
                         res.__responseApiSeq = streamState.sequenceNumber;
                     }
                     if (responseAPIChunk) {
+                        this._saveTransactionPayload(requestId, "client_res", responseAPIChunk);
                         if (!this._isResponseWritable(res)) {
                             this.logger.debug(
                                 "[Request] Response no longer writable during Response API stream; stopping stream."
@@ -3604,12 +3641,14 @@ class RequestHandler {
                 }
 
                 if (message.data) {
+                    this._saveTransactionPayload(requestId, "gem_res", message.data);
                     const openAIChunk = this.formatConverter.translateGoogleToOpenAIStream(
                         message.data,
                         model,
                         streamState
                     );
                     if (openAIChunk) {
+                        this._saveTransactionPayload(requestId, "client_res", openAIChunk);
                         if (!this._isResponseWritable(res)) {
                             this.logger.debug(
                                 "[Request] Response no longer writable during OpenAI stream; stopping stream."
@@ -3672,6 +3711,8 @@ class RequestHandler {
                 model,
                 responseDefaults
             );
+            this._saveTransactionPayload(requestId, "gem_res", googleResponse);
+            this._saveTransactionPayload(requestId, "open_res", responseAPIResponse);
             res.type("application/json").send(JSON.stringify(responseAPIResponse));
             this.logger.info(
                 `✅ [Request] Response completed (OpenAI Response API non-stream), request ID: ${requestId}`
@@ -3708,6 +3749,8 @@ class RequestHandler {
         try {
             const googleResponse = JSON.parse(fullBody);
             const openAIResponse = this.formatConverter.convertGoogleToOpenAINonStream(googleResponse, model);
+            this._saveTransactionPayload(requestId, "gem_res", googleResponse);
+            this._saveTransactionPayload(requestId, "open_res", openAIResponse);
             res.type("application/json").send(JSON.stringify(openAIResponse));
             this.logger.info(`✅ [Request] Response completed (OpenAI non-stream), request ID: ${requestId}`);
         } catch (e) {
@@ -4384,6 +4427,53 @@ class RequestHandler {
 
     _generateRequestAttemptId(requestId, attemptNumber) {
         return `${requestId}_attempt_${attemptNumber}_${Math.random().toString(36).substring(2, 8)}`;
+    }
+
+    _saveTransactionPayload(requestId, type, data) {
+        if (!this.config.enableTranslationLogging) {
+            return;
+        }
+        try {
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+            }
+            const filePath = path.join(debugDir, `transaction_${requestId}.json`);
+
+            let existingData = {};
+            if (fs.existsSync(filePath)) {
+                try {
+                    existingData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+                } catch (e) {
+                    // Fail-safe
+                }
+            }
+
+            let formattedData = data;
+            if (typeof data === "string") {
+                try {
+                    formattedData = JSON.parse(data);
+                } catch (e) {
+                    // Plain text chunk fallback
+                }
+            }
+
+            // Append for streaming payloads
+            if (type === "gem_res" || type === "client_res") {
+                const currentVal = existingData[type] || "";
+                if (typeof formattedData === "string") {
+                    existingData[type] = currentVal + formattedData;
+                } else {
+                    existingData[type] = formattedData;
+                }
+            } else {
+                existingData[type] = formattedData;
+            }
+
+            fs.writeFileSync(filePath, JSON.stringify(existingData, null, 2), "utf-8");
+        } catch (err) {
+            this.logger.debug(`[Debug] Failed to save transaction payload: ${err.message}`);
+        }
     }
 }
 
