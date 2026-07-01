@@ -155,9 +155,9 @@ class RequestHandler {
         if (req && req.res) {
             req.res.__transactionData = {
                 client_req: req.body || null,
+                client_res: "",
                 gem_req: null,
                 gem_res: "",
-                client_res: "",
             };
         }
 

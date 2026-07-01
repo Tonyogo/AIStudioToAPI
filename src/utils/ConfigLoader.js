@@ -25,6 +25,7 @@ class ConfigLoader {
             browserExecutablePath: null,
             checkUpdate: true,
             enableAuthUpdate: true,
+            enableTranslationLogging: false,
             enableUsageStats: true,
             failureThreshold: 3,
             fakeStreamTimeoutMs: 300000,
@@ -125,6 +126,8 @@ class ConfigLoader {
             config.enableAuthUpdate = process.env.ENABLE_AUTH_UPDATE.toLowerCase() !== "false";
         if (process.env.ENABLE_USAGE_STATS)
             config.enableUsageStats = process.env.ENABLE_USAGE_STATS.toLowerCase() !== "false";
+        if (process.env.ENABLE_TRANSLATION_LOGGING)
+            config.enableTranslationLogging = process.env.ENABLE_TRANSLATION_LOGGING.toLowerCase() === "true";
 
         let rawCodes = process.env.IMMEDIATE_SWITCH_STATUS_CODES;
         let codesSource = "environment variable";
@@ -208,6 +211,7 @@ class ConfigLoader {
         this.logger.info(`  Default Safety Threshold: ${config.safetySettingsThreshold}`);
         this.logger.info(`  Auto Update Auth: ${config.enableAuthUpdate}`);
         this.logger.info(`  Usage Stats: ${config.enableUsageStats}`);
+        this.logger.info(`  Translation Logging: ${config.enableTranslationLogging}`);
         this.logger.info(`  Max Contexts: ${config.maxContexts === 0 ? "Unlimited" : config.maxContexts}`);
         this.logger.info(
             `  Usage-based Switch Threshold: ${

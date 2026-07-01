@@ -2648,13 +2648,24 @@
 
                 <div class="full-width-section">
                     <section class="status-card records-card">
-                        <div class="card-header-v2" style="display: flex; align-items: center; justify-content: space-between; width: 100%">
+                        <div
+                            class="card-header-v2"
+                            style="display: flex; align-items: center; justify-content: space-between; width: 100%"
+                        >
                             <div style="display: flex; align-items: center; gap: 12px">
                                 <h3 class="card-title-usage" style="margin: 0">{{ t("requestRecords") }}</h3>
                                 <button
                                     class="btn-danger"
                                     type="button"
-                                    style="padding: 4px 10px; font-size: 12px; height: 26px; display: flex; align-items: center; gap: 4px; cursor: pointer"
+                                    style="
+                                        padding: 4px 10px;
+                                        font-size: 12px;
+                                        height: 26px;
+                                        display: flex;
+                                        align-items: center;
+                                        gap: 4px;
+                                        cursor: pointer;
+                                    "
                                     @click="confirmPurgeTransactions"
                                 >
                                     <svg
@@ -2985,7 +2996,10 @@
         <!-- API Translation Inspector Dialog -->
         <el-dialog
             v-model="inspectorState.visible"
-            :title="t('apiTranslationInspector') + (inspectorState.requestId ? ' (ID: ' + inspectorState.requestId + ')' : '')"
+            :title="
+                t('apiTranslationInspector') +
+                (inspectorState.requestId ? ' (ID: ' + inspectorState.requestId + ')' : '')
+            "
             width="85%"
             top="5vh"
             destroy-on-close
@@ -2997,7 +3011,12 @@
                         <div class="code-card">
                             <div class="code-card-header">
                                 <span>{{ t("clientRequest") }}</span>
-                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.client_req)">
+                                <el-button
+                                    size="small"
+                                    type="primary"
+                                    link
+                                    @click="copyPayloadText(inspectorState.data.client_req)"
+                                >
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
@@ -3006,7 +3025,12 @@
                         <div class="code-card">
                             <div class="code-card-header">
                                 <span>{{ t("geminiInput") }}</span>
-                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.gem_req)">
+                                <el-button
+                                    size="small"
+                                    type="primary"
+                                    link
+                                    @click="copyPayloadText(inspectorState.data.gem_req)"
+                                >
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
@@ -3018,7 +3042,12 @@
                         <div class="code-card">
                             <div class="code-card-header">
                                 <span>{{ t("geminiOutput") }}</span>
-                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.gem_res)">
+                                <el-button
+                                    size="small"
+                                    type="primary"
+                                    link
+                                    @click="copyPayloadText(inspectorState.data.gem_res)"
+                                >
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
@@ -3027,7 +3056,12 @@
                         <div class="code-card">
                             <div class="code-card-header">
                                 <span>{{ t("clientOutput") }}</span>
-                                <el-button size="small" type="primary" link @click="copyPayloadText(inspectorState.data.client_res)">
+                                <el-button
+                                    size="small"
+                                    type="primary"
+                                    link
+                                    @click="copyPayloadText(inspectorState.data.client_res)"
+                                >
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
@@ -3070,19 +3104,19 @@ const t = (key, options) => {
 
 // API Translation Inspector state
 const inspectorState = reactive({
-    visible: false,
-    loading: false,
-    requestId: "",
     data: {
         client_req: null,
+        client_res: null,
         gem_req: null,
         gem_res: null,
-        client_res: null,
     },
+    loading: false,
+    requestId: "",
+    visible: false,
 });
 
 // JSON formatting utility
-const formatJson = (val) => {
+const formatJson = val => {
     if (val === null || val === undefined) return "N/A";
     if (typeof val === "object") {
         return JSON.stringify(val, null, 2);
@@ -3098,38 +3132,39 @@ const formatJson = (val) => {
 };
 
 // One-click clipboard copy utility
-const copyPayloadText = (val) => {
+const copyPayloadText = val => {
     if (!val) {
         ElMessage.warning(t("noModelData"));
         return;
     }
     const text = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
-    navigator.clipboard.writeText(text)
+    navigator.clipboard
+        .writeText(text)
         .then(() => {
             ElMessage.success(t("copySuccess"));
         })
-        .catch((err) => {
+        .catch(err => {
             ElMessage.error(t("copyFailed") + ": " + err.message);
         });
 };
 
 // Toggle translation logging configuration setting
 const handleEnableTranslationLoggingBeforeChange = () => {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
         fetch("/api/settings/enable-translation-logging", { method: "PUT" })
-            .then((res) => {
+            .then(res => {
                 if (res.ok) {
                     return res.json();
                 }
                 throw new Error("HTTP failed");
             })
-            .then((data) => {
+            .then(data => {
                 state.enableTranslationLogging = data.value;
                 ElMessage.success(t(data.message));
                 updateContent();
                 resolve(true);
             })
-            .catch((e) => {
+            .catch(e => {
                 ElMessage.error(t("errorOperationFailed", { error: e.message }));
                 resolve(false);
             });
@@ -3139,32 +3174,34 @@ const handleEnableTranslationLoggingBeforeChange = () => {
 // One-click purge of all transaction JSON files with confirmation
 const confirmPurgeTransactions = () => {
     ElMessageBox.confirm(t("confirmPurgeTransactions"), t("warningTitle"), {
-        confirmButtonText: t("ok"),
         cancelButtonText: t("cancel"),
+        confirmButtonText: t("ok"),
         type: "warning",
-    }).then(() => {
-        fetch("/api/transactions", { method: "DELETE" })
-            .then((res) => {
-                if (res.ok) {
-                    return res.json();
-                }
-                throw new Error("HTTP failed");
-            })
-            .then((data) => {
-                ElMessage.success(t(data.message, { count: data.count }));
-            })
-            .catch((e) => {
-                ElMessage.error(t("errorOperationFailed", { error: e.message }));
-            });
-    }).catch(() => {});
+    })
+        .then(() => {
+            fetch("/api/transactions", { method: "DELETE" })
+                .then(res => {
+                    if (res.ok) {
+                        return res.json();
+                    }
+                    throw new Error("HTTP failed");
+                })
+                .then(data => {
+                    ElMessage.success(t(data.message, { count: data.count }));
+                })
+                .catch(e => {
+                    ElMessage.error(t("errorOperationFailed", { error: e.message }));
+                });
+        })
+        .catch(() => {});
 };
 
 // Retrieve single transaction comparison and open Inspector Dialog
-const openTransactionInspector = async (requestId) => {
+const openTransactionInspector = async requestId => {
     inspectorState.requestId = requestId;
     inspectorState.visible = true;
     inspectorState.loading = true;
-    inspectorState.data = { client_req: null, gem_req: null, gem_res: null, client_res: null };
+    inspectorState.data = { client_req: null, client_res: null, gem_req: null, gem_res: null };
 
     try {
         const res = await fetch(`/api/transactions/${requestId}`);
@@ -3173,9 +3210,9 @@ const openTransactionInspector = async (requestId) => {
             // Automatically align different client request/response suffixes
             inspectorState.data = {
                 client_req: data.client_req || data.open_req || data.claude_req || null,
+                client_res: data.client_res || data.open_res || data.claude_res || null,
                 gem_req: data.gem_req || null,
                 gem_res: data.gem_res || null,
-                client_res: data.client_res || data.open_res || data.claude_res || null,
             };
         } else {
             ElMessage.error(t("transactionNotFound"));
