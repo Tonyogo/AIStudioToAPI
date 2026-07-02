@@ -3007,9 +3007,9 @@
             destroy-on-close
         >
             <div v-loading="inspectorState.loading" class="inspector-dialog-content">
-                <div class="inspector-row">
-                    <!-- Left Column: Request-Side -->
-                    <div class="inspector-col">
+                <div class="inspector-container">
+                    <!-- Top Row: Request-Side -->
+                    <div class="inspector-row-v2">
                         <div class="code-card">
                             <div class="code-card-header">
                                 <div class="card-tab-group">
@@ -3092,8 +3092,9 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Right Column: Response-Side -->
-                    <div class="inspector-col">
+
+                    <!-- Bottom Row: Response-Side -->
+                    <div class="inspector-row-v2">
                         <div class="code-card">
                             <div class="code-card-header">
                                 <div class="card-tab-group">
@@ -7862,16 +7863,17 @@ watchEffect(() => {
 .inspector-dialog-content {
     padding: 10px 0;
 }
-.inspector-row {
-    display: flex;
-    gap: 16px;
-    height: 70vh;
-}
-.inspector-col {
-    flex: 1;
+.inspector-container {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    height: 75vh;
+}
+.inspector-row-v2 {
+    display: flex;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 .code-card {
