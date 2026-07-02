@@ -159,6 +159,7 @@ class RequestHandler {
                 gem_req: null,
                 gem_res: "",
             };
+            this._saveTransactionPayload(requestId, "client_req", req.body || null);
         }
 
         const usageStatsService = this._getUsageStatsService();
