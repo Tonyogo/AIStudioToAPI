@@ -3012,14 +3012,32 @@
                     <div class="inspector-col">
                         <div class="code-card">
                             <div class="code-card-header">
-                                <span
-                                    >{{ t("clientRequest")
-                                    }}{{
-                                        inspectorState.apiFormat
-                                            ? " (" + getApiFormatLabel(inspectorState.apiFormat) + ")"
-                                            : ""
-                                    }}</span
-                                >
+                                <div class="card-tab-group">
+                                    <span class="card-title-text"
+                                        >{{ t("clientRequest")
+                                        }}{{
+                                            inspectorState.apiFormat
+                                                ? " (" + getApiFormatLabel(inspectorState.apiFormat) + ")"
+                                                : ""
+                                        }}</span
+                                    >
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.client_req === 'preview' }"
+                                        @click="panelTabs.client_req = 'preview'"
+                                    >
+                                        {{ t("previewMode") }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.client_req === 'raw' }"
+                                        @click="panelTabs.client_req = 'raw'"
+                                    >
+                                        {{ t("rawMode") }}
+                                    </button>
+                                </div>
                                 <el-button
                                     size="small"
                                     type="primary"
@@ -3029,11 +3047,34 @@
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
-                            <pre class="code-editor">{{ formatJson(inspectorState.data.client_req) }}</pre>
+                            <div class="code-card-body">
+                                <div v-if="panelTabs.client_req === 'preview'" class="tree-wrapper">
+                                    <JsonTreeNode :val="inspectorState.data.client_req" />
+                                </div>
+                                <pre v-else class="code-editor">{{ formatJson(inspectorState.data.client_req) }}</pre>
+                            </div>
                         </div>
                         <div class="code-card">
                             <div class="code-card-header">
-                                <span>{{ t("geminiInput") }}</span>
+                                <div class="card-tab-group">
+                                    <span class="card-title-text">{{ t("geminiInput") }}</span>
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.gem_req === 'preview' }"
+                                        @click="panelTabs.gem_req = 'preview'"
+                                    >
+                                        {{ t("previewMode") }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.gem_req === 'raw' }"
+                                        @click="panelTabs.gem_req = 'raw'"
+                                    >
+                                        {{ t("rawMode") }}
+                                    </button>
+                                </div>
                                 <el-button
                                     size="small"
                                     type="primary"
@@ -3043,14 +3084,37 @@
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
-                            <pre class="code-editor">{{ formatJson(inspectorState.data.gem_req) }}</pre>
+                            <div class="code-card-body">
+                                <div v-if="panelTabs.gem_req === 'preview'" class="tree-wrapper">
+                                    <JsonTreeNode :val="inspectorState.data.gem_req" />
+                                </div>
+                                <pre v-else class="code-editor">{{ formatJson(inspectorState.data.gem_req) }}</pre>
+                            </div>
                         </div>
                     </div>
                     <!-- Right Column: Response-Side -->
                     <div class="inspector-col">
                         <div class="code-card">
                             <div class="code-card-header">
-                                <span>{{ t("geminiOutput") }}</span>
+                                <div class="card-tab-group">
+                                    <span class="card-title-text">{{ t("geminiOutput") }}</span>
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.gem_res === 'preview' }"
+                                        @click="panelTabs.gem_res = 'preview'"
+                                    >
+                                        {{ t("previewMode") }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.gem_res === 'raw' }"
+                                        @click="panelTabs.gem_res = 'raw'"
+                                    >
+                                        {{ t("rawMode") }}
+                                    </button>
+                                </div>
                                 <el-button
                                     size="small"
                                     type="primary"
@@ -3060,11 +3124,34 @@
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
-                            <pre class="code-editor">{{ formatJson(inspectorState.data.gem_res) }}</pre>
+                            <div class="code-card-body">
+                                <div v-if="panelTabs.gem_res === 'preview'" class="tree-wrapper">
+                                    <JsonTreeNode :val="inspectorState.data.gem_res" />
+                                </div>
+                                <pre v-else class="code-editor">{{ formatJson(inspectorState.data.gem_res) }}</pre>
+                            </div>
                         </div>
                         <div class="code-card">
                             <div class="code-card-header">
-                                <span>{{ t("clientOutput") }}</span>
+                                <div class="card-tab-group">
+                                    <span class="card-title-text">{{ t("clientOutput") }}</span>
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.client_res === 'preview' }"
+                                        @click="panelTabs.client_res = 'preview'"
+                                    >
+                                        {{ t("previewMode") }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="card-tab-btn"
+                                        :class="{ 'is-active': panelTabs.client_res === 'raw' }"
+                                        @click="panelTabs.client_res = 'raw'"
+                                    >
+                                        {{ t("rawMode") }}
+                                    </button>
+                                </div>
                                 <el-button
                                     size="small"
                                     type="primary"
@@ -3074,7 +3161,12 @@
                                     {{ t("copyPayload") }}
                                 </el-button>
                             </div>
-                            <pre class="code-editor">{{ formatJson(inspectorState.data.client_res) }}</pre>
+                            <div class="code-card-body">
+                                <div v-if="panelTabs.client_res === 'preview'" class="tree-wrapper">
+                                    <JsonTreeNode :val="inspectorState.data.client_res" />
+                                </div>
+                                <pre v-else class="code-editor">{{ formatJson(inspectorState.data.client_res) }}</pre>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3093,6 +3185,7 @@ import escapeHtml from "../utils/escapeHtml";
 import I18n from "../utils/i18n";
 import { useTheme } from "../utils/useTheme";
 import EnvVarTooltip from "../components/EnvVarTooltip.vue";
+import JsonTreeNode from "../components/JsonTreeNode.vue";
 
 const router = useRouter();
 const fileInput = ref(null);
@@ -3123,6 +3216,14 @@ const inspectorState = reactive({
     loading: false,
     requestId: "",
     visible: false,
+});
+
+// Modals segment tab states
+const panelTabs = reactive({
+    client_req: "preview",
+    client_res: "preview",
+    gem_req: "preview",
+    gem_res: "preview",
 });
 
 // Format label mapper utility
@@ -3220,6 +3321,11 @@ const confirmPurgeTransactions = () => {
 
 // Retrieve single transaction comparison and open Inspector Dialog
 const openTransactionInspector = async (requestId, apiFormat) => {
+    panelTabs.client_req = "preview";
+    panelTabs.gem_req = "preview";
+    panelTabs.gem_res = "preview";
+    panelTabs.client_res = "preview";
+
     inspectorState.requestId = requestId;
     inspectorState.apiFormat = apiFormat || "";
     inspectorState.visible = true;
@@ -7799,5 +7905,66 @@ watchEffect(() => {
     color: #9cdcfe; /* light blue */
     white-space: pre-wrap;
     word-break: break-all;
+}
+
+/* Card Tabs and Tree Elements */
+.card-tab-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.card-title-text {
+    margin-right: 8px;
+}
+.card-tab-btn {
+    background: transparent;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    color: #858585;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-weight: 500;
+
+    &:hover {
+        color: #d4d4d4;
+        border-color: #5a5a5a;
+    }
+
+    &.is-active {
+        color: #ffffff;
+        background: #3c3c3c;
+        border-color: #5a5a5a;
+    }
+}
+.code-card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.tree-wrapper {
+    flex: 1;
+    padding: 12px 16px;
+    overflow-y: auto;
+    background: #1e1e1e; /* VS Code dark background */
+    display: flex;
+    flex-direction: column;
+
+    &::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    &::-webkit-scrollbar-thumb {
+        background: #3c3c3c;
+        border-radius: 3px;
+        &:hover {
+            background: #5a5a5a;
+        }
+    }
 }
 </style>
