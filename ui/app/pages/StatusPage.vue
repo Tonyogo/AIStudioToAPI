@@ -2759,7 +2759,9 @@
                                                 type="button"
                                                 :disabled="!record.requestId"
                                                 :title="t('apiTranslationInspector')"
-                                                @click.stop="openTransactionInspector(record.requestId)"
+                                                @click.stop="
+                                                    openTransactionInspector(record.requestId, record.apiFormat)
+                                                "
                                             >
                                                 <svg
                                                     xmlns="http://www.w3.org/2000/svg"
@@ -3010,7 +3012,14 @@
                     <div class="inspector-col">
                         <div class="code-card">
                             <div class="code-card-header">
-                                <span>{{ t("clientRequest") }}</span>
+                                <span
+                                    >{{ t("clientRequest")
+                                    }}{{
+                                        inspectorState.apiFormat
+                                            ? " (" + getApiFormatLabel(inspectorState.apiFormat) + ")"
+                                            : ""
+                                    }}</span
+                                >
                                 <el-button
                                     size="small"
                                     type="primary"
@@ -3104,6 +3113,7 @@ const t = (key, options) => {
 
 // API Translation Inspector state
 const inspectorState = reactive({
+    apiFormat: "",
     data: {
         client_req: null,
         client_res: null,
@@ -3114,6 +3124,18 @@ const inspectorState = reactive({
     requestId: "",
     visible: false,
 });
+
+// Format label mapper utility
+const getApiFormatLabel = format => {
+    if (!format) return "";
+    const map = {
+        claude: "Claude API",
+        gemini: "Gemini Native",
+        openai: "OpenAI Chat",
+        response_api: "Response API",
+    };
+    return map[format] || format;
+};
 
 // JSON formatting utility
 const formatJson = val => {
@@ -3197,8 +3219,9 @@ const confirmPurgeTransactions = () => {
 };
 
 // Retrieve single transaction comparison and open Inspector Dialog
-const openTransactionInspector = async requestId => {
+const openTransactionInspector = async (requestId, apiFormat) => {
     inspectorState.requestId = requestId;
+    inspectorState.apiFormat = apiFormat || "";
     inspectorState.visible = true;
     inspectorState.loading = true;
     inspectorState.data = { client_req: null, client_res: null, gem_req: null, gem_res: null };
