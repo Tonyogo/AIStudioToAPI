@@ -758,6 +758,60 @@ class StatusRoutes {
             }
         });
 
+        app.put("/api/settings/enable-translation-logging", isAuthenticated, (req, res) => {
+            this.config.enableTranslationLogging = !this.config.enableTranslationLogging;
+            const statusText = this.config.enableTranslationLogging;
+            this.logger.info(`[WebUI] Translation logging hot-switched to: ${statusText}`);
+            res.status(200).json({
+                message: "settingUpdateSuccess",
+                setting: "enableTranslationLogging",
+                value: statusText,
+            });
+        });
+
+        app.get("/api/transactions/:id", isAuthenticated, async (req, res) => {
+            const requestId = req.params.id;
+            if (!/^[a-zA-Z0-9_-]+$/.test(requestId)) {
+                return res.status(400).json({ message: "errorInvalidIndex" });
+            }
+
+            const filePath = path.join(process.cwd(), "data", "debug", `transaction_${requestId}.json`);
+            if (!fs.existsSync(filePath)) {
+                return res.status(404).json({ message: "transactionNotFound" });
+            }
+
+            try {
+                const content = await fs.promises.readFile(filePath, "utf-8");
+                res.setHeader("Content-Type", "application/json");
+                res.status(200).send(content);
+            } catch (err) {
+                this.logger.error(`[WebUI] Failed to read transaction ${requestId}: ${err.message}`);
+                res.status(500).json({ error: err.message, message: "transactionNotFound" });
+            }
+        });
+
+        app.delete("/api/transactions", isAuthenticated, async (req, res) => {
+            const debugDir = path.join(process.cwd(), "data", "debug");
+            if (!fs.existsSync(debugDir)) {
+                return res.status(200).json({ count: 0, message: "transactionsPurgedSuccess", success: true });
+            }
+
+            try {
+                const files = await fs.promises.readdir(debugDir);
+                const transFiles = files.filter(file => /^transaction_.*\.json$/.test(file));
+                let count = 0;
+                for (const file of transFiles) {
+                    await fs.promises.unlink(path.join(debugDir, file));
+                    count++;
+                }
+                this.logger.info(`[WebUI] Purged ${count} API translation logs from data/debug/`);
+                res.status(200).json({ count, message: "transactionsPurgedSuccess", success: true });
+            } catch (err) {
+                this.logger.error(`[WebUI] Failed to purge transaction logs: ${err.message}`);
+                res.status(500).json({ error: err.message, message: "errorOperationFailed" });
+            }
+        });
+
         app.put("/api/settings/streaming-mode", isAuthenticated, (req, res) => {
             const newMode = req.body.mode;
             if (newMode === "fake" || newMode === "real") {
@@ -1085,6 +1139,7 @@ class StatusRoutes {
                 disabledIndicesRaw: disabledIndices,
                 duplicateIndicesRaw: duplicateIndices,
                 enableAuthUpdate: config.enableAuthUpdate,
+                enableTranslationLogging: config.enableTranslationLogging,
                 expiredIndicesRaw: expiredIndices,
                 failureCount,
                 forceCodeExecution: config.forceCodeExecution,
