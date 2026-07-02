@@ -68,10 +68,10 @@
 import { computed, ref } from "vue";
 
 const props = defineProps({
-    depth: { type: Number, default: 0 },
-    isLast: { type: Boolean, default: true },
-    name: { type: [String, Number], default: "" },
-    val: { type: null, required: true },
+    depth: { default: 0, type: Number },
+    isLast: { default: true, type: Boolean },
+    name: { default: "", type: [String, Number] },
+    val: { required: true, type: null },
 });
 
 const expanded = ref(props.depth <= 1);
