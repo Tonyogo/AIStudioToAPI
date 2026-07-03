@@ -585,7 +585,7 @@ class FormatConverter {
         if (systemMessages.length > 0) {
             const systemContent = systemMessages.map(msg => msg.content).join("\n");
             systemInstruction = {
-                parts: [{ text: `<system_instructions>\n${systemContent}\n</system_instructions>` }],
+                parts: [{ text: systemContent }],
                 role: "system",
             };
         }
@@ -2234,11 +2234,6 @@ class FormatConverter {
             }
         }
 
-        // Wrap the fully consolidated system instruction text
-        if (systemInstruction && systemInstruction.parts && systemInstruction.parts[0]) {
-            systemInstruction.parts[0].text = `<system_instructions>\n${systemInstruction.parts[0].text}\n</system_instructions>`;
-        }
-
         // Buffer for accumulating consecutive tool result parts
         let pendingToolParts = [];
 
@@ -3165,7 +3160,7 @@ class FormatConverter {
         let systemInstruction = null;
         if (systemInstructionText) {
             systemInstruction = {
-                parts: [{ text: `<system_instructions>\n${systemInstructionText}\n</system_instructions>` }],
+                parts: [{ text: systemInstructionText }],
                 // Keep consistent with other adapters: systemInstruction is sent as a separate instruction channel,
                 // and Gemini API expects it to be encoded as a "user" role here.
                 role: "user",
