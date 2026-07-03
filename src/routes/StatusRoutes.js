@@ -817,6 +817,35 @@ class StatusRoutes {
             res.status(200).json({ message: "settingUpdateSuccess", setting: "enableAuthUpdate", value: statusText });
         });
 
+        app.put("/api/settings/stats-max-records", isAuthenticated, (req, res) => {
+            const { count } = req.body;
+            const newCount = parseInt(count, 10);
+
+            if (Number.isFinite(newCount) && newCount > 0) {
+                this.config.statsMaxRecords = newCount;
+                this.logger.info(`[WebUI] Stats max records limit hot-switched to: ${newCount}`);
+
+                // Instantly prune memory arrays
+                const usageStatsService = this.serverSystem.usageStatsService;
+                if (usageStatsService && Array.isArray(usageStatsService.records)) {
+                    if (usageStatsService.records.length > newCount) {
+                        usageStatsService.records = usageStatsService.records.slice(-newCount);
+                        this.logger.info(
+                            `[UsageStats] Instantly pruned memory records down to ${newCount} due to config change.`
+                        );
+                    }
+                }
+
+                res.status(200).json({
+                    message: "settingUpdateSuccess",
+                    setting: "statsMaxRecords",
+                    value: newCount,
+                });
+            } else {
+                res.status(400).json({ error: "Invalid count", message: "settingFailed" });
+            }
+        });
+
         app.put("/api/settings/safety-settings-threshold", isAuthenticated, (req, res) => {
             const newThreshold = String(req.body?.value || "")
                 .trim()

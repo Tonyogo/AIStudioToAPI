@@ -1392,6 +1392,35 @@
                                     @change="handleLogMaxCountChange"
                                 />
                             </div>
+                            <div class="status-item">
+                                <span class="label">
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        style="margin-right: 6px; vertical-align: middle"
+                                    >
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="9" y1="9" x2="15" y2="9"></line>
+                                        <line x1="9" y1="13" x2="15" y2="13"></line>
+                                        <line x1="9" y1="17" x2="13" y2="17"></line>
+                                    </svg>
+                                    {{ t("statsMaxRecords") }}
+                                </span>
+                                <el-input-number
+                                    v-model="state.statsMaxRecords"
+                                    :min="100"
+                                    :max="100000"
+                                    style="width: 120px"
+                                    @change="handleStatsMaxRecordsChange"
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -3860,8 +3889,10 @@ const state = reactive({
     maxRetries: 3,
     releaseUrl: null,
     safetySettingsThreshold: "OFF",
-    selectedAccounts: new Set(), // Selected account indices
+    selectedAccounts: new Set(),
+    // Selected account indices
     serviceConnected: false,
+    statsMaxRecords: 5000,
     streamingModeReal: false,
     // theme: handled by useTheme
     usageCount: 0,
@@ -4391,6 +4422,27 @@ const handleLogMaxCountChange = val => {
         });
 };
 
+const handleStatsMaxRecordsChange = val => {
+    if (!val) return;
+    fetch("/api/settings/stats-max-records", {
+        body: JSON.stringify({ count: val }),
+        headers: { "Content-Type": "application/json" },
+        method: "PUT",
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (data.message === "settingUpdateSuccess") {
+                ElMessage.success(t(data.message, { setting: t("statsMaxRecords"), value: val }));
+                updateContent();
+            } else {
+                ElMessage.error(t(data.message || "settingFailed", { message: data.error || "" }));
+            }
+        })
+        .catch(err => {
+            ElMessage.error(t("settingFailed", { message: err.message || err }));
+        });
+};
+
 const handleSafetySettingsThresholdChange = async val => {
     if (!val) return;
 
@@ -4619,6 +4671,7 @@ const updateStatus = data => {
     state.failureCount = data.status.failureCount;
     state.logCount = data.logCount || 0;
     state.logMaxCount = data.status.logMaxCount || 100;
+    state.statsMaxRecords = data.status.statsMaxRecords || 5000;
     state.logs = data.logs || "";
     state.isSystemBusy = data.status.isSystemBusy;
 
