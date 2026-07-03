@@ -124,6 +124,7 @@
 
 - **起算时间统一对齐美西太平洋零点（15:00:00 边界计算属性）**：
   在 `StatusPage.vue` 中新增 computed `accountTodayStats`：
+
   ```javascript
   const accountTodayStats = computed(() => {
     const stats = {}; // authIndex -> { totalSuccess: 0, models: { [modelName]: count } }
@@ -155,6 +156,7 @@
     return stats;
   });
   ```
+
 - **账号管理卡片 Badge 渲染**：
   - 在账号名称后方渲染浅蓝色药丸 Badge (文案为 `Today: X` 或 `今日: X`)。
   - 鼠标悬浮在其上时使用 `el-tooltip` 浮层，直观列出今日所有模型的成功请求分布明细。

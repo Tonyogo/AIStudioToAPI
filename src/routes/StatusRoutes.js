@@ -1132,6 +1132,7 @@ class StatusRoutes {
                 maxRetries: config.maxRetries,
                 rotationIndicesRaw: rotationIndices,
                 safetySettingsThreshold: config.safetySettingsThreshold,
+                statsMaxRecords: config.statsMaxRecords,
                 streamingMode: config.streamingMode,
                 usageCount,
             },
