@@ -2312,10 +2312,17 @@ class FormatConverter {
                             functionName = "unknown_function";
                         }
 
+                        // Stateless decode and restore of original Google functionCall/functionResponse id
+                        const originalId =
+                            typeof toolUseId === "string" && toolUseId.startsWith("toolu_g_")
+                                ? toolUseId.substring(8)
+                                : toolUseId;
+
                         pendingToolParts.push({
                             functionResponse: {
                                 name: functionName,
                                 response: responseContent,
+                                ...(originalId && { id: originalId }),
                             },
                         });
                     }
@@ -2354,10 +2361,17 @@ class FormatConverter {
                 let signatureAttachedToCall = false;
                 for (const block of message.content) {
                     if (block.type === "tool_use") {
+                        // Stateless decode and restore of original Google functionCall.id
+                        const originalId =
+                            typeof block.id === "string" && block.id.startsWith("toolu_g_")
+                                ? block.id.substring(8)
+                                : block.id;
+
                         const functionCallPart = {
                             functionCall: {
                                 args: block.input || {},
                                 name: block.name,
+                                ...(originalId && { id: originalId }),
                             },
                         };
                         if (!signatureAttachedToCall) {
@@ -2838,7 +2852,11 @@ class FormatConverter {
                     this.logger.info("[Adapter] Successfully parsed image from streaming response chunk.");
                 } else if (part.functionCall) {
                     // Tool use
-                    const toolUseId = `toolu_${this._generateRequestId()}`;
+                    const nativeId = part.functionCall.id;
+                    const toolUseId =
+                        typeof nativeId === "string" && nativeId.length > 0
+                            ? `toolu_g_${nativeId}`
+                            : `toolu_${this._generateRequestId()}`;
                     if (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
                         this.toolIdToSignatureMap.set(toolUseId, part.thoughtSignature);
                     }
@@ -2980,7 +2998,11 @@ class FormatConverter {
                     });
                 } else if (part.functionCall) {
                     hasToolUse = true;
-                    const toolUseId = `toolu_${this._generateRequestId()}`;
+                    const nativeId = part.functionCall.id;
+                    const toolUseId =
+                        typeof nativeId === "string" && nativeId.length > 0
+                            ? `toolu_g_${nativeId}`
+                            : `toolu_${this._generateRequestId()}`;
                     if (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
                         this.toolIdToSignatureMap.set(toolUseId, part.thoughtSignature);
                     }
