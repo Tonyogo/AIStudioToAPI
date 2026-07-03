@@ -171,6 +171,7 @@ class FormatConverter {
     constructor(logger, serverSystem) {
         this.logger = logger;
         this.serverSystem = serverSystem;
+        this.toolIdToSignatureMap = new Map();
     }
 
     getDefaultSafetySettings() {
@@ -2360,7 +2361,9 @@ class FormatConverter {
                             },
                         };
                         if (!signatureAttachedToCall) {
-                            functionCallPart.thoughtSignature = FormatConverter.DUMMY_THOUGHT_SIGNATURE;
+                            const savedSignature = this.toolIdToSignatureMap.get(block.id);
+                            functionCallPart.thoughtSignature =
+                                savedSignature || FormatConverter.DUMMY_THOUGHT_SIGNATURE;
                             signatureAttachedToCall = true;
                         }
                         googleParts.push(functionCallPart);
@@ -2836,6 +2839,9 @@ class FormatConverter {
                 } else if (part.functionCall) {
                     // Tool use
                     const toolUseId = `toolu_${this._generateRequestId()}`;
+                    if (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
+                        this.toolIdToSignatureMap.set(toolUseId, part.thoughtSignature);
+                    }
                     events.push({
                         content_block: {
                             id: toolUseId,
@@ -2974,8 +2980,12 @@ class FormatConverter {
                     });
                 } else if (part.functionCall) {
                     hasToolUse = true;
+                    const toolUseId = `toolu_${this._generateRequestId()}`;
+                    if (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
+                        this.toolIdToSignatureMap.set(toolUseId, part.thoughtSignature);
+                    }
                     content.push({
-                        id: `toolu_${this._generateRequestId()}`,
+                        id: toolUseId,
                         input: part.functionCall.args || {},
                         name: part.functionCall.name,
                         type: "tool_use",
