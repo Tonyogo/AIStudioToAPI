@@ -1085,6 +1085,7 @@ class StatusRoutes {
                 disabledIndicesRaw: disabledIndices,
                 duplicateIndicesRaw: duplicateIndices,
                 enableAuthUpdate: config.enableAuthUpdate,
+                enableSignatureCache: config.enableSignatureCache,
                 expiredIndicesRaw: expiredIndices,
                 failureCount,
                 forceCodeExecution: config.forceCodeExecution,
