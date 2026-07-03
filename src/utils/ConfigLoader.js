@@ -39,6 +39,7 @@ class ConfigLoader {
             maxRetries: 3,
             retryDelay: 2000,
             safetySettingsThreshold: "OFF",
+            statsMaxRecords: 5000,
             streamingMode: "real",
             streamTimeoutMs: 60000,
             switchOnUses: 40,
@@ -125,6 +126,10 @@ class ConfigLoader {
             config.enableAuthUpdate = process.env.ENABLE_AUTH_UPDATE.toLowerCase() !== "false";
         if (process.env.ENABLE_USAGE_STATS)
             config.enableUsageStats = process.env.ENABLE_USAGE_STATS.toLowerCase() !== "false";
+        if (process.env.STATS_MAX_RECORDS) {
+            const parsed = parseInt(process.env.STATS_MAX_RECORDS, 10);
+            config.statsMaxRecords = Number.isFinite(parsed) ? Math.max(1, parsed) : config.statsMaxRecords;
+        }
 
         let rawCodes = process.env.IMMEDIATE_SWITCH_STATUS_CODES;
         let codesSource = "environment variable";
@@ -208,6 +213,7 @@ class ConfigLoader {
         this.logger.info(`  Default Safety Threshold: ${config.safetySettingsThreshold}`);
         this.logger.info(`  Auto Update Auth: ${config.enableAuthUpdate}`);
         this.logger.info(`  Usage Stats: ${config.enableUsageStats}`);
+        this.logger.info(`  Max Stats Records Limit: ${config.statsMaxRecords}`);
         this.logger.info(`  Max Contexts: ${config.maxContexts === 0 ? "Unlimited" : config.maxContexts}`);
         this.logger.info(
             `  Usage-based Switch Threshold: ${

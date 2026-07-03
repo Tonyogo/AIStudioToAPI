@@ -181,6 +181,13 @@ class UsageStatsService {
         };
 
         this.records.push(record);
+
+        // Enforce hard-limit clamping to protect server memory and api payload bandwidth
+        const limit = this.serverSystem?.config?.statsMaxRecords || 5000;
+        if (this.records.length > limit) {
+            this.records = this.records.slice(-limit);
+        }
+
         this._updateSummary(record);
         this._updateBreakdown(this.formatStats, record.apiFormat);
         this._updateBreakdown(this.categoryStats, record.requestCategory);
@@ -284,8 +291,12 @@ class UsageStatsService {
             const { records } = this._readRecordsFromFile();
             if (records.length === 0 && !fs.existsSync(this.statsFilePath)) return;
 
-            // Recalculate aggregates from all loaded records
-            this._replaceRecords(records);
+            // Clamping loaded records strictly to protect cold-start memories from massive file loads
+            const limit = this.serverSystem?.config?.statsMaxRecords || 5000;
+            const trimmedRecords = records.slice(-limit);
+
+            // Recalculate aggregates from parsed records
+            this._replaceRecords(trimmedRecords);
             this._recalculateFromRecords();
 
             if (this.logger) {
@@ -378,7 +389,11 @@ class UsageStatsService {
         const mergedRecords = this._normalizeImportedRecords(uniqueExistingRecords.concat(importedRecords));
         const fileContent = mergedRecords.map(record => JSON.stringify(record)).join("\n");
         await fs.promises.writeFile(this.statsFilePath, fileContent ? `${fileContent}\n` : "", "utf-8");
-        this._replaceRecords(mergedRecords);
+
+        const limit = this.serverSystem?.config?.statsMaxRecords || 5000;
+        const trimmedRecords = mergedRecords.slice(-limit);
+
+        this._replaceRecords(trimmedRecords);
         this._recalculateFromRecords({ resetStartedAt: false });
 
         if (this.logger) {
