@@ -2374,7 +2374,8 @@ class FormatConverter {
                                 ...(originalId && { id: originalId }),
                             },
                         };
-                        if (!signatureAttachedToCall) {
+                        const enableCache = this.serverSystem.config.enableSignatureCache;
+                        if (enableCache && !signatureAttachedToCall) {
                             const savedSignature = this.toolIdToSignatureMap.get(block.id);
                             functionCallPart.thoughtSignature =
                                 savedSignature || FormatConverter.DUMMY_THOUGHT_SIGNATURE;
@@ -2857,7 +2858,8 @@ class FormatConverter {
                         typeof nativeId === "string" && nativeId.length > 0
                             ? `toolu_g_${nativeId}`
                             : `toolu_${this._generateRequestId()}`;
-                    if (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
+                    const enableCache = this.serverSystem.config.enableSignatureCache;
+                    if (enableCache && typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
                         this.toolIdToSignatureMap.set(toolUseId, part.thoughtSignature);
                     }
                     events.push({
@@ -3003,7 +3005,8 @@ class FormatConverter {
                         typeof nativeId === "string" && nativeId.length > 0
                             ? `toolu_g_${nativeId}`
                             : `toolu_${this._generateRequestId()}`;
-                    if (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
+                    const enableCache = this.serverSystem.config.enableSignatureCache;
+                    if (enableCache && typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0) {
                         this.toolIdToSignatureMap.set(toolUseId, part.thoughtSignature);
                     }
                     content.push({
