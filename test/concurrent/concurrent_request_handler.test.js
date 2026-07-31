@@ -89,4 +89,72 @@ describe("ConcurrentRequestHandler", () => {
             })
         );
     });
+
+    describe("_sendRequestImpl integration", () => {
+        test("binds _sendRequestImpl when connectionRegistry does not have sendRequest", () => {
+            const minimalRegistry = {
+                createMessageQueue: jest.fn(),
+                getConnectionByAuth: jest.fn(),
+                removeMessageQueue: jest.fn(),
+            };
+            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockFormatConverter, mockLogger);
+            expect(minimalRegistry.sendRequest).toBeDefined();
+            expect(typeof minimalRegistry.sendRequest).toBe("function");
+        });
+
+        test("_sendRequestImpl processes non-streaming request successfully", async () => {
+            const mockWS = {
+                send: jest.fn(),
+            };
+            const mockQueue = {
+                dequeue: jest
+                    .fn()
+                    .mockResolvedValueOnce({ data: '{"response":', event_type: "chunk" })
+                    .mockResolvedValueOnce({ data: '"success"}', event_type: "chunk" })
+                    .mockResolvedValueOnce({ type: "STREAM_END" }),
+            };
+            const minimalRegistry = {
+                createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+                getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+                removeMessageQueue: jest.fn(),
+            };
+
+            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockFormatConverter, mockLogger);
+
+            const callback = jest.fn();
+            await minimalRegistry.sendRequest(0, { body: {}, isStream: false, path: "/foo" }, callback);
+
+            expect(mockWS.send).toHaveBeenCalled();
+            expect(minimalRegistry.createMessageQueue).toHaveBeenCalled();
+            expect(minimalRegistry.removeMessageQueue).toHaveBeenCalled();
+            expect(callback).toHaveBeenCalledWith({ response: "success" }, true, false);
+        });
+
+        test("_sendRequestImpl processes streaming request successfully", async () => {
+            const mockWS = {
+                send: jest.fn(),
+            };
+            const mockQueue = {
+                dequeue: jest
+                    .fn()
+                    .mockResolvedValueOnce({ data: "hello", event_type: "chunk" })
+                    .mockResolvedValueOnce({ data: " world", event_type: "chunk" })
+                    .mockResolvedValueOnce({ type: "STREAM_END" }),
+            };
+            const minimalRegistry = {
+                createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+                getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+                removeMessageQueue: jest.fn(),
+            };
+
+            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockFormatConverter, mockLogger);
+
+            const callback = jest.fn();
+            await minimalRegistry.sendRequest(0, { body: {}, isStream: true, path: "/foo" }, callback);
+
+            expect(callback).toHaveBeenNthCalledWith(1, "hello", false, false);
+            expect(callback).toHaveBeenNthCalledWith(2, " world", false, false);
+            expect(callback).toHaveBeenNthCalledWith(3, null, true, false);
+        });
+    });
 });

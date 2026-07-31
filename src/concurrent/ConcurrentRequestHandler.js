@@ -17,6 +17,88 @@ class ConcurrentRequestHandler {
         this.formatConverter = formatConverter;
         this.logger = logger;
         this.modelList = modelList;
+
+        if (this.connectionRegistry && typeof this.connectionRegistry.sendRequest !== "function") {
+            this.connectionRegistry.sendRequest = this._sendRequestImpl.bind(this);
+        }
+    }
+
+    /**
+     * Internal implementation of sendRequest that integrates with ConnectionRegistry and MessageQueue
+     * @param {number} authIndex
+     * @param {Object} requestPayload
+     * @param {Function} callback
+     */
+    async _sendRequestImpl(authIndex, requestPayload, callback) {
+        const connection = this.connectionRegistry.getConnectionByAuth(authIndex);
+        if (!connection) {
+            const error = new Error(`No WebSocket connection found for authIndex=${authIndex}`);
+            error.statusCode = 503;
+            throw error;
+        }
+
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        const requestAttemptId = `${requestId}_attempt_1_${Math.random().toString(36).substring(2, 8)}`;
+
+        const messageQueue = this.connectionRegistry.createMessageQueue(requestId, authIndex, requestAttemptId);
+
+        try {
+            const payload = {
+                action: requestPayload.action || "generateContent",
+                body: requestPayload.body,
+                event_type: "proxy_request",
+                isStream: requestPayload.isStream,
+                path: requestPayload.path,
+                query: requestPayload.query,
+                request_attempt_id: requestAttemptId,
+                request_attempt_number: 1,
+                request_id: requestId,
+            };
+
+            connection.send(JSON.stringify(payload));
+
+            let isFinished = false;
+            let fullResponseBody = "";
+
+            while (!isFinished) {
+                const message = await messageQueue.dequeue();
+
+                if (message.type === "STREAM_END") {
+                    isFinished = true;
+                    if (requestPayload.isStream) {
+                        callback(null, true, false);
+                    } else {
+                        try {
+                            const parsedBody = JSON.parse(fullResponseBody);
+                            callback(parsedBody, true, false);
+                        } catch (e) {
+                            callback(fullResponseBody, true, false);
+                        }
+                    }
+                } else if (message.event_type === "error") {
+                    isFinished = true;
+                    callback(message.message || "Request failed", true, true);
+                } else if (message.event_type === "response_headers") {
+                    if (this.logger && typeof this.logger.debug === "function") {
+                        this.logger.debug(`[ConcurrentRequestHandler] Received response headers for ${requestId}`);
+                    }
+                } else {
+                    const data = message.data || "";
+                    if (requestPayload.isStream) {
+                        callback(data, false, false);
+                    } else {
+                        fullResponseBody += data;
+                    }
+                }
+            }
+        } catch (error) {
+            if (this.logger && typeof this.logger.error === "function") {
+                this.logger.error(`[ConcurrentRequestHandler] WebSocket queue error: ${error.message}`);
+            }
+            callback(error.message, true, true);
+        } finally {
+            this.connectionRegistry.removeMessageQueue(requestId, "request_complete");
+        }
     }
 
     /**
