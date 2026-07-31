@@ -21,11 +21,10 @@ class AccountScheduler {
      * @returns {number[]}
      */
     _getAccountIndices() {
-        const accounts = this.authSource ? this.authSource.getAllAccounts() : [];
-        if (!accounts || accounts.length === 0) {
+        if (!this.authSource) {
             return [];
         }
-        return accounts.map((acc, idx) => (typeof acc.index === "number" ? acc.index : idx));
+        return this.authSource.availableIndices || [];
     }
 
     /**

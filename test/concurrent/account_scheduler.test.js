@@ -8,7 +8,7 @@ describe("AccountScheduler", () => {
 
     beforeEach(() => {
         mockAuthSource = {
-            getAllAccounts: jest.fn().mockReturnValue([{ index: 0 }, { index: 1 }, { index: 2 }]),
+            availableIndices: [0, 1, 2],
         };
         mockConnectionRegistry = {
             hasConnection: jest.fn(),
