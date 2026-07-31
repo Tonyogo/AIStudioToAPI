@@ -44,15 +44,20 @@ class ConcurrentRequestHandler {
 
         try {
             const payload = {
-                action: requestPayload.action || "generateContent",
                 body: requestPayload.body,
                 event_type: "proxy_request",
-                isStream: requestPayload.isStream,
+                headers: requestPayload.headers || {},
+                is_generative:
+                    requestPayload.method === "POST" &&
+                    (requestPayload.path.includes("generateContent") ||
+                        requestPayload.path.includes("streamGenerateContent")),
+                method: requestPayload.method || "POST",
                 path: requestPayload.path,
-                query: requestPayload.query,
+                query_params: requestPayload.query || {},
                 request_attempt_id: requestAttemptId,
                 request_attempt_number: 1,
                 request_id: requestId,
+                streaming_mode: requestPayload.isStream ? "real" : "fake",
             };
 
             connection.send(JSON.stringify(payload));
@@ -157,10 +162,14 @@ class ConcurrentRequestHandler {
 
         try {
             const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
+            const requestBodyStr = req.method !== "GET" ? JSON.stringify(req.body) : undefined;
+
             const requestPayload = {
                 action: "generateContent",
-                body: req.body,
+                body: requestBodyStr,
+                headers: req.headers,
                 isStream,
+                method: req.method,
                 path: req.path,
                 query: req.query,
             };
