@@ -24,7 +24,6 @@ function initConcurrentMode(app, system) {
 
     const authSource = system.authSource;
     const connectionRegistry = system.connectionRegistry;
-    const formatConverter = system.formatConverter;
     const logger = system.logger || console;
     const modelList = system.config ? system.config.modelList : [];
 
@@ -33,13 +32,7 @@ function initConcurrentMode(app, system) {
     }
 
     const scheduler = new AccountScheduler(authSource, connectionRegistry, logger);
-    const concurrentRequestHandler = new ConcurrentRequestHandler(
-        connectionRegistry,
-        scheduler,
-        formatConverter,
-        logger,
-        modelList
-    );
+    const concurrentRequestHandler = new ConcurrentRequestHandler(connectionRegistry, scheduler, logger, modelList);
 
     concurrentRequestHandler.registerRoutes(app);
 

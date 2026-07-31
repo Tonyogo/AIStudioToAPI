@@ -6,7 +6,6 @@ describe("ConcurrentRequestHandler", () => {
     let app;
     let mockConnectionRegistry;
     let mockScheduler;
-    let mockFormatConverter;
     let mockLogger;
 
     beforeEach(() => {
@@ -22,8 +21,6 @@ describe("ConcurrentRequestHandler", () => {
             getNextAuthIndex: jest.fn().mockReturnValue(0),
         };
 
-        mockFormatConverter = {};
-
         mockLogger = {
             debug: jest.fn(),
             error: jest.fn(),
@@ -33,13 +30,9 @@ describe("ConcurrentRequestHandler", () => {
     });
 
     test("registers routes on express app", () => {
-        const handler = new ConcurrentRequestHandler(
-            mockConnectionRegistry,
-            mockScheduler,
-            mockFormatConverter,
-            mockLogger,
-            [{ name: "models/gemini-2.5-flash" }]
-        );
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger, [
+            { name: "models/gemini-2.5-flash" },
+        ]);
 
         handler.registerRoutes(app);
 
@@ -58,12 +51,7 @@ describe("ConcurrentRequestHandler", () => {
             throw err;
         });
 
-        const handler = new ConcurrentRequestHandler(
-            mockConnectionRegistry,
-            mockScheduler,
-            mockFormatConverter,
-            mockLogger
-        );
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
 
         const req = {
             body: { contents: [] },
@@ -97,7 +85,7 @@ describe("ConcurrentRequestHandler", () => {
                 getConnectionByAuth: jest.fn(),
                 removeMessageQueue: jest.fn(),
             };
-            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockFormatConverter, mockLogger);
+            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
             expect(minimalRegistry.sendRequest).toBeDefined();
             expect(typeof minimalRegistry.sendRequest).toBe("function");
         });
@@ -119,7 +107,7 @@ describe("ConcurrentRequestHandler", () => {
                 removeMessageQueue: jest.fn(),
             };
 
-            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockFormatConverter, mockLogger);
+            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
 
             const callback = jest.fn();
             await minimalRegistry.sendRequest(0, { body: {}, isStream: false, path: "/foo" }, callback);
@@ -147,7 +135,7 @@ describe("ConcurrentRequestHandler", () => {
                 removeMessageQueue: jest.fn(),
             };
 
-            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockFormatConverter, mockLogger);
+            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
 
             const callback = jest.fn();
             await minimalRegistry.sendRequest(0, { body: {}, isStream: true, path: "/foo" }, callback);

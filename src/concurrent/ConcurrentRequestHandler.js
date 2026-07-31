@@ -7,14 +7,12 @@ class ConcurrentRequestHandler {
     /**
      * @param {Object} connectionRegistry - ConnectionRegistry instance
      * @param {Object} scheduler - AccountScheduler instance
-     * @param {Object} [formatConverter] - FormatConverter instance
      * @param {Object} [logger] - Logger instance
      * @param {Array} [modelList] - Model list from configuration
      */
-    constructor(connectionRegistry, scheduler, formatConverter, logger = console, modelList = []) {
+    constructor(connectionRegistry, scheduler, logger = console, modelList = []) {
         this.connectionRegistry = connectionRegistry;
         this.scheduler = scheduler;
-        this.formatConverter = formatConverter;
         this.logger = logger;
         this.modelList = modelList;
 
