@@ -19,6 +19,7 @@ describe("Concurrent System Integration Check", () => {
     });
 
     test("initConcurrentMode can be safely invoked with mock ProxyServerSystem dependencies", () => {
+        process.env.ENABLE_CONCURRENT = "true";
         const mockApp = {
             get: jest.fn(),
             post: jest.fn(),

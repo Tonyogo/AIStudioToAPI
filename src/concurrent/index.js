@@ -18,6 +18,11 @@ const ConcurrentRequestHandler = require("./ConcurrentRequestHandler");
  * @returns {Object} Initialized concurrent components
  */
 function initConcurrentMode(app, dependencies) {
+    const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true" || process.env.CONCURRENT_MODE === "true";
+    if (!isConcurrentMode) {
+        return null;
+    }
+
     const { authSource, connectionRegistry, formatConverter, logger = console, modelList = [] } = dependencies;
 
     if (logger && typeof logger.info === "function") {

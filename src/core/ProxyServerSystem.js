@@ -461,88 +461,83 @@ class ProxyServerSystem extends EventEmitter {
         app.use(this._createAuthMiddleware());
 
         // API routes
-        const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true" || process.env.CONCURRENT_MODE === "true";
+        const { initConcurrentMode } = require("../concurrent");
+        initConcurrentMode(app, {
+            authSource: this.authSource,
+            connectionRegistry: this.connectionRegistry,
+            formatConverter: this.formatConverter,
+            logger: this.logger,
+            modelList: this.config.modelList,
+        });
 
-        if (isConcurrentMode) {
-            this.logger.info("🚀 Concurrent mode ENABLED. Mounting concurrent request handler...");
-            const { initConcurrentMode } = require("../concurrent");
-            initConcurrentMode(app, {
-                authSource: this.authSource,
-                connectionRegistry: this.connectionRegistry,
-                formatConverter: this.formatConverter,
-                logger: this.logger,
-                modelList: this.config.modelList,
-            });
-        } else {
-            app.get(["/v1/models"], (req, res) => {
-                // OpenAI format
-                const models = this.config.modelList.map(model => ({
-                    context_window: model.inputTokenLimit,
-                    created: Math.floor(Date.now() / 1000),
-                    id: model.name.replace("models/", ""),
-                    max_tokens: model.outputTokenLimit,
-                    object: "model",
-                    owned_by: "google",
-                }));
+        app.get(["/v1/models"], (req, res) => {
+            // OpenAI format
+            const models = this.config.modelList.map(model => ({
+                context_window: model.inputTokenLimit,
+                created: Math.floor(Date.now() / 1000),
+                id: model.name.replace("models/", ""),
+                max_tokens: model.outputTokenLimit,
+                object: "model",
+                owned_by: "google",
+            }));
 
-                res.status(200).json({
-                    data: models,
-                    object: "list",
-                });
+            res.status(200).json({
+                data: models,
+                object: "list",
             });
+        });
 
-            app.get(["/v1beta/models"], (req, res) => {
-                res.status(200).json({ models: this.config.modelList });
-            });
+        app.get(["/v1beta/models"], (req, res) => {
+            res.status(200).json({ models: this.config.modelList });
+        });
 
-            app.post("/v1/chat/completions", (req, res) => {
-                this.requestHandler.processOpenAIRequest(req, res);
-            });
+        app.post("/v1/chat/completions", (req, res) => {
+            this.requestHandler.processOpenAIRequest(req, res);
+        });
 
-            app.post(["/v1/embeddings", "/v1/openai/embeddings"], (req, res) => {
-                this.requestHandler.processOpenAIEmbeddingsRequest(req, res);
-            });
+        app.post(["/v1/embeddings", "/v1/openai/embeddings"], (req, res) => {
+            this.requestHandler.processOpenAIEmbeddingsRequest(req, res);
+        });
 
-            // OpenAI Response API compatible endpoint
-            app.post("/v1/responses", (req, res) => {
-                this.requestHandler.processOpenAIResponseRequest(req, res);
-            });
+        // OpenAI Response API compatible endpoint
+        app.post("/v1/responses", (req, res) => {
+            this.requestHandler.processOpenAIResponseRequest(req, res);
+        });
 
-            // OpenAI Response API count input tokens endpoint
-            app.post(["/v1/responses/input_tokens", "/responses/input_tokens"], (req, res) => {
-                this.requestHandler.processOpenAIResponseInputTokens(req, res);
-            });
+        // OpenAI Response API count input tokens endpoint
+        app.post(["/v1/responses/input_tokens", "/responses/input_tokens"], (req, res) => {
+            this.requestHandler.processOpenAIResponseInputTokens(req, res);
+        });
 
-            // Claude API compatible endpoint
-            app.post("/v1/messages", (req, res) => {
-                this.requestHandler.processClaudeRequest(req, res);
-            });
+        // Claude API compatible endpoint
+        app.post("/v1/messages", (req, res) => {
+            this.requestHandler.processClaudeRequest(req, res);
+        });
 
-            // Claude API count tokens endpoint
-            app.post("/v1/messages/count_tokens", (req, res) => {
-                this.requestHandler.processClaudeCountTokens(req, res);
-            });
+        // Claude API count tokens endpoint
+        app.post("/v1/messages/count_tokens", (req, res) => {
+            this.requestHandler.processClaudeCountTokens(req, res);
+        });
 
-            // VNC WebSocket downgrade / missing headers handler
-            // If Nginx or another proxy strips "Upgrade: websocket" headers, the request appears as a normal GET.
-            // We intercept it here to prevent it from falling through to the Gemini proxy.
-            app.get("/vnc", (req, res) => {
-                res.status(400).send(
-                    "Error: WebSocket connection failed. " +
-                        "If you are using a proxy (like Nginx), ensure it is configured to forward 'Upgrade' and 'Connection' headers."
-                );
-            });
+        // VNC WebSocket downgrade / missing headers handler
+        // If Nginx or another proxy strips "Upgrade: websocket" headers, the request appears as a normal GET.
+        // We intercept it here to prevent it from falling through to the Gemini proxy.
+        app.get("/vnc", (req, res) => {
+            res.status(400).send(
+                "Error: WebSocket connection failed. " +
+                    "If you are using a proxy (like Nginx), ensure it is configured to forward 'Upgrade' and 'Connection' headers."
+            );
+        });
 
-            // File Upload Routes
-            // Intercept upload requests to use specialized handler
-            app.all(/\/upload\/.*/, (req, res) => {
-                this.requestHandler.processUploadRequest(req, res);
-            });
+        // File Upload Routes
+        // Intercept upload requests to use specialized handler
+        app.all(/\/upload\/.*/, (req, res) => {
+            this.requestHandler.processUploadRequest(req, res);
+        });
 
-            app.all(/(.*)/, (req, res) => {
-                this.requestHandler.processRequest(req, res);
-            });
-        }
+        app.all(/(.*)/, (req, res) => {
+            this.requestHandler.processRequest(req, res);
+        });
 
         return app;
     }

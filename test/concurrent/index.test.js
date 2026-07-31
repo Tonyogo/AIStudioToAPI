@@ -3,6 +3,17 @@ const express = require("express");
 const { initConcurrentMode } = require("../../src/concurrent");
 
 describe("concurrent module facade (index.js)", () => {
+    let originalEnv;
+
+    beforeEach(() => {
+        originalEnv = { ...process.env };
+        process.env.ENABLE_CONCURRENT = "true";
+    });
+
+    afterEach(() => {
+        process.env = originalEnv;
+    });
+
     test("initConcurrentMode initializes scheduler and request handler", () => {
         const app = express();
         const mockAuthSource = { getAllAccounts: jest.fn().mockReturnValue([]) };
