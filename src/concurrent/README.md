@@ -33,7 +33,7 @@ src/
 
 ### 2.1 `index.js` (统一入口)
 
-*   **职责：** 子系统的统一对外接口和门面方法 `initConcurrentMode(app, dependencies)`。
+*   **职责：** 子系统的统一对外接口和门面方法 `initConcurrentMode(app, system)`。
 *   **内部设计：** 
     *   在内部自动读取环境变量 `ENABLE_CONCURRENT`。如果未启用并发模式，直接返回 `null`，不注册任何路由。
     *   如果启用，则在 Express 实例中**最先**挂载并发的 Gemini 接口。由于 Express 路由匹配是顺序进行的，这些并发路由会优先拦截所有原生 Gemini 请求。
@@ -69,13 +69,7 @@ src/
 ```javascript
         // API routes
         const { initConcurrentMode } = require("../concurrent");
-        initConcurrentMode(app, {
-            authSource: this.authSource,
-            connectionRegistry: this.connectionRegistry,
-            formatConverter: this.formatConverter,
-            logger: this.logger,
-            modelList: this.config.modelList,
-        });
+        initConcurrentMode(app, this);
 
         // 后面原有的 OpenAI / Anthropic 路由完全保持不动
         app.get(["/v1/models"], (req, res) => { ... });

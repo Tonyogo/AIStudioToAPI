@@ -25,13 +25,15 @@ describe("Concurrent System Integration Check", () => {
             post: jest.fn(),
         };
 
-        const result = initConcurrentMode(mockApp, {
+        const mockSystem = {
             authSource: { getAllAccounts: () => [] },
+            config: { modelList: [{ name: "models/gemini-2.5-flash" }] },
             connectionRegistry: { hasConnection: () => false },
             formatConverter: {},
             logger: { info: jest.fn() },
-            modelList: [{ name: "models/gemini-2.5-flash" }],
-        });
+        };
+
+        const result = initConcurrentMode(mockApp, mockSystem);
 
         expect(result.scheduler).toBeDefined();
         expect(mockApp.get).toHaveBeenCalled();

@@ -9,21 +9,24 @@ const ConcurrentRequestHandler = require("./ConcurrentRequestHandler");
 /**
  * Initialize concurrent mode components and attach routes to Express app
  * @param {Object} app - Express application instance
- * @param {Object} dependencies - Core system dependencies
- * @param {Object} dependencies.authSource - AuthSource instance
- * @param {Object} dependencies.connectionRegistry - ConnectionRegistry instance
- * @param {Object} [dependencies.formatConverter] - FormatConverter instance
- * @param {Object} [dependencies.logger] - Logger instance
- * @param {Array} [dependencies.modelList] - Model configuration list
+ * @param {Object} system - ProxyServerSystem instance
  * @returns {Object} Initialized concurrent components
  */
-function initConcurrentMode(app, dependencies) {
+function initConcurrentMode(app, system) {
     const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true";
     if (!isConcurrentMode) {
         return null;
     }
 
-    const { authSource, connectionRegistry, formatConverter, logger = console, modelList = [] } = dependencies;
+    if (!system) {
+        throw new Error("[Concurrent] ProxyServerSystem instance is required to initialize concurrent mode");
+    }
+
+    const authSource = system.authSource;
+    const connectionRegistry = system.connectionRegistry;
+    const formatConverter = system.formatConverter;
+    const logger = system.logger || console;
+    const modelList = system.config ? system.config.modelList : [];
 
     if (logger && typeof logger.info === "function") {
         logger.info("[Concurrent] Initializing concurrent multi-account forwarding subsystem...");

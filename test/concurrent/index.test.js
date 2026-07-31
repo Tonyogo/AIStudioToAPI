@@ -20,13 +20,15 @@ describe("concurrent module facade (index.js)", () => {
         const mockConnectionRegistry = { hasConnection: jest.fn() };
         const mockLogger = { debug: jest.fn(), error: jest.fn(), info: jest.fn() };
 
-        const result = initConcurrentMode(app, {
+        const mockSystem = {
             authSource: mockAuthSource,
+            config: { modelList: [] },
             connectionRegistry: mockConnectionRegistry,
             formatConverter: {},
             logger: mockLogger,
-            modelList: [],
-        });
+        };
+
+        const result = initConcurrentMode(app, mockSystem);
 
         expect(result).toHaveProperty("scheduler");
         expect(result).toHaveProperty("concurrentRequestHandler");
