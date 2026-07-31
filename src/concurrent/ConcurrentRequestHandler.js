@@ -194,7 +194,9 @@ class ConcurrentRequestHandler {
                             error: { code: 500, message: chunk || "Internal Error", status: "INTERNAL" },
                         });
                     } else if (isStream) {
-                        res.write(`data: ${JSON.stringify({ error: chunk })}\n\n`);
+                        res.write(
+                            `data: ${JSON.stringify({ error: { code: 500, message: chunk || "Internal Error", status: "INTERNAL" } })}\n\n`
+                        );
                         res.end();
                     }
                     return;
@@ -203,7 +205,7 @@ class ConcurrentRequestHandler {
                 if (isStream) {
                     if (chunk) {
                         const dataStr = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
-                        res.write(`data: ${dataStr}\n\n`);
+                        res.write(dataStr);
                     }
                     if (isFinished) {
                         res.end();
