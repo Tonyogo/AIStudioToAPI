@@ -14,7 +14,7 @@ describe("Concurrent System Integration Check", () => {
 
     test("ENABLE_CONCURRENT environment variable is recognized", () => {
         process.env.ENABLE_CONCURRENT = "true";
-        const isConcurrent = process.env.ENABLE_CONCURRENT === "true" || process.env.CONCURRENT_MODE === "true";
+        const isConcurrent = process.env.ENABLE_CONCURRENT === "true";
         expect(isConcurrent).toBe(true);
     });
 

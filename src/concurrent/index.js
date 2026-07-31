@@ -18,7 +18,7 @@ const ConcurrentRequestHandler = require("./ConcurrentRequestHandler");
  * @returns {Object} Initialized concurrent components
  */
 function initConcurrentMode(app, dependencies) {
-    const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true" || process.env.CONCURRENT_MODE === "true";
+    const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true";
     if (!isConcurrentMode) {
         return null;
     }

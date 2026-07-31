@@ -16,7 +16,7 @@ When `ENABLE_CONCURRENT=true` is set, the server mounts a lean request handler s
 
 ## 2. Core Requirements & Constraints
 
-1. **Activation via Environment Variable**: Triggered solely by `ENABLE_CONCURRENT=true` (or `CONCURRENT_MODE=true`).
+1. **Activation via Environment Variable**: Triggered solely by `ENABLE_CONCURRENT=true`.
 2. **Minimal Intrusion**: Zero structural modifications to `main.js`, `BrowserManager.js`, `ConnectionRegistry.js`, or `FormatConverter.js`.
 3. **Single API Format**: Only native Gemini API format is supported (`/v1beta/models/*`). OpenAI, Anthropic, UI management routes, and static assets are completely bypassed in concurrent mode.
 4. **Round-Robin Scheduling**: A dedicate `AccountScheduler` routes each incoming request to the next available/connected account (`authIndex`).

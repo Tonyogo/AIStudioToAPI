@@ -7,7 +7,7 @@
 
 ## 1. 概述与核心功能
 
-本子系统专为 **AIStudioToAPI** 在启用并发模式时设计。当环境变量 `ENABLE_CONCURRENT=true` 或 `CONCURRENT_MODE=true` 启用时，系统会绕过原先的全局互斥锁 (`isSystemBusy`) 和复杂的账号切换机制，自动将传入的原生 Gemini API 请求分发并并发转发到所有在线的账号连接中。
+本子系统专为 **AIStudioToAPI** 在启用并发模式时设计。当环境变量 `ENABLE_CONCURRENT=true` 启用时，系统会绕过原先的全局互斥锁 (`isSystemBusy`) 和复杂的账号切换机制，自动将传入的原生 Gemini API 请求分发并并发转发到所有在线的账号连接中。
 
 ### 核心功能
 
@@ -35,7 +35,7 @@ src/
 
 *   **职责：** 子系统的统一对外接口和门面方法 `initConcurrentMode(app, dependencies)`。
 *   **内部设计：** 
-    *   在内部自动读取环境变量 `ENABLE_CONCURRENT` / `CONCURRENT_MODE`。如果未启用并发模式，直接返回 `null`，不注册任何路由。
+    *   在内部自动读取环境变量 `ENABLE_CONCURRENT`。如果未启用并发模式，直接返回 `null`，不注册任何路由。
     *   如果启用，则在 Express 实例中**最先**挂载并发的 Gemini 接口。由于 Express 路由匹配是顺序进行的，这些并发路由会优先拦截所有原生 Gemini 请求。
 
 ### 2.2 `AccountScheduler.js` (轮询调度器)

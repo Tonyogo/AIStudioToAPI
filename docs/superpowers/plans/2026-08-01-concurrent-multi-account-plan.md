@@ -4,13 +4,13 @@
 
 **Goal:** Build a lean concurrent forwarding module (`src/concurrent`) that routes native Gemini API requests across active Google account browser contexts using a Round-Robin scheduler when `ENABLE_CONCURRENT=true`.
 
-**Architecture:** A facade (`src/concurrent/index.js`) mounts `ConcurrentRequestHandler` and `AccountScheduler` when `ENABLE_CONCURRENT=true` or `CONCURRENT_MODE=true` in `ProxyServerSystem.js`. Requests to `/v1beta/models/*` are dispatched to active WebSocket connections in `ConnectionRegistry` without global mutual exclusion locks.
+**Architecture:** A facade (`src/concurrent/index.js`) mounts `ConcurrentRequestHandler` and `AccountScheduler` when `ENABLE_CONCURRENT=true` in `ProxyServerSystem.js`. Requests to `/v1beta/models/*` are dispatched to active WebSocket connections in `ConnectionRegistry` without global mutual exclusion locks.
 
 **Tech Stack:** Node.js, Express, WebSocket (`ws`), Jest for testing.
 
 ## Global Constraints
 
-- Activation Flag: `process.env.ENABLE_CONCURRENT === "true"` or `process.env.CONCURRENT_MODE === "true"`.
+- Activation Flag: `process.env.ENABLE_CONCURRENT === "true"`.
 - Native Gemini API format support only (`/v1beta/models/*`).
 - Zero modifications to `BrowserManager.js`, `ConnectionRegistry.js`, `FormatConverter.js`, or `main.js`.
 - Minimal routing branch in `ProxyServerSystem.js`.
@@ -590,7 +590,7 @@ git commit -m "feat(concurrent): implement concurrent subsystem facade entrypoin
 **Interfaces:**
 - Consumes:
   - `initConcurrentMode(app, dependencies)` from `../concurrent`
-  - `process.env.ENABLE_CONCURRENT` / `process.env.CONCURRENT_MODE`
+  - `process.env.ENABLE_CONCURRENT`
 - Produces:
   - Integrated server route registration depending on `ENABLE_CONCURRENT` flag.
 
@@ -615,7 +615,7 @@ describe("Concurrent System Integration Check", () => {
 
     test("ENABLE_CONCURRENT environment variable is recognized", () => {
         process.env.ENABLE_CONCURRENT = "true";
-        const isConcurrent = process.env.ENABLE_CONCURRENT === "true" || process.env.CONCURRENT_MODE === "true";
+        const isConcurrent = process.env.ENABLE_CONCURRENT === "true";
         expect(isConcurrent).toBe(true);
     });
 
@@ -660,85 +660,16 @@ Replace:
 With:
 ```javascript
         // API routes
-        const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true" || process.env.CONCURRENT_MODE === "true";
+        const { initConcurrentMode } = require("../concurrent");
+        initConcurrentMode(app, {
+            authSource: this.authSource,
+            connectionRegistry: this.connectionRegistry,
+            formatConverter: this.formatConverter,
+            logger: this.logger,
+            modelList: this.config.modelList,
+        });
 
-        if (isConcurrentMode) {
-            this.logger.info("🚀 Concurrent mode ENABLED. Mounting concurrent request handler...");
-            const { initConcurrentMode } = require("../concurrent");
-            initConcurrentMode(app, {
-                authSource: this.authSource,
-                connectionRegistry: this.connectionRegistry,
-                formatConverter: this.formatConverter,
-                logger: this.logger,
-                modelList: this.config.modelList,
-            });
-        } else {
-            app.get(["/v1/models"], (req, res) => {
-                // OpenAI format
-                const models = this.config.modelList.map(model => ({
-                    context_window: model.inputTokenLimit,
-                    created: Math.floor(Date.now() / 1000),
-                    id: model.name.replace("models/", ""),
-                    max_tokens: model.outputTokenLimit,
-                    object: "model",
-                    owned_by: "google",
-                }));
-
-                res.status(200).json({
-                    data: models,
-                    object: "list",
-                });
-            });
-
-            app.get(["/v1beta/models"], (req, res) => {
-                res.status(200).json({ models: this.config.modelList });
-            });
-
-            app.post("/v1/chat/completions", (req, res) => {
-                this.requestHandler.processOpenAIRequest(req, res);
-            });
-
-            app.post(["/v1/embeddings", "/v1/openai/embeddings"], (req, res) => {
-                this.requestHandler.processOpenAIEmbeddingsRequest(req, res);
-            });
-
-            // OpenAI Response API compatible endpoint
-            app.post("/v1/responses", (req, res) => {
-                this.requestHandler.processOpenAIResponseRequest(req, res);
-            });
-
-            // OpenAI Response API count input tokens endpoint
-            app.post(["/v1/responses/input_tokens", "/responses/input_tokens"], (req, res) => {
-                this.requestHandler.processOpenAIResponseInputTokens(req, res);
-            });
-
-            // Claude API compatible endpoint
-            app.post("/v1/messages", (req, res) => {
-                this.requestHandler.processClaudeRequest(req, res);
-            });
-
-            // Claude API count tokens endpoint
-            app.post("/v1/messages/count_tokens", (req, res) => {
-                this.requestHandler.processClaudeCountTokens(req, res);
-            });
-
-            // VNC WebSocket downgrade / missing headers handler
-            app.get("/vnc", (req, res) => {
-                res.status(400).send(
-                    "Error: WebSocket connection failed. " +
-                        "If you are using a proxy (like Nginx), ensure it is configured to forward 'Upgrade' and 'Connection' headers."
-                );
-            });
-
-            // File Upload Routes
-            app.all(/\/upload\/.*/, (req, res) => {
-                this.requestHandler.processUploadRequest(req, res);
-            });
-
-            app.all(/(.*)/, (req, res) => {
-                this.requestHandler.processRequest(req, res);
-            });
-        }
+        app.get(["/v1/models"], (req, res) => {
 ```
 
 - [ ] **Step 4: Run all tests and check formatting/linting**
