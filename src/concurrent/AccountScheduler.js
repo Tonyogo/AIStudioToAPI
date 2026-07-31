@@ -28,6 +28,24 @@ class AccountScheduler {
     }
 
     /**
+     * Check if connection registry has active connection for given auth index
+     * @param {number} authIndex
+     * @returns {boolean}
+     */
+    _hasConnection(authIndex) {
+        if (!this.connectionRegistry) {
+            return false;
+        }
+        if (this.connectionRegistry.connectionsByAuth) {
+            return this.connectionRegistry.connectionsByAuth.has(authIndex);
+        }
+        if (typeof this.connectionRegistry.hasConnection === "function") {
+            return this.connectionRegistry.hasConnection(authIndex);
+        }
+        return false;
+    }
+
+    /**
      * Select next available authIndex using Round-Robin scheduling
      * @returns {number} The selected authIndex
      * @throws {Error} If no connected authIndex is available
@@ -43,7 +61,7 @@ class AccountScheduler {
         const total = indices.length;
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
-            if (this.connectionRegistry && this.connectionRegistry.hasConnection(candidateIdx)) {
+            if (this._hasConnection(candidateIdx)) {
                 this.currentIndex = (this.currentIndex + i + 1) % total;
                 if (this.logger && typeof this.logger.debug === "function") {
                     this.logger.debug(`[AccountScheduler] Selected authIndex #${candidateIdx}`);
