@@ -7,7 +7,7 @@ describe("concurrent module facade (index.js)", () => {
         const app = express();
         const mockAuthSource = { getAllAccounts: jest.fn().mockReturnValue([]) };
         const mockConnectionRegistry = { hasConnection: jest.fn() };
-        const mockLogger = { info: jest.fn(), debug: jest.fn(), error: jest.fn() };
+        const mockLogger = { debug: jest.fn(), error: jest.fn(), info: jest.fn() };
 
         const result = initConcurrentMode(app, {
             authSource: mockAuthSource,

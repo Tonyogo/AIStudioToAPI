@@ -46,7 +46,7 @@ describe("ConcurrentRequestHandler", () => {
         // Verify route stack contains expected paths
         const routes = app._router.stack
             .filter(r => r.route)
-            .map(r => ({ path: r.route.path, methods: r.route.methods }));
+            .map(r => ({ methods: r.route.methods, path: r.route.path }));
 
         expect(routes.some(r => r.path.includes("/v1beta/models"))).toBe(true);
     });
@@ -66,16 +66,16 @@ describe("ConcurrentRequestHandler", () => {
         );
 
         const req = {
-            method: "POST",
-            path: "/v1beta/models/gemini-2.5-flash:generateContent",
-            params: { 0: "gemini-2.5-flash:generateContent" },
-            query: {},
             body: { contents: [] },
+            method: "POST",
+            params: { 0: "gemini-2.5-flash:generateContent" },
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
         };
 
         const res = {
-            status: jest.fn().mockReturnThis(),
             json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
         };
 
         await handler.handleGeminiRequest(req, res);
