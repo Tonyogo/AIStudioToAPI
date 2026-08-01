@@ -212,4 +212,51 @@ describe("ConcurrentRequestHandler", () => {
             },
         });
     });
+
+    test("handleGeminiRequest sends cancel_request when client disconnects early", async () => {
+        const mockWS = { send: jest.fn() };
+        let closeListener;
+        const mockQueue = {
+            dequeue: jest.fn().mockImplementation(() => {
+                // Trigger client disconnect while waiting
+                if (closeListener) closeListener();
+                return new Promise(() => {}); // hang
+            }),
+        };
+        const minimalRegistry = {
+            createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+            getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+            removeMessageQueue: jest.fn(),
+        };
+
+        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            on: jest.fn((event, fn) => {
+                if (event === "close") closeListener = fn;
+            }),
+            status: jest.fn().mockReturnThis(),
+            writableEnded: false,
+        };
+
+        // Run handleGeminiRequest asynchronously
+        handler.handleGeminiRequest(req, res);
+
+        // Wait a tick for queue dequeue to run and trigger closeListener
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        expect(mockWS.send).toHaveBeenCalledWith(
+            expect.stringContaining('"event_type":"cancel_request"')
+        );
+        expect(minimalRegistry.removeMessageQueue).toHaveBeenCalledWith(expect.any(String), "client_disconnect");
+    });
 });
