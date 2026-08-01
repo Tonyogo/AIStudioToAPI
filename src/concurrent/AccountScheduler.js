@@ -22,6 +22,53 @@ class AccountScheduler {
     }
 
     /**
+     * Check if system is active (received request within idleTimeoutMs)
+     * @returns {boolean}
+     */
+    isSystemActive() {
+        return Date.now() - this.lastSystemActivityAt < this.idleTimeoutMs;
+    }
+
+    /**
+     * Start background activation loop
+     * @param {number} [intervalMs=30000]
+     */
+    startActivationLoop(intervalMs = 30000) {
+        if (this._activationTimer) return;
+        this._activationTimer = setInterval(async () => {
+            if (!this.isSystemActive()) {
+                if (this.logger && typeof this.logger.debug === "function") {
+                    this.logger.debug("[AccountScheduler] System is idle, skipping background account activation");
+                }
+                return;
+            }
+
+            const indices = this._getAccountIndices();
+            for (const idx of indices) {
+                if (this._hasConnection(idx) && this.getAccountStatus(idx) === "INACTIVE") {
+                    if (this.logger && typeof this.logger.info === "function") {
+                        this.logger.info(
+                            `[AccountScheduler] Lazy loading activation loop activating authIndex #${idx}...`
+                        );
+                    }
+                    await this.activateAccount(idx);
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+        }, intervalMs);
+    }
+
+    /**
+     * Stop background activation loop
+     */
+    stopActivationLoop() {
+        if (this._activationTimer) {
+            clearInterval(this._activationTimer);
+            this._activationTimer = null;
+        }
+    }
+
+    /**
      * Get account status for given auth index
      * @param {number} authIndex
      * @returns {string}
@@ -106,7 +153,9 @@ class AccountScheduler {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx)) {
                 if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(`[AccountScheduler] No ACTIVATED accounts available, synchronously activating authIndex #${candidateIdx}...`);
+                    this.logger.info(
+                        `[AccountScheduler] No ACTIVATED accounts available, synchronously activating authIndex #${candidateIdx}...`
+                    );
                 }
                 const activated = await this.activateAccount(candidateIdx);
                 if (activated) {
@@ -129,7 +178,9 @@ class AccountScheduler {
     async activateAccount(authIndex) {
         if (!this.browserManager) {
             if (this.logger && typeof this.logger.warn === "function") {
-                this.logger.warn(`[AccountScheduler] Cannot activate account #${authIndex}: browserManager not injected`);
+                this.logger.warn(
+                    `[AccountScheduler] Cannot activate account #${authIndex}: browserManager not injected`
+                );
             }
             return false;
         }
