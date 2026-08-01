@@ -115,7 +115,7 @@ describe("ConcurrentRequestHandler", () => {
             expect(mockWS.send).toHaveBeenCalled();
             expect(minimalRegistry.createMessageQueue).toHaveBeenCalled();
             expect(minimalRegistry.removeMessageQueue).toHaveBeenCalled();
-            expect(callback).toHaveBeenCalledWith({ response: "success" }, true, false);
+            expect(callback).toHaveBeenCalledWith({ response: "success" }, true, false, expect.any(Object));
         });
 
         test("_sendRequestImpl processes streaming request successfully", async () => {
@@ -140,9 +140,35 @@ describe("ConcurrentRequestHandler", () => {
             const callback = jest.fn();
             await minimalRegistry.sendRequest(0, { body: {}, isStream: true, path: "/foo" }, callback);
 
-            expect(callback).toHaveBeenNthCalledWith(1, "hello", false, false);
-            expect(callback).toHaveBeenNthCalledWith(2, " world", false, false);
-            expect(callback).toHaveBeenNthCalledWith(3, null, true, false);
+            expect(callback).toHaveBeenNthCalledWith(1, "hello", false, false, expect.any(Object));
+            expect(callback).toHaveBeenNthCalledWith(2, " world", false, false, expect.any(Object));
+            expect(callback).toHaveBeenNthCalledWith(3, null, true, false, expect.any(Object));
+        });
+
+        test("_sendRequestImpl captures response status and headers from response_headers event", async () => {
+            const mockWS = { send: jest.fn() };
+            const mockQueue = {
+                dequeue: jest
+                    .fn()
+                    .mockResolvedValueOnce({ event_type: "response_headers", headers: { "x-custom-header": "value" }, status: 201 })
+                    .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+                    .mockResolvedValueOnce({ type: "STREAM_END" }),
+            };
+            const minimalRegistry = {
+                createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+                getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+                removeMessageQueue: jest.fn(),
+            };
+
+            new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+
+            const callback = jest.fn();
+            await minimalRegistry.sendRequest(0, { body: {}, isStream: false, path: "/foo" }, callback);
+
+            expect(callback).toHaveBeenCalledWith({ ok: true }, true, false, expect.objectContaining({
+                headers: { "x-custom-header": "value" },
+                status: 201,
+            }));
         });
     });
 });

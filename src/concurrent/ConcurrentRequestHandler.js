@@ -62,33 +62,44 @@ class ConcurrentRequestHandler {
 
             let isFinished = false;
             let fullResponseBody = "";
+            let responseStatus = 200;
+            let responseHeaders = {};
 
             while (!isFinished) {
                 const message = await messageQueue.dequeue();
 
                 if (message.type === "STREAM_END") {
                     isFinished = true;
+                    const responseMeta = { headers: responseHeaders, status: responseStatus };
                     if (requestPayload.isStream) {
-                        callback(null, true, false);
+                        callback(null, true, false, responseMeta);
                     } else {
                         try {
                             const parsedBody = JSON.parse(fullResponseBody);
-                            callback(parsedBody, true, false);
+                            callback(parsedBody, true, false, responseMeta);
                         } catch (e) {
-                            callback(fullResponseBody, true, false);
+                            callback(fullResponseBody, true, false, responseMeta);
                         }
                     }
                 } else if (message.event_type === "error") {
                     isFinished = true;
-                    callback(message.message || "Request failed", true, true);
+                    const responseMeta = { headers: responseHeaders, status: responseStatus };
+                    callback(message.message || "Request failed", true, true, responseMeta);
                 } else if (message.event_type === "response_headers") {
+                    if (message.status) {
+                        responseStatus = Number(message.status);
+                    }
+                    if (message.headers) {
+                        responseHeaders = message.headers;
+                    }
                     if (this.logger && typeof this.logger.debug === "function") {
                         this.logger.debug(`[ConcurrentRequestHandler] Received response headers for ${requestId}`);
                     }
                 } else {
                     const data = message.data || "";
+                    const responseMeta = { headers: responseHeaders, status: responseStatus };
                     if (requestPayload.isStream) {
-                        callback(data, false, false);
+                        callback(data, false, false, responseMeta);
                     } else {
                         fullResponseBody += data;
                     }
@@ -185,15 +196,15 @@ class ConcurrentRequestHandler {
                 res.flushHeaders?.();
             }
 
-            await this.connectionRegistry.sendRequest(authIndex, requestPayload, (chunk, isFinished, isError) => {
+            await this.connectionRegistry.sendRequest(authIndex, requestPayload, (chunk, isFinished, isError, meta = {}) => {
                 if (isError) {
                     if (!res.headersSent) {
-                        res.status(500).json({
-                            error: { code: 500, message: chunk || "Internal Error", status: "INTERNAL" },
+                        res.status(meta.status || 500).json({
+                            error: { code: meta.status || 500, message: chunk || "Internal Error", status: "INTERNAL" },
                         });
                     } else if (isStream) {
                         res.write(
-                            `data: ${JSON.stringify({ error: { code: 500, message: chunk || "Internal Error", status: "INTERNAL" } })}\n\n`
+                            `data: ${JSON.stringify({ error: { code: meta.status || 500, message: chunk || "Internal Error", status: "INTERNAL" } })}\n\n`
                         );
                         res.end();
                     }
@@ -210,7 +221,15 @@ class ConcurrentRequestHandler {
                     }
                 } else {
                     if (isFinished && !res.headersSent) {
-                        res.status(200).json(chunk);
+                        const responseStatus = meta.status || 200;
+                        if (meta.headers) {
+                            for (const [headerName, headerVal] of Object.entries(meta.headers)) {
+                                if (headerName.toLowerCase() !== "transfer-encoding" && headerName.toLowerCase() !== "content-encoding") {
+                                    res.setHeader(headerName, headerVal);
+                                }
+                            }
+                        }
+                        res.status(responseStatus).json(chunk);
                     }
                 }
             });
