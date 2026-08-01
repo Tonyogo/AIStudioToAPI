@@ -63,4 +63,33 @@ describe("AccountScheduler", () => {
         scheduler.setAccountStatus(0, "ACTIVATED");
         expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
     });
+
+    test("activateAccount successfully activates account", async () => {
+        const mockBrowserManager = {
+            _sendActiveTrigger: jest.fn(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+            page: { isClosed: () => false },
+        };
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        const success = await scheduler.activateAccount(0);
+
+        expect(success).toBe(true);
+        expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(0);
+        expect(mockBrowserManager._sendActiveTrigger).toHaveBeenCalled();
+        expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+    });
+
+    test("activateAccount handles failure gracefully and sets INACTIVE", async () => {
+        const mockBrowserManager = {
+            launchOrSwitchContext: jest.fn().mockRejectedValue(new Error("Context failed")),
+        };
+
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        const success = await scheduler.activateAccount(0);
+
+        expect(success).toBe(false);
+        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+    });
 });

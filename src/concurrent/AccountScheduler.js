@@ -103,6 +103,40 @@ class AccountScheduler {
         error.statusCode = 503;
         throw error;
     }
+
+    /**
+     * Activate a specific account by authIndex
+     * @param {number} authIndex
+     * @returns {Promise<boolean>}
+     */
+    async activateAccount(authIndex) {
+        if (!this.browserManager) {
+            if (this.logger && typeof this.logger.warn === "function") {
+                this.logger.warn(`[AccountScheduler] Cannot activate account #${authIndex}: browserManager not injected`);
+            }
+            return false;
+        }
+
+        this.setAccountStatus(authIndex, "ACTIVATING");
+        try {
+            await this.browserManager.launchOrSwitchContext(authIndex);
+            const page = this.browserManager.page;
+            if (typeof this.browserManager._sendActiveTrigger === "function") {
+                this.browserManager._sendActiveTrigger("[AccountScheduler]", page);
+            }
+            this.setAccountStatus(authIndex, "ACTIVATED");
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(`[AccountScheduler] Account #${authIndex} successfully activated`);
+            }
+            return true;
+        } catch (error) {
+            this.setAccountStatus(authIndex, "INACTIVE");
+            if (this.logger && typeof this.logger.error === "function") {
+                this.logger.error(`[AccountScheduler] Failed to activate account #${authIndex}: ${error.message}`);
+            }
+            return false;
+        }
+    }
 }
 
 module.exports = AccountScheduler;
