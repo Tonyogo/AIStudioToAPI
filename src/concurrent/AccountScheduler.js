@@ -76,10 +76,11 @@ class AccountScheduler {
 
     /**
      * Select next available authIndex using Round-Robin scheduling
-     * @returns {number} The selected authIndex
+     * @returns {Promise<number>} The selected authIndex
      * @throws {Error} If no connected authIndex is available
      */
-    getNextAuthIndex() {
+    async getNextAuthIndex() {
+        this.lastSystemActivityAt = Date.now();
         const indices = this._getAccountIndices();
         if (indices.length === 0) {
             const err = new Error("No authentication accounts configured");
@@ -88,14 +89,30 @@ class AccountScheduler {
         }
 
         const total = indices.length;
+        // 1. Try to find an ACTIVATED account first
+        for (let i = 0; i < total; i++) {
+            const candidateIdx = indices[(this.currentIndex + i) % total];
+            if (this._hasConnection(candidateIdx) && this.getAccountStatus(candidateIdx) === "ACTIVATED") {
+                this.currentIndex = (this.currentIndex + i + 1) % total;
+                if (this.logger && typeof this.logger.debug === "function") {
+                    this.logger.debug(`[AccountScheduler] Selected ACTIVATED authIndex #${candidateIdx}`);
+                }
+                return candidateIdx;
+            }
+        }
+
+        // 2. Fallback: Find first online INACTIVE account and activate it synchronously
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx)) {
-                this.currentIndex = (this.currentIndex + i + 1) % total;
-                if (this.logger && typeof this.logger.debug === "function") {
-                    this.logger.debug(`[AccountScheduler] Selected authIndex #${candidateIdx}`);
+                if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(`[AccountScheduler] No ACTIVATED accounts available, synchronously activating authIndex #${candidateIdx}...`);
                 }
-                return candidateIdx;
+                const activated = await this.activateAccount(candidateIdx);
+                if (activated) {
+                    this.currentIndex = (this.currentIndex + i + 1) % total;
+                    return candidateIdx;
+                }
             }
         }
 

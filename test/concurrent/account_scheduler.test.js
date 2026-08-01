@@ -92,4 +92,32 @@ describe("AccountScheduler", () => {
         expect(success).toBe(false);
         expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
     });
+
+    test("getNextAuthIndex prioritizes ACTIVATED accounts", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+
+        scheduler.setAccountStatus(0, "INACTIVE");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+        scheduler.setAccountStatus(2, "INACTIVE");
+
+        const index = await scheduler.getNextAuthIndex();
+        expect(index).toBe(1);
+    });
+
+    test("getNextAuthIndex falls back to synchronous activation if no ACTIVATED account exists", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockBrowserManager = {
+            _sendActiveTrigger: jest.fn(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager, mockBrowserManager);
+        scheduler.setAccountStatus(0, "INACTIVE");
+        scheduler.setAccountStatus(1, "INACTIVE");
+
+        const index = await scheduler.getNextAuthIndex();
+        expect(index).toBe(0);
+        expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+    });
 });
