@@ -171,4 +171,45 @@ describe("ConcurrentRequestHandler", () => {
             }));
         });
     });
+
+    test("handleGeminiRequest returns correct HTTP status and Gemini error payload for 429 rate limit", async () => {
+        const mockWS = { send: jest.fn() };
+        const mockQueue = {
+            dequeue: jest
+                .fn()
+                .mockResolvedValueOnce({ event_type: "error", message: "Quota exceeded", status: 429 }),
+        };
+        const minimalRegistry = {
+            createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+            getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+            removeMessageQueue: jest.fn(),
+            sendRequest: null,
+        };
+
+        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(429);
+        expect(res.json).toHaveBeenCalledWith({
+            error: {
+                code: 429,
+                message: "Quota exceeded",
+                status: "RESOURCE_EXHAUSTED",
+            },
+        });
+    });
 });

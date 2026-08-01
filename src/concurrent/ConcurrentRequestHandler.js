@@ -83,7 +83,8 @@ class ConcurrentRequestHandler {
                     }
                 } else if (message.event_type === "error") {
                     isFinished = true;
-                    const responseMeta = { headers: responseHeaders, status: responseStatus };
+                    const errStatus = message.status || 500;
+                    const responseMeta = { headers: responseHeaders, status: errStatus };
                     callback(message.message || "Request failed", true, true, responseMeta);
                 } else if (message.event_type === "response_headers") {
                     if (message.status) {
@@ -198,13 +199,23 @@ class ConcurrentRequestHandler {
 
             await this.connectionRegistry.sendRequest(authIndex, requestPayload, (chunk, isFinished, isError, meta = {}) => {
                 if (isError) {
+                    const responseStatus = meta.status || 500;
+                    const statusText =
+                        responseStatus === 429
+                            ? "RESOURCE_EXHAUSTED"
+                            : responseStatus === 400
+                              ? "INVALID_ARGUMENT"
+                              : responseStatus === 503
+                                ? "UNAVAILABLE"
+                                : "INTERNAL";
+
                     if (!res.headersSent) {
-                        res.status(meta.status || 500).json({
-                            error: { code: meta.status || 500, message: chunk || "Internal Error", status: "INTERNAL" },
+                        res.status(responseStatus).json({
+                            error: { code: responseStatus, message: chunk || "Internal Error", status: statusText },
                         });
                     } else if (isStream) {
                         res.write(
-                            `data: ${JSON.stringify({ error: { code: meta.status || 500, message: chunk || "Internal Error", status: "INTERNAL" } })}\n\n`
+                            `data: ${JSON.stringify({ error: { code: responseStatus, message: chunk || "Internal Error", status: statusText } })}\n\n`
                         );
                         res.end();
                     }
