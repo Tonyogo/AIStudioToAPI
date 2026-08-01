@@ -26,12 +26,13 @@ function initConcurrentMode(app, system) {
     const connectionRegistry = system.connectionRegistry;
     const logger = system.logger || console;
     const modelList = system.config ? system.config.modelList : [];
+    const browserManager = system.browserManager || null;
 
     if (logger && typeof logger.info === "function") {
         logger.info("[Concurrent] Initializing concurrent multi-account forwarding subsystem...");
     }
 
-    const scheduler = new AccountScheduler(authSource, connectionRegistry, logger);
+    const scheduler = new AccountScheduler(authSource, connectionRegistry, logger, browserManager);
     const concurrentRequestHandler = new ConcurrentRequestHandler(connectionRegistry, scheduler, logger, modelList);
 
     concurrentRequestHandler.registerRoutes(app);

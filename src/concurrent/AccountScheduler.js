@@ -8,12 +8,41 @@ class AccountScheduler {
      * @param {Object} authSource - AuthSource instance containing available accounts
      * @param {Object} connectionRegistry - ConnectionRegistry instance managing WebSocket connections
      * @param {Object} [logger] - Logger instance
+     * @param {Object} [browserManager] - BrowserManager instance
      */
-    constructor(authSource, connectionRegistry, logger = console) {
+    constructor(authSource, connectionRegistry, logger = console, browserManager = null) {
         this.authSource = authSource;
         this.connectionRegistry = connectionRegistry;
         this.logger = logger;
+        this.browserManager = browserManager;
         this.currentIndex = 0;
+        this.accountStatusMap = new Map();
+        this.lastSystemActivityAt = 0;
+        this.idleTimeoutMs = 300000;
+    }
+
+    /**
+     * Get account status for given auth index
+     * @param {number} authIndex
+     * @returns {string}
+     */
+    getAccountStatus(authIndex) {
+        const entry = this.accountStatusMap.get(authIndex);
+        return entry ? entry.status : "INACTIVE";
+    }
+
+    /**
+     * Set account status for given auth index
+     * @param {number} authIndex
+     * @param {string} status
+     */
+    setAccountStatus(authIndex, status) {
+        const existing = this.accountStatusMap.get(authIndex) || { lastActivatedAt: null, lastRequestAt: null };
+        this.accountStatusMap.set(authIndex, {
+            ...existing,
+            lastActivatedAt: status === "ACTIVATED" ? Date.now() : existing.lastActivatedAt,
+            status,
+        });
     }
 
     /**
