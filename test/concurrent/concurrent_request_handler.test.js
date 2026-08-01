@@ -150,7 +150,11 @@ describe("ConcurrentRequestHandler", () => {
             const mockQueue = {
                 dequeue: jest
                     .fn()
-                    .mockResolvedValueOnce({ event_type: "response_headers", headers: { "x-custom-header": "value" }, status: 201 })
+                    .mockResolvedValueOnce({
+                        event_type: "response_headers",
+                        headers: { "x-custom-header": "value" },
+                        status: 201,
+                    })
                     .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
                     .mockResolvedValueOnce({ type: "STREAM_END" }),
             };
@@ -165,19 +169,22 @@ describe("ConcurrentRequestHandler", () => {
             const callback = jest.fn();
             await minimalRegistry.sendRequest(0, { body: {}, isStream: false, path: "/foo" }, callback);
 
-            expect(callback).toHaveBeenCalledWith({ ok: true }, true, false, expect.objectContaining({
-                headers: { "x-custom-header": "value" },
-                status: 201,
-            }));
+            expect(callback).toHaveBeenCalledWith(
+                { ok: true },
+                true,
+                false,
+                expect.objectContaining({
+                    headers: { "x-custom-header": "value" },
+                    status: 201,
+                })
+            );
         });
     });
 
     test("handleGeminiRequest returns correct HTTP status and Gemini error payload for 429 rate limit", async () => {
         const mockWS = { send: jest.fn() };
         const mockQueue = {
-            dequeue: jest
-                .fn()
-                .mockResolvedValueOnce({ event_type: "error", message: "Quota exceeded", status: 429 }),
+            dequeue: jest.fn().mockResolvedValueOnce({ event_type: "error", message: "Quota exceeded", status: 429 }),
         };
         const minimalRegistry = {
             createMessageQueue: jest.fn().mockReturnValue(mockQueue),
@@ -198,7 +205,9 @@ describe("ConcurrentRequestHandler", () => {
         const res = {
             headersSent: false,
             json: jest.fn(),
+            on: jest.fn(),
             status: jest.fn().mockReturnThis(),
+            writableEnded: false,
         };
 
         await handler.handleGeminiRequest(req, res);
@@ -254,9 +263,7 @@ describe("ConcurrentRequestHandler", () => {
         // Wait a tick for queue dequeue to run and trigger closeListener
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        expect(mockWS.send).toHaveBeenCalledWith(
-            expect.stringContaining('"event_type":"cancel_request"')
-        );
+        expect(mockWS.send).toHaveBeenCalledWith(expect.stringContaining('"event_type":"cancel_request"'));
         expect(minimalRegistry.removeMessageQueue).toHaveBeenCalledWith(expect.any(String), "client_disconnect");
     });
 });
