@@ -116,12 +116,24 @@ describe("AccountScheduler", () => {
             launchOrSwitchContext: jest.fn().mockResolvedValue(),
         };
 
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager, mockBrowserManager);
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
         scheduler.setAccountStatus(0, "INACTIVE");
         scheduler.setAccountStatus(1, "INACTIVE");
 
         const index = await scheduler.getNextAuthIndex();
         expect(index).toBe(0);
         expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+    });
+
+    test("isSystemActive returns false when idle for longer than idleTimeoutMs", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        scheduler.lastSystemActivityAt = Date.now() - 300001; // 5 min 1 ms ago
+        expect(scheduler.isSystemActive()).toBe(false);
+    });
+
+    test("isSystemActive returns true when recent activity exists", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        scheduler.lastSystemActivityAt = Date.now() - 1000;
+        expect(scheduler.isSystemActive()).toBe(true);
     });
 });
