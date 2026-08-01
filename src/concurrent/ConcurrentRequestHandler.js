@@ -157,7 +157,7 @@ class ConcurrentRequestHandler {
     async handleGeminiRequest(req, res) {
         let authIndex;
         try {
-            authIndex = this.scheduler.getNextAuthIndex();
+            authIndex = await this.scheduler.getNextAuthIndex();
         } catch (err) {
             const statusCode = err.statusCode || 503;
             if (this.logger && typeof this.logger.error === "function") {

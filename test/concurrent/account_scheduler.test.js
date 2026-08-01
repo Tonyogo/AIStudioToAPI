@@ -23,34 +23,38 @@ describe("AccountScheduler", () => {
         mockBrowserManager = {};
     });
 
-    test("round-robin selects active connections sequentially", () => {
+    test("round-robin selects active connections sequentially", async () => {
         // Indices 0, 1, 2 all connected
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
 
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+        scheduler.setAccountStatus(2, "ACTIVATED");
 
-        expect(scheduler.getNextAuthIndex()).toBe(0);
-        expect(scheduler.getNextAuthIndex()).toBe(1);
-        expect(scheduler.getNextAuthIndex()).toBe(2);
-        expect(scheduler.getNextAuthIndex()).toBe(0);
+        expect(await scheduler.getNextAuthIndex()).toBe(0);
+        expect(await scheduler.getNextAuthIndex()).toBe(1);
+        expect(await scheduler.getNextAuthIndex()).toBe(2);
+        expect(await scheduler.getNextAuthIndex()).toBe(0);
     });
 
-    test("skips disconnected auth indices during round-robin", () => {
+    test("skips disconnected auth indices during round-robin", async () => {
         // Only index 1 is connected
         mockConnectionRegistry.hasConnection.mockImplementation(idx => idx === 1);
 
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        scheduler.setAccountStatus(1, "ACTIVATED");
 
-        expect(scheduler.getNextAuthIndex()).toBe(1);
-        expect(scheduler.getNextAuthIndex()).toBe(1);
+        expect(await scheduler.getNextAuthIndex()).toBe(1);
+        expect(await scheduler.getNextAuthIndex()).toBe(1);
     });
 
-    test("throws 503 error when no active connections exist", () => {
+    test("throws 503 error when no active connections exist", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(false);
 
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
-        expect(() => scheduler.getNextAuthIndex()).toThrow("No active context connection available");
+        await expect(scheduler.getNextAuthIndex()).rejects.toThrow("No active context connection available");
     });
 
     test("initializes account status as INACTIVE by default", () => {
