@@ -263,4 +263,51 @@ describe("AccountScheduler", () => {
         expect(second).toBe(false);
         expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledTimes(1);
     });
+
+    test("tracks in-flight requests and enforces acquire/release", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        expect(scheduler.getInFlightCount(0)).toBe(0);
+
+        scheduler.acquireInFlight(0);
+        expect(scheduler.getInFlightCount(0)).toBe(1);
+
+        scheduler.acquireInFlight(0);
+        expect(scheduler.getInFlightCount(0)).toBe(2);
+
+        scheduler.releaseInFlight(0);
+        expect(scheduler.getInFlightCount(0)).toBe(1);
+    });
+
+    test("getNextAuthIndex prioritizes accounts with lower inFlightCount to spread load", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+
+        scheduler.acquireInFlight(0); // Account 0 has 1 in-flight
+        // Account 1 has 0 in-flight
+
+        const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+        expect(selected).toBe(1);
+    });
+
+    test("getNextAuthIndex throws 503 when all online accounts have 2 in-flight requests", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+
+        scheduler.acquireInFlight(0);
+        scheduler.acquireInFlight(0); // Account 0 has 2 in-flight
+        scheduler.acquireInFlight(1);
+        scheduler.acquireInFlight(1); // Account 1 has 2 in-flight
+
+        await expect(scheduler.getNextAuthIndex("gemini-2.5-flash")).rejects.toMatchObject({
+            message: expect.stringContaining("All available accounts are busy"),
+            statusCode: 503,
+            statusText: "UNAVAILABLE",
+        });
+    });
 });

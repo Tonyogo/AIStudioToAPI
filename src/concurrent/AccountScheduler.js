@@ -28,6 +28,8 @@ class AccountScheduler {
         this.modelList = modelList;
         this.currentIndex = 0;
         this.accountStatusMap = new Map();
+        this.inFlightMap = new Map();
+        this.maxInFlightPerAccount = 2;
         this.lastSystemActivityAt = 0;
         this.idleTimeoutMs = 300000;
         this.lastGlobalActivationAt = 0;
@@ -124,6 +126,35 @@ class AccountScheduler {
     }
 
     /**
+     * Get current in-flight request count for given authIndex
+     * @param {number} authIndex
+     * @returns {number}
+     */
+    getInFlightCount(authIndex) {
+        return this.inFlightMap.get(authIndex) || 0;
+    }
+
+    /**
+     * Increment in-flight count for given authIndex
+     * @param {number} authIndex
+     */
+    acquireInFlight(authIndex) {
+        if (authIndex === undefined || authIndex < 0) return;
+        const current = this.getInFlightCount(authIndex);
+        this.inFlightMap.set(authIndex, current + 1);
+    }
+
+    /**
+     * Decrement in-flight count for given authIndex
+     * @param {number} authIndex
+     */
+    releaseInFlight(authIndex) {
+        if (authIndex === undefined || authIndex < 0) return;
+        const current = this.getInFlightCount(authIndex);
+        this.inFlightMap.set(authIndex, Math.max(0, current - 1));
+    }
+
+    /**
      * Get all candidate auth indices from authSource
      * @returns {number[]}
      */
@@ -181,9 +212,9 @@ class AccountScheduler {
         const limit = this.getModelDailyLimit(modelName);
         const total = indices.length;
 
-        // Check if online accounts exist and if all online accounts are capped
         let onlineAccountCount = 0;
         let cappedOnlineAccountCount = 0;
+        let busyOnlineAccountCount = 0;
 
         const candidateList = [];
         for (let i = 0; i < total; i++) {
@@ -193,17 +224,25 @@ class AccountScheduler {
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
                 if (usage >= limit) {
                     cappedOnlineAccountCount++;
-                    continue; // Exclude accounts that reached limit
+                    continue;
+                }
+                const inFlight = this.getInFlightCount(candidateIdx);
+                if (inFlight >= this.maxInFlightPerAccount) {
+                    busyOnlineAccountCount++;
+                    continue;
                 }
                 if (this.getAccountStatus(candidateIdx) === "ACTIVATED") {
-                    candidateList.push({ idx: candidateIdx, order: i, usage });
+                    candidateList.push({ idx: candidateIdx, inFlight, order: i, usage });
                 }
             }
         }
 
         if (candidateList.length > 0) {
-            // Sort primary by usage ascending, secondary by Round-Robin relative order
+            // Sort primary by inFlight ascending (spread concurrency), secondary by usage ascending, tertiary by Round-Robin order
             candidateList.sort((a, b) => {
+                if (a.inFlight !== b.inFlight) {
+                    return a.inFlight - b.inFlight;
+                }
                 if (a.usage !== b.usage) {
                     return a.usage - b.usage;
                 }
@@ -216,20 +255,21 @@ class AccountScheduler {
 
             if (this.logger && typeof this.logger.debug === "function") {
                 this.logger.debug(
-                    `[AccountScheduler] Selected least-used authIndex #${selectedIdx} for model="${modelName}" (usage=${candidateList[0].usage}/${limit})`
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (inFlight=${candidateList[0].inFlight}, usage=${candidateList[0].usage}/${limit})`
                 );
             }
             return selectedIdx;
         }
 
-        // Fallback: Find first online INACTIVE account that is NOT capped, and activate it synchronously
+        // Fallback: Find first online INACTIVE account that is NOT capped and NOT busy, and activate it synchronously
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx)) {
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
-                if (usage >= limit) {
-                    continue;
-                }
+                if (usage >= limit) continue;
+                const inFlight = this.getInFlightCount(candidateIdx);
+                if (inFlight >= this.maxInFlightPerAccount) continue;
+
                 if (this.logger && typeof this.logger.info === "function") {
                     this.logger.info(
                         `[AccountScheduler] No ACTIVATED accounts available, synchronously activating authIndex #${candidateIdx}...`
@@ -243,11 +283,22 @@ class AccountScheduler {
             }
         }
 
-        // If online accounts exist but ALL are capped by dailyLimit, throw 429
+        // Error classification
         if (onlineAccountCount > 0 && cappedOnlineAccountCount >= onlineAccountCount) {
-            const error = new Error(`All accounts reached daily limit of ${limit} requests for model "${modelName}"`);
+            const error = new Error(
+                `All accounts reached daily limit of ${limit} requests for model "${modelName}"`
+            );
             error.statusCode = 429;
             error.statusText = "RESOURCE_EXHAUSTED";
+            throw error;
+        }
+
+        if (onlineAccountCount > 0 && (busyOnlineAccountCount + cappedOnlineAccountCount) >= onlineAccountCount) {
+            const error = new Error(
+                `All available accounts are busy at maximum concurrency limit (${this.maxInFlightPerAccount}/${this.maxInFlightPerAccount})`
+            );
+            error.statusCode = 503;
+            error.statusText = "UNAVAILABLE";
             throw error;
         }
 
