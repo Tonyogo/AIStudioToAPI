@@ -243,9 +243,7 @@ class AccountScheduler {
 
         // If online accounts exist but ALL are capped by dailyLimit, throw 429
         if (onlineAccountCount > 0 && cappedOnlineAccountCount >= onlineAccountCount) {
-            const error = new Error(
-                `All accounts reached daily limit of ${limit} requests for model "${modelName}"`
-            );
+            const error = new Error(`All accounts reached daily limit of ${limit} requests for model "${modelName}"`);
             error.statusCode = 429;
             error.statusText = "RESOURCE_EXHAUSTED";
             throw error;

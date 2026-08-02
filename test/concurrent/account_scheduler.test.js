@@ -199,9 +199,9 @@ describe("AccountScheduler", () => {
 
     test("getNextAuthIndex skips accounts that reached dailyLimit", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
-        const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
+        const mockModelList = [{ dailyLimit: 5, name: "models/gemini-2.5-pro" }];
         const mockModelTracker = {
-            getUsage: jest.fn((idx, model) => {
+            getUsage: jest.fn(idx => {
                 if (idx === 0) return 5; // Account 0 reached limit
                 return 2; // Account 1 has 2 uses
             }),
@@ -224,7 +224,7 @@ describe("AccountScheduler", () => {
 
     test("getNextAuthIndex throws 429 when all online accounts reach dailyLimit", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
-        const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
+        const mockModelList = [{ dailyLimit: 5, name: "models/gemini-2.5-pro" }];
         const mockModelTracker = {
             getUsage: jest.fn(() => 5), // All accounts reached limit
         };
