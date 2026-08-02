@@ -212,7 +212,11 @@ class AccountScheduler {
         // Auto-sync browserManager.currentAuthIndex as ACTIVATED if online and currently INACTIVE
         if (this.browserManager && typeof this.browserManager._currentAuthIndex === "number") {
             const currentIdx = this.browserManager._currentAuthIndex;
-            if (currentIdx >= 0 && this._hasConnection(currentIdx) && this.getAccountStatus(currentIdx) === "INACTIVE") {
+            if (
+                currentIdx >= 0 &&
+                this._hasConnection(currentIdx) &&
+                this.getAccountStatus(currentIdx) === "INACTIVE"
+            ) {
                 this.setAccountStatus(currentIdx, "ACTIVATED");
             }
         }
@@ -277,7 +281,10 @@ class AccountScheduler {
                     `[AccountScheduler] Activated accounts count (${totalActivated}) < 2, activating authIndex #${baselineCandidate.idx} for baseline...`
                 );
             }
-            await this.activateAccount(baselineCandidate.idx);
+            const activated = await this.activateAccount(baselineCandidate.idx);
+            if (activated) {
+                activatedFree.push(baselineCandidate);
+            }
         }
 
         // Phase 1: Use an absolutely free ACTIVATED account (inFlight === 0)
