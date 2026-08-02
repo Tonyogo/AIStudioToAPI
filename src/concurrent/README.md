@@ -1,7 +1,7 @@
 # 交接文档：轻量级多账号并发转发子系统 (src/concurrent)
 
 **更新日期:** 2026-08-02  
-**状态:** 已升级完成并已通过测试 (32/32 单元与集成测试全部通过，ESLint 0 Error)
+**状态:** 已升级完成并已通过测试 (40/40 单元与集成测试全部通过，ESLint 0 Error)
 
 ---
 
@@ -12,9 +12,11 @@
 ### 核心功能
 
 - **多账号并发透传：** 允许多个客户端的流式 (Streaming) 或非流式 (Non-Streaming) 请求并行在不同的 Google 账号下执行，不存在全局阻塞。
-- **智能配额与激活调度：** 结合模型每日上限 (`dailyLimit`)、按模型使用量优先 (Least-Used First)、页面激活状态机 (State Machine) 与懒加载 (Lazy Loading) 策略，实现智能均衡调度。
-- **极致解耦与零修改原路由：** 所有并发转发逻辑全部内聚在 `src/concurrent/` 目录下。原系统路由和配置保持 100% 不变。当并发模式关闭时，系统无缝回退到原本的单账号多格式路由。
-- **仅支持原生 Gemini 格式：** 仅拦截并转发 `/v1beta/models/*` 以及 `/v1/models/*` 请求，其他非 API 格式 (UI/VNC/Uploads/OpenAI/Anthropic) 保持自然流转或由 fallback 机制处理。
+- **项目首发账号自动感知与 Baseline=2 保障：** 自动同步项目默认启动的账号（`currentAuthIndex`）为 `ACTIVATED`，并自动维护至少 2 个激活账号做并发底座。
+- **并发请求打散（Scatter Load Balancing）：** 优先挑选在途请求数 `inFlight == 0` 的空闲账号分发请求，把并发均匀平摊到不同账号上。
+- **30s 全局激活冷却与主动扩容（Scale-Out）：** 两次账号激活之间严格保持 >= 30s 冷却，防止连续频繁切换；当所有已激活账号都在处理请求时，主动触发新账号激活扩容。
+- **智能模型配额调度：** 结合模型每日上限 (`dailyLimit`)、按模型使用量优先 (Least-Used First) 及北京时间 15:00 自动重置，实现配额均衡消耗。
+- **极致解耦与零修改原路由：** 所有并发转发逻辑全部内聚在 `src/concurrent/` 目录下。当并发模式关闭时，系统无缝回退到原本的单账号多格式路由。
 
 ---
 
@@ -26,7 +28,7 @@
 src/
 └── concurrent/
     ├── index.js                    # 并发模块入口门面 (Facade)
-    ├── AccountScheduler.js         # 智能账号调度器 (Scheduler & State Machine)
+    ├── AccountScheduler.js         # 智能账号调度器 (Scheduler, State Machine & Load Balancer)
     ├── ConcurrentRequestHandler.js # 高性能原生 Gemini API 请求拦截器与流转发核心
     ├── ModelUsageTracker.js        # 模型配额计数、北京 15:00 周期重置与磁盘持久化
     └── README.md                   # 模块交接与说明文档 (即本文档)
@@ -52,12 +54,12 @@ src/
 
 ### 2.3 `AccountScheduler.js` (智能账号调度器)
 
-- **职责：** 管理账号激活状态机、执行单模型配额过滤，并根据“当前模型用量最少”优先分发请求。
-- **状态机设计：**
-  - 账号状态分为：`INACTIVE`（初始/离线/未解卡）、`ACTIVATING`（正在激活）、`ACTIVATED`（已解卡且可用）。
-- **激活与懒加载策略：**
-  - **账号激活 (`activateAccount`)：** 调用 `browserManager.launchOrSwitchContext(i)` 切换 Playwright 焦点，并向页面发送 `ActiveTrigger` 探测请求，触发 AI Studio 自动清理 `Launch / Rocket` 遮罩按钮。
-  - **懒加载与空闲降级 (Lazy Loading)：** 记录系统最后请求时间 `lastSystemActivityAt`。若 5 分钟内有 API 请求，属于活跃期；若超过 5 分钟无请求，自动暂停后台批量激活轮询，仅保留前台单账号维持，避免无谓的 context 切换消耗。
+- **职责：** 管理账号激活状态机、执行单模型配额过滤、30s 激活冷却与并发打散调度。
+- **核心逻辑与状态机：**
+  - **状态定义：** `INACTIVE`（初始/未解卡）、`ACTIVATING`（正在激活）、`ACTIVATED`（已解卡且可用）。
+  - **首发账号同步：** 自动同步 `browserManager.currentAuthIndex` 为 `ACTIVATED`，绝不对默认启动账号重复执行激活。
+  - **30s 激活冷却：** 维护 `lastGlobalActivationAt`，任意账号两次激活之间必须间隔 >= 30 秒 (`Date.now() - lastGlobalActivationAt >= 30000`)。
+  - **在途并发控制 (In-Flight Limit = 2)：** 单账号最多同时处理 2 个请求 (`maxInFlightPerAccount = 2`)。配对使用 `acquireInFlight` / `releaseInFlight`。
 - **完整调度流程 (`getNextAuthIndex(modelName)`)：**
   详见本文档 [第 3 节：完整调度流程](#3-完整调度流程详解)。
 
@@ -66,75 +68,66 @@ src/
 - **职责：** 拦截请求，解析标准化模型名，透传真实状态码/Header，并在客户端断开时发送取消命令。
 - **关键设计细节：**
   - **模型名标准化 (`_extractCleanModelName`)：**
-    利用 `FormatConverter` 工具函数剥离模型路径中的工具/思维/流模式后缀（如从 `/v1beta/models/gemini-2.5-flash-think-high:generateContent` 还原出标准名 `gemini-2.5-flash`），确保限额匹配与统计准确。
-  - **状态码与 Header 透传：**
-    解析 WebSocket 返回的 `response_headers`，透传真实的 HTTP 状态码和响应 Header（过滤掉 `transfer-encoding` 等 Hop-by-Hop 标头）。
-  - **错误结构映射：**
-    将 429 报错映射为 Gemini 标准 error 对象 `{ error: { code: 429, message: "...", status: "RESOURCE_EXHAUSTED" } }`。
+    利用 `FormatConverter` 工具函数剥离模型路径中的工具/思维/流模式后缀（如从 `/v1beta/models/gemini-2.5-flash-think-high:generateContent` 还原出标准名 `gemini-2.5-flash`）。
+  - **In-Flight 生命周期配对：**
+    在调度成功后调用 `acquireInFlight`，在 `try ... finally` 块中保障无论成功、失败或中断必调用 `releaseInFlight`。
   - **客户端断开取消机制：**
-    监听 Express `res.on("close")` 事件。若客户端中途断开且响应未结束，主动向 WebSocket 发送 `cancel_request` 消息，通知 AI Studio 终止后台生成，节省账号配额。
+    监听 Express `res.on("close")` 事件。若客户端中途断开，主动发送 WebSocket `cancel_request` 消息，通知 AI Studio 终止后台生成。
 
 ---
 
 ## 3. 完整调度流程详解
 
-当客户端发起一个原生 Gemini 请求（如 POST `/v1beta/models/gemini-2.5-pro:generateContent`）时，调度器 `AccountScheduler.getNextAuthIndex(modelName)` 按照以下 5 个步骤执行调度：
+当客户端发起一个原生 Gemini 请求（如 POST `/v1beta/models/gemini-2.5-pro:generateContent`）时，调度器 `AccountScheduler.getNextAuthIndex(modelName)` 按照以下步骤执行调度：
 
 ```
 [客户端请求到达]
        │
        ▼
 1. 刷新系统活跃时间 (lastSystemActivityAt = Date.now())
-   & 解析模型名 (cleanModelName = "gemini-2.5-pro")
+   & 自动同步 browserManager.currentAuthIndex 状态为 ACTIVATED
        │
        ▼
-2. 提取该模型配置的单账号每日上限 (dailyLimit, 来自 configs/models.json)
+2. 提取模型单账号每日上限 (dailyLimit, 来自 configs/models.json)
        │
        ▼
-3. 扫描当前所有在线 WebSocket 连接 (hasConnection === true)
-   ┌─────────────────────────────────────────────────────────────┐
-   │ 过滤条件 A: 账号在当天的统计用量 < dailyLimit              │
-   │ 过滤条件 B: 账号页面状态 == "ACTIVATED" (已点击 Launch 按钮) │
-   └─────────────────────────────────────────────────────────────┘
+3. 扫描在线 WebSocket 账号 (hasConnection === true 且 usage < dailyLimit 且 inFlight < 2)
+   分类收集:
+   - activatedFree:     已激活且绝对空闲 (inFlight === 0)
+   - activatedBusy:     已激活但正在处理 1 个请求 (inFlight === 1)
+   - inactiveCandidates: 在线未激活账号 (INACTIVE)
        │
-       ├───► [找到 1 个或多个符合条件的 ACTIVATED 账号]
-       │            │
-       │            ▼
-       │     按当前模型用量 (usageCount) 升序排序
-       │     (用量最少的账号优先；用量相同时按 Round-Robin 顺时针顺序)
-       │            │
-       │            ▼
-       │     返回最优账号 authIndex，更新 Round-Robin 游标 ───► [分发请求]
+       ▼
+4. 默认双账号底座维护 (Baseline = 2 Check)
+   - 若 activated 账号总数 < 2 且冷却满 30s 且有 inactiveCandidates:
+   - 触发激活第 2 个在线账号，并加入 activatedFree 队列
        │
-       └───► [未找到已 ACTIVATED 的可用账号]
-                    │
-                    ▼
-       4. 降级检查：寻找在线、未超限但状态为 "INACTIVE" 的账号
-                    │
-                    ├───► [存在符合条件的 INACTIVE 账号]
-                    │            │
-                    │            ▼
-                    │     选取顺位第一个账号，同步执行 activateAccount(authIndex)
-                    │     (切换 Context -> 发送 ActiveTrigger 探测 -> 清除 Launch 遮罩)
-                    │            │
-                    │            ├───► [激活成功] ──► 标记为 ACTIVATED ──► [分发请求]
-                    │            └───► [激活失败] ──► 尝试下一个账号
-                    │
-                    └───► [无可激活账号 / 所有在线账号均已超限]
-                                 │
-                                 ▼
-                      5. 异常判断与响应
-                         ├── 若在线账号全因 usage >= dailyLimit 被排除:
-                         │   └─► 抛出 HTTP 429 Error (RESOURCE_EXHAUSTED)
-                         └── 若无任何在线 WebSocket 连接:
-                             └─► 抛出 HTTP 503 Error (UNAVAILABLE)
+       ▼
+5. 阶段优先级调度选择
+   ├───► 阶段 1: 若 activatedFree 非空:
+   │            按模型用量 (usage) 升序选出空闲账号 (实现并发平摊与最少用量优先) ──► [分发请求]
+   │
+   ├───► 阶段 2: 主动并发扩容 (Scale-Out):
+   │            若已激活账号都在处理请求 (inFlight > 0) 且有 inactiveCandidates 且冷却满 30s:
+   │            主动激活第 3 个(或更多)账号 ─────────────────────────► [分发请求]
+   │
+   ├───► 阶段 3: 复用轻度繁忙账号:
+   │            分发给 activatedBusy (inFlight === 1) 中 usage 最小的账号 ───────► [分发请求]
+   │
+   └───► 阶段 4: 极值判断与报错:
+                ├── 若在线账号均满载 (inFlight >= 2):
+                │   └─► 抛出 HTTP 503 Error ("All available accounts are busy at maximum concurrency limit")
+                ├── 若在线账号均因用量超限 (usage >= dailyLimit):
+                │   └─► 抛出 HTTP 429 Error ("All accounts reached daily limit...")
+                └── 无在线 WebSocket:
+                    └─► 抛出 HTTP 503 Error ("No active context connection available")
 ```
 
 ---
 
 ## 4. 配额限制配置指南 (`configs/models.json`)
 
-在 `configs/models.json` 对应的模型定义中添加 `dailyLimit` 可选整数字段（每个账号在该模型上的每日最大请求次数）：
+在 `configs/models.json` 对应的模型定义中添加 `dailyLimit` 可选整数字段：
 
 ```json
 {
@@ -146,22 +139,22 @@ src/
 }
 ```
 
-* **说明：**
-  * 若不设置 `dailyLimit`，或设置为 `null` / `0` / `< 0`，代表该模型无使用上限限制。
-  * 重置时间固定为北京时间每天下午 15:00:00。
+- **说明：**
+  - 若不设置 `dailyLimit`，或设置为 `null` / `0` / `< 0`，代表该模型无使用上限限制。
+  - 重置时间固定为北京时间每天下午 15:00:00。
 
 ---
 
 ## 5. 测试与验证
 
-本子系统配备了完整的自动化单元与集成测试（共 32 个测试用例全部通过，ESLint 检查 0 错误）：
+本子系统配备了完整的自动化单元与集成测试（共 40 个测试用例全部通过，ESLint 检查 0 错误）：
 
 - **测试文件列表：**
   - `test/concurrent/model_usage_tracker.test.js`：验证北京時間 15:00 周期计算、计数累加与磁盘持久化。
-  - `test/concurrent/account_scheduler.test.js`：验证状态机、激活流程、最小用量优先调度、`dailyLimit` 过滤与 429 报错。
-  - `test/concurrent/concurrent_request_handler.test.js`：验证路由拦截、状态码/Header 透传、模型名提取与断开连接取消机制。
+  - `test/concurrent/account_scheduler.test.js`：验证状态机、首发账号同步、双账号底座自动拉起、30s 激活冷却、在途并发打散、`dailyLimit` 过滤、429 与 503 报错。
+  - `test/concurrent/concurrent_request_handler.test.js`：验证路由拦截、状态码/Header 透传、模型名提取、inFlight acquire/release 配对与断开连接取消机制。
   - `test/concurrent/index.test.js`：验证统一入口初始化。
-  - `test/concurrent/integration.test.js`：验证完整的端到端请求分发与响应流透传。
+  - `test/concurrent/integration.test.js`：验证端到端请求分发与响应流透传。
 
 ### 运行测试命令
 
