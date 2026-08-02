@@ -1,4 +1,4 @@
-# 并发账号 30s 激活冷却与单账号最大并发限制设计规范
+# 并发账号 30s 激活冷却、主动扩容打散与单账号最大并发限制设计规范
 
 **日期:** 2026-08-02  
 **状态:** 已批准 (Approved)  
@@ -7,10 +7,11 @@
 
 ## 1. 概述与目标
 
-在并发模式下，为了防止快速连续切换账号激活 Playwright 上下文导致浏览器或 Google 后端风控卡死，同时避免并发请求集中分配给同一账号导致单个账号过载，系统需要引入以下两条新约束：
+在并发模式下，为了防止快速连续切换账号激活 Playwright 上下文导致浏览器或 Google 后端风控卡死，同时保证并发请求真正平摊打散到不同账号上（避免集中打在单一账号上），系统引入以下三条调度策略：
 
 1. **30 秒全局激活冷却（30s Global Activation Cooldown）**：任意两个账号之间的激活操作必须间隔至少 30 秒。
-2. **单账号最大并发请求限制（Max In-Flight = 2 per Account）**：单个账号同时处理的在途请求数不能超过 2 个。并发请求传入时，优先打散分配给 `inFlight == 0` 的空闲账号。
+2. **主动并发扩容打散（Proactive Scale-Out & Spreading）**：当现有已激活账号都在处理请求（`inFlight > 0`）且存在在线 `INACTIVE` 账号时，只要满足 30s 激活冷却，主动激活新账号并分配请求，实现真正的多账号并发平摊。
+3. **单账号最大并发请求限制（Max In-Flight = 2 per Account）**：单个账号同时处理的在途请求数不能超过 2 个。若所有可用账号的在途数均达到 2，返回 503 报错。
 
 ---
 
@@ -18,7 +19,7 @@
 
 ### 2.1 全局 30s 激活冷却机制 (`AccountScheduler.js`)
 
-在 `AccountScheduler.js` 中新增属性：
+在 `AccountScheduler.js` 中维护属性：
 - `lastGlobalActivationAt`: 上一次尝试/完成激活的时间戳（初始 `0`）。
 - `activationCooldownMs`: 冷却间隔，固定为 `30000`（30 秒）。
 
@@ -34,23 +35,28 @@
 - `acquireInFlight(authIndex)`: 当前账号在途数 `+1`。
 - `releaseInFlight(authIndex)`: 当前账号在途数 `-1`（最小为 `0`）。
 
-### 2.3 调度过滤、打散与全繁忙逻辑 (`AccountScheduler.js`)
+### 2.3 主动扩容与打散调度算法 (`getNextAuthIndex`)
 
-更新 `getNextAuthIndex(modelName)` 算法：
+更新 `getNextAuthIndex(modelName)` 调度选择逻辑：
 
-1. **过滤**：
-   - 在线：`hasConnection(i) === true`。
-   - 已激活：`getAccountStatus(i) === "ACTIVATED"`。
-   - 未超限：`tracker.getUsage(i, modelName) < dailyLimit`。
-   - **并发未满**：`getInFlightCount(i) < 2`。
-2. **排序（打散优先）**：
-   - **第一排序键**：`inFlightCount` 升序（空闲账号 `inFlight == 0` 优先）。
-   - **第二排序键**：该模型当前周期用量 `usageCount` 升序。
-   - **第三排序键**：Round-Robin 顺时针顺序。
-3. **同步降级激活**：
-   - 若无可用 `ACTIVATED` 账号，仅在 **冷却满 30s 且 `inFlightCount < 2`** 的前提下，对 `INACTIVE` 账号按用量最少顺序执行同步激活。
-4. **全繁忙报错 (503 Service Unavailable)**：
-   - 若存在在线账号，但所有在线账号的在途数均满足 `inFlightCount >= 2`：
+1. **分类计算**：
+   - 提取模型每日上限 `limit = getModelDailyLimit(modelName)`。
+   - 收集所有在线 WebSocket 连接（`hasConnection(i) === true`）且用量未超限（`usage < limit`）的账号：
+     - `activatedFree`: 已激活且绝对空闲（`inFlight === 0`）。
+     - `activatedBusy`: 已激活但正在处理 1 个请求（`inFlight === 1`）。
+     - `inactiveCandidates`: 在线未激活账号（`status === "INACTIVE"` 且 `inFlight < 2`）。
+2. **多阶段优先级选择与打散**：
+   - **阶段一（绝对空闲优先）**：若 `activatedFree` 非空，从中挑选当前模型用量 `usage` 最小的账号（用量相同按 Round-Robin）直接分发。
+   - **阶段二（主动并发扩容打散）**：若无绝对空闲已激活账号（即已激活账号都在处理请求 `inFlight > 0`），且存在 `inactiveCandidates`：
+     - 检查 30s 激活冷却：若 `Date.now() - lastGlobalActivationAt >= 30000`：
+       - 主动对 `inactiveCandidates` 中用量最少的账号调用 `activateAccount(idx)`。
+       - 激活成功后立即返回该账号分发请求，实现新的并发请求分流至新账号。
+   - **阶段三（复用轻度繁忙账号）**：若无法激活新账号（或 30s 冷却未满/无 `inactiveCandidates`），且 `activatedBusy` 非空：
+     - 分发给 `activatedBusy` 中 `usage` 最小的账号（`inFlight = 1 -> 2`）。
+   - **阶段四（强制降级等待/激活）**：若所有已激活账号的 `inFlight >= 2` 且存在 `inactiveCandidates`：
+     - 尝试同步/等待 30s 冷却完成后激活 `inactiveCandidates` 账号。
+3. **全繁忙报错 (503 Service Unavailable)**：
+   - 若所有在线账号的在途数均满足 `inFlightCount >= 2`：
    - 抛出 HTTP 状态码 **503** 的 Error：
      ```javascript
      const error = new Error("All available accounts are busy at maximum concurrency limit (2/2)");
@@ -91,7 +97,6 @@ try {
 
 ## 3. 受影响文件
 
-* `src/concurrent/AccountScheduler.js`：实现 30s 激活冷却、`inFlight` 计数器与在途并发打散调度。
-* `src/concurrent/ConcurrentRequestHandler.js`：配对调用 `acquireInFlight` / `releaseInFlight`，确保无泄漏。
-* `test/concurrent/account_scheduler.test.js`：增加 30s 激活冷却、在途打散与 503 满载报错测试。
-* `test/concurrent/concurrent_request_handler.test.js`：增加 `acquireInFlight` / `releaseInFlight` 配对调用测试。
+* `src/concurrent/AccountScheduler.js`：重构 `getNextAuthIndex` 主动扩容打散算法、30s 激活冷却与 `inFlight` 控制。
+* `src/concurrent/ConcurrentRequestHandler.js`：配对调用 `acquireInFlight` / `releaseInFlight`。
+* `test/concurrent/account_scheduler.test.js`：增加主动并发扩容打散测试与 30s 冷却测试。
