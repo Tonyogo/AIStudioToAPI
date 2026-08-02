@@ -19,10 +19,12 @@
 ### Task 1: Create ModelUsageTracker Component with Beijing 15:00 Cycle Management
 
 **Files:**
+
 - Create: `src/concurrent/ModelUsageTracker.js`
 - Create: `test/concurrent/model_usage_tracker.test.js`
 
 **Interfaces:**
+
 - Consumes: `authIndex` (number), `modelName` (string).
 - Produces: `ModelUsageTracker` class with:
   - `getBeijingCycleKey(nowDate)`: returns `YYYY-MM-DD_15:00`
@@ -41,51 +43,51 @@ const path = require("path");
 const ModelUsageTracker = require("../../src/concurrent/ModelUsageTracker");
 
 describe("ModelUsageTracker", () => {
-    const testDataDir = path.join(process.cwd(), "tmp_test_data");
-    const testFilePath = path.join(testDataDir, "concurrent-model-usage.json");
+  const testDataDir = path.join(process.cwd(), "tmp_test_data");
+  const testFilePath = path.join(testDataDir, "concurrent-model-usage.json");
 
-    afterEach(() => {
-        if (fs.existsSync(testFilePath)) {
-            fs.unlinkSync(testFilePath);
-        }
-        if (fs.existsSync(testDataDir)) {
-            fs.rmdirSync(testDataDir);
-        }
-    });
+  afterEach(() => {
+    if (fs.existsSync(testFilePath)) {
+      fs.unlinkSync(testFilePath);
+    }
+    if (fs.existsSync(testDataDir)) {
+      fs.rmdirSync(testDataDir);
+    }
+  });
 
-    test("getBeijingCycleKey calculates correct cycle key before and after 15:00 Beijing time", () => {
-        const tracker = new ModelUsageTracker(null, testFilePath);
+  test("getBeijingCycleKey calculates correct cycle key before and after 15:00 Beijing time", () => {
+    const tracker = new ModelUsageTracker(null, testFilePath);
 
-        // Beijing time: 2026-08-02 10:00:00 (UTC: 2026-08-02 02:00:00) -> before 15:00 -> cycle key is 2026-08-01_15:00
-        const before15 = new Date("2026-08-02T02:00:00Z");
-        expect(tracker.getBeijingCycleKey(before15)).toBe("2026-08-01_15:00");
+    // Beijing time: 2026-08-02 10:00:00 (UTC: 2026-08-02 02:00:00) -> before 15:00 -> cycle key is 2026-08-01_15:00
+    const before15 = new Date("2026-08-02T02:00:00Z");
+    expect(tracker.getBeijingCycleKey(before15)).toBe("2026-08-01_15:00");
 
-        // Beijing time: 2026-08-02 16:00:00 (UTC: 2026-08-02 08:00:00) -> after 15:00 -> cycle key is 2026-08-02_15:00
-        const after15 = new Date("2026-08-02T08:00:00Z");
-        expect(tracker.getBeijingCycleKey(after15)).toBe("2026-08-02_15:00");
-    });
+    // Beijing time: 2026-08-02 16:00:00 (UTC: 2026-08-02 08:00:00) -> after 15:00 -> cycle key is 2026-08-02_15:00
+    const after15 = new Date("2026-08-02T08:00:00Z");
+    expect(tracker.getBeijingCycleKey(after15)).toBe("2026-08-02_15:00");
+  });
 
-    test("recordUsage increments count and retrieves current count", () => {
-        const tracker = new ModelUsageTracker(null, testFilePath);
-        expect(tracker.getUsage(0, "gemini-2.5-flash")).toBe(0);
+  test("recordUsage increments count and retrieves current count", () => {
+    const tracker = new ModelUsageTracker(null, testFilePath);
+    expect(tracker.getUsage(0, "gemini-2.5-flash")).toBe(0);
 
-        tracker.recordUsage(0, "gemini-2.5-flash");
-        expect(tracker.getUsage(0, "gemini-2.5-flash")).toBe(1);
+    tracker.recordUsage(0, "gemini-2.5-flash");
+    expect(tracker.getUsage(0, "gemini-2.5-flash")).toBe(1);
 
-        tracker.recordUsage(0, "gemini-2.5-flash");
-        expect(tracker.getUsage(0, "gemini-2.5-flash")).toBe(2);
-        expect(tracker.getUsage(1, "gemini-2.5-flash")).toBe(0);
-    });
+    tracker.recordUsage(0, "gemini-2.5-flash");
+    expect(tracker.getUsage(0, "gemini-2.5-flash")).toBe(2);
+    expect(tracker.getUsage(1, "gemini-2.5-flash")).toBe(0);
+  });
 
-    test("persists and restores stats from disk file", () => {
-        const tracker = new ModelUsageTracker(null, testFilePath);
-        tracker.recordUsage(0, "gemini-2.5-pro");
-        tracker.saveSync();
+  test("persists and restores stats from disk file", () => {
+    const tracker = new ModelUsageTracker(null, testFilePath);
+    tracker.recordUsage(0, "gemini-2.5-pro");
+    tracker.saveSync();
 
-        const tracker2 = new ModelUsageTracker(null, testFilePath);
-        tracker2.loadSync();
-        expect(tracker2.getUsage(0, "gemini-2.5-pro")).toBe(1);
-    });
+    const tracker2 = new ModelUsageTracker(null, testFilePath);
+    tracker2.loadSync();
+    expect(tracker2.getUsage(0, "gemini-2.5-pro")).toBe(1);
+  });
 });
 ```
 
@@ -108,147 +110,147 @@ const fs = require("fs");
 const path = require("path");
 
 class ModelUsageTracker {
-    /**
-     * @param {Object} [logger] - Logger instance
-     * @param {string} [filePath] - Custom JSON file path
-     */
-    constructor(logger = console, filePath = null) {
-        this.logger = logger;
-        this.filePath = filePath || path.join(process.cwd(), "data", "concurrent-model-usage.json");
-        this.currentCycleKey = this.getBeijingCycleKey();
-        this.stats = {}; // authIndex -> { modelName -> count }
-        this.saveTimeout = null;
+  /**
+   * @param {Object} [logger] - Logger instance
+   * @param {string} [filePath] - Custom JSON file path
+   */
+  constructor(logger = console, filePath = null) {
+    this.logger = logger;
+    this.filePath = filePath || path.join(process.cwd(), "data", "concurrent-model-usage.json");
+    this.currentCycleKey = this.getBeijingCycleKey();
+    this.stats = {}; // authIndex -> { modelName -> count }
+    this.saveTimeout = null;
 
-        this.loadSync();
+    this.loadSync();
+  }
+
+  /**
+   * Calculate Beijing 15:00 cycle key (YYYY-MM-DD_15:00)
+   * @param {Date} [nowDate]
+   * @returns {string}
+   */
+  getBeijingCycleKey(nowDate = new Date()) {
+    const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
+    const year = beijingTime.getUTCFullYear();
+    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, "0");
+    const day = beijingTime.getUTCDate();
+    const hours = beijingTime.getUTCHours();
+
+    const cycleDate = new Date(Date.UTC(year, beijingTime.getUTCMonth(), day));
+    if (hours < 15) {
+      cycleDate.setUTCDate(cycleDate.getUTCDate() - 1);
     }
 
-    /**
-     * Calculate Beijing 15:00 cycle key (YYYY-MM-DD_15:00)
-     * @param {Date} [nowDate]
-     * @returns {string}
-     */
-    getBeijingCycleKey(nowDate = new Date()) {
-        const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
-        const year = beijingTime.getUTCFullYear();
-        const month = String(beijingTime.getUTCMonth() + 1).padStart(2, "0");
-        const day = beijingTime.getUTCDate();
-        const hours = beijingTime.getUTCHours();
+    const cYear = cycleDate.getUTCFullYear();
+    const cMonth = String(cycleDate.getUTCMonth() + 1).padStart(2, "0");
+    const cDay = String(cycleDate.getUTCDate()).padStart(2, "0");
 
-        const cycleDate = new Date(Date.UTC(year, beijingTime.getUTCMonth(), day));
-        if (hours < 15) {
-            cycleDate.setUTCDate(cycleDate.getUTCDate() - 1);
+    return `${cYear}-${cMonth}-${cDay}_15:00`;
+  }
+
+  /**
+   * Check if cycle key changed and reset stats if needed
+   */
+  _checkAndResetCycle() {
+    const newKey = this.getBeijingCycleKey();
+    if (newKey !== this.currentCycleKey) {
+      if (this.logger && typeof this.logger.info === "function") {
+        this.logger.info(`[ModelUsageTracker] Resetting model usage cycle from ${this.currentCycleKey} to ${newKey}`);
+      }
+      this.currentCycleKey = newKey;
+      this.stats = {};
+      this.saveSync();
+    }
+  }
+
+  /**
+   * Get usage count for given authIndex and modelName
+   * @param {number} authIndex
+   * @param {string} modelName
+   * @returns {number}
+   */
+  getUsage(authIndex, modelName) {
+    this._checkAndResetCycle();
+    if (!this.stats[authIndex] || !modelName) {
+      return 0;
+    }
+    return this.stats[authIndex][modelName] || 0;
+  }
+
+  /**
+   * Record usage for given authIndex and modelName
+   * @param {number} authIndex
+   * @param {string} modelName
+   */
+  recordUsage(authIndex, modelName) {
+    if (authIndex === undefined || authIndex < 0 || !modelName) return;
+
+    this._checkAndResetCycle();
+    if (!this.stats[authIndex]) {
+      this.stats[authIndex] = {};
+    }
+    this.stats[authIndex][modelName] = (this.stats[authIndex][modelName] || 0) + 1;
+
+    this.scheduleDebouncedSave();
+  }
+
+  /**
+   * Schedule debounced save to file (500ms)
+   */
+  scheduleDebouncedSave() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(() => {
+      this.saveSync();
+    }, 500);
+  }
+
+  /**
+   * Synchronously load stats from JSON file
+   */
+  loadSync() {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const content = fs.readFileSync(this.filePath, "utf-8");
+        const data = JSON.parse(content);
+        const currentKey = this.getBeijingCycleKey();
+        if (data && data.cycleKey === currentKey && data.stats) {
+          this.currentCycleKey = data.cycleKey;
+          this.stats = data.stats;
+        } else {
+          this.currentCycleKey = currentKey;
+          this.stats = {};
         }
-
-        const cYear = cycleDate.getUTCFullYear();
-        const cMonth = String(cycleDate.getUTCMonth() + 1).padStart(2, "0");
-        const cDay = String(cycleDate.getUTCDate()).padStart(2, "0");
-
-        return `${cYear}-${cMonth}-${cDay}_15:00`;
+      }
+    } catch (e) {
+      if (this.logger && typeof this.logger.warn === "function") {
+        this.logger.warn(`[ModelUsageTracker] Failed to load stats from file: ${e.message}`);
+      }
+      this.stats = {};
     }
+  }
 
-    /**
-     * Check if cycle key changed and reset stats if needed
-     */
-    _checkAndResetCycle() {
-        const newKey = this.getBeijingCycleKey();
-        if (newKey !== this.currentCycleKey) {
-            if (this.logger && typeof this.logger.info === "function") {
-                this.logger.info(`[ModelUsageTracker] Resetting model usage cycle from ${this.currentCycleKey} to ${newKey}`);
-            }
-            this.currentCycleKey = newKey;
-            this.stats = {};
-            this.saveSync();
-        }
+  /**
+   * Synchronously save stats to JSON file
+   */
+  saveSync() {
+    try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const data = {
+        cycleKey: this.currentCycleKey,
+        stats: this.stats,
+      };
+      fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8");
+    } catch (e) {
+      if (this.logger && typeof this.logger.error === "function") {
+        this.logger.error(`[ModelUsageTracker] Failed to save stats to file: ${e.message}`);
+      }
     }
-
-    /**
-     * Get usage count for given authIndex and modelName
-     * @param {number} authIndex
-     * @param {string} modelName
-     * @returns {number}
-     */
-    getUsage(authIndex, modelName) {
-        this._checkAndResetCycle();
-        if (!this.stats[authIndex] || !modelName) {
-            return 0;
-        }
-        return this.stats[authIndex][modelName] || 0;
-    }
-
-    /**
-     * Record usage for given authIndex and modelName
-     * @param {number} authIndex
-     * @param {string} modelName
-     */
-    recordUsage(authIndex, modelName) {
-        if (authIndex === undefined || authIndex < 0 || !modelName) return;
-
-        this._checkAndResetCycle();
-        if (!this.stats[authIndex]) {
-            this.stats[authIndex] = {};
-        }
-        this.stats[authIndex][modelName] = (this.stats[authIndex][modelName] || 0) + 1;
-
-        this.scheduleDebouncedSave();
-    }
-
-    /**
-     * Schedule debounced save to file (500ms)
-     */
-    scheduleDebouncedSave() {
-        if (this.saveTimeout) {
-            clearTimeout(this.saveTimeout);
-        }
-        this.saveTimeout = setTimeout(() => {
-            this.saveSync();
-        }, 500);
-    }
-
-    /**
-     * Synchronously load stats from JSON file
-     */
-    loadSync() {
-        try {
-            if (fs.existsSync(this.filePath)) {
-                const content = fs.readFileSync(this.filePath, "utf-8");
-                const data = JSON.parse(content);
-                const currentKey = this.getBeijingCycleKey();
-                if (data && data.cycleKey === currentKey && data.stats) {
-                    this.currentCycleKey = data.cycleKey;
-                    this.stats = data.stats;
-                } else {
-                    this.currentCycleKey = currentKey;
-                    this.stats = {};
-                }
-            }
-        } catch (e) {
-            if (this.logger && typeof this.logger.warn === "function") {
-                this.logger.warn(`[ModelUsageTracker] Failed to load stats from file: ${e.message}`);
-            }
-            this.stats = {};
-        }
-    }
-
-    /**
-     * Synchronously save stats to JSON file
-     */
-    saveSync() {
-        try {
-            const dir = path.dirname(this.filePath);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
-            const data = {
-                cycleKey: this.currentCycleKey,
-                stats: this.stats,
-            };
-            fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8");
-        } catch (e) {
-            if (this.logger && typeof this.logger.error === "function") {
-                this.logger.error(`[ModelUsageTracker] Failed to save stats to file: ${e.message}`);
-            }
-        }
-    }
+  }
 }
 
 module.exports = ModelUsageTracker;
@@ -273,10 +275,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 2: Integrate ModelUsageTracker into AccountScheduler for Least-Used Selection
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `ModelUsageTracker` instance, `modelName` parameter in `getNextAuthIndex(modelName)`.
 - Produces: `getNextAuthIndex(modelName)` sorting `ACTIVATED` candidates by `modelUsageCount` ascending, with Round-Robin fallback on tie. `recordUsage(authIndex, modelName)` wrapper method.
 
@@ -286,35 +290,35 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("getNextAuthIndex selects least-used account for specified model", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const mockModelTracker = {
-        getUsage: jest.fn((idx, model) => {
-            if (model === "gemini-2.5-pro") {
-                if (idx === 0) return 5;
-                if (idx === 1) return 1; // Account 1 has least usage for pro
-                if (idx === 2) return 3;
-            }
-            return 0;
-        }),
-    };
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockModelTracker = {
+    getUsage: jest.fn((idx, model) => {
+      if (model === "gemini-2.5-pro") {
+        if (idx === 0) return 5;
+        if (idx === 1) return 1; // Account 1 has least usage for pro
+        if (idx === 2) return 3;
+      }
+      return 0;
+    }),
+  };
 
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    scheduler.setAccountStatus(1, "ACTIVATED");
-    scheduler.setAccountStatus(2, "ACTIVATED");
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  scheduler.setAccountStatus(1, "ACTIVATED");
+  scheduler.setAccountStatus(2, "ACTIVATED");
 
-    const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
-    expect(selected).toBe(1);
+  const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
+  expect(selected).toBe(1);
 });
 
 test("recordUsage delegates to modelUsageTracker", () => {
-    const mockModelTracker = {
-        recordUsage: jest.fn(),
-    };
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
-    scheduler.recordUsage(0, "gemini-2.5-flash");
+  const mockModelTracker = {
+    recordUsage: jest.fn(),
+  };
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
+  scheduler.recordUsage(0, "gemini-2.5-flash");
 
-    expect(mockModelTracker.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
+  expect(mockModelTracker.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
 });
 ```
 
@@ -326,7 +330,9 @@ Expected: FAIL (selected index is 0 instead of 1).
 - [ ] **Step 3: Update AccountScheduler.js constructor and getNextAuthIndex**
 
 In `src/concurrent/AccountScheduler.js`:
+
 1. Update constructor signature to accept `modelUsageTracker`:
+
 ```javascript
 constructor(authSource, connectionRegistry, logger = console, browserManager = null, modelUsageTracker = null) {
     this.authSource = authSource;
@@ -342,6 +348,7 @@ constructor(authSource, connectionRegistry, logger = console, browserManager = n
 ```
 
 2. Add `recordUsage` method:
+
 ```javascript
 recordUsage(authIndex, modelName) {
     if (this.modelUsageTracker && typeof this.modelUsageTracker.recordUsage === "function") {
@@ -351,6 +358,7 @@ recordUsage(authIndex, modelName) {
 ```
 
 3. Update `getNextAuthIndex(modelName)` to sort online/ACTIVATED candidates by usage:
+
 ```javascript
 async getNextAuthIndex(modelName = null) {
     this.lastSystemActivityAt = Date.now();
@@ -435,11 +443,13 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 3: Extract Clean Model Name and Record Usage in ConcurrentRequestHandler & Facade
 
 **Files:**
+
 - Modify: `src/concurrent/ConcurrentRequestHandler.js`
 - Modify: `src/concurrent/index.js`
 - Test: `test/concurrent/concurrent_request_handler.test.js`
 
 **Interfaces:**
+
 - Consumes: `req.path` in `handleGeminiRequest`.
 - Produces: Calls `this.scheduler.getNextAuthIndex(cleanModelName)` and `this.scheduler.recordUsage(authIndex, cleanModelName)` upon request dispatch. Instantiate `ModelUsageTracker` in `initConcurrentMode`.
 
@@ -449,41 +459,41 @@ Edit `test/concurrent/concurrent_request_handler.test.js`:
 
 ```javascript
 test("handleGeminiRequest passes clean model name to scheduler and records usage", async () => {
-    const mockWS = { send: jest.fn() };
-    const mockQueue = {
-        dequeue: jest
-            .fn()
-            .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
-            .mockResolvedValueOnce({ type: "STREAM_END" }),
-    };
-    const minimalRegistry = {
-        createMessageQueue: jest.fn().mockReturnValue(mockQueue),
-        getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
-        removeMessageQueue: jest.fn(),
-    };
+  const mockWS = { send: jest.fn() };
+  const mockQueue = {
+    dequeue: jest
+      .fn()
+      .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+      .mockResolvedValueOnce({ type: "STREAM_END" }),
+  };
+  const minimalRegistry = {
+    createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+    getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+    removeMessageQueue: jest.fn(),
+  };
 
-    mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValue(0);
-    mockScheduler.recordUsage = jest.fn();
+  mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValue(0);
+  mockScheduler.recordUsage = jest.fn();
 
-    const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+  const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
 
-    const req = {
-        body: { contents: [] },
-        method: "POST",
-        path: "/v1beta/models/gemini-2.5-flash-think-high:generateContent",
-        query: {},
-    };
+  const req = {
+    body: { contents: [] },
+    method: "POST",
+    path: "/v1beta/models/gemini-2.5-flash-think-high:generateContent",
+    query: {},
+  };
 
-    const res = {
-        headersSent: false,
-        json: jest.fn(),
-        status: jest.fn().mockReturnThis(),
-    };
+  const res = {
+    headersSent: false,
+    json: jest.fn(),
+    status: jest.fn().mockReturnThis(),
+  };
 
-    await handler.handleGeminiRequest(req, res);
+  await handler.handleGeminiRequest(req, res);
 
-    expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash");
-    expect(mockScheduler.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
+  expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash");
+  expect(mockScheduler.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
 });
 ```
 
@@ -495,7 +505,9 @@ Expected: FAIL (`mockScheduler.getNextAuthIndex` called with no arguments).
 - [ ] **Step 3: Extract clean model name and integrate usage recording in ConcurrentRequestHandler.js & index.js**
 
 In `src/concurrent/ConcurrentRequestHandler.js`:
+
 1. Add model extraction helper:
+
 ```javascript
 _extractCleanModelName(pathStr) {
     if (typeof pathStr !== "string") return null;
@@ -510,7 +522,9 @@ _extractCleanModelName(pathStr) {
     return cleanModelName;
 }
 ```
+
 2. In `handleGeminiRequest(req, res)`:
+
 ```javascript
 const cleanModelName = this._extractCleanModelName(req.path);
 let authIndex;
@@ -518,19 +532,25 @@ try {
     authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
 } catch (err) { ... }
 ```
+
 3. After `authIndex` is successfully selected and request is forwarded, call usage recording:
+
 ```javascript
 if (typeof this.scheduler.recordUsage === "function" && cleanModelName) {
-    this.scheduler.recordUsage(authIndex, cleanModelName);
+  this.scheduler.recordUsage(authIndex, cleanModelName);
 }
 ```
 
 In `src/concurrent/index.js`:
+
 1. Require `ModelUsageTracker`:
+
 ```javascript
 const ModelUsageTracker = require("./ModelUsageTracker");
 ```
+
 2. Instantiate `ModelUsageTracker` and pass to `AccountScheduler`:
+
 ```javascript
 const modelUsageTracker = new ModelUsageTracker(logger);
 const scheduler = new AccountScheduler(authSource, connectionRegistry, logger, browserManager, modelUsageTracker);
@@ -555,6 +575,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 4: Full Suite Verification & Linting
 
 **Files:**
+
 - Modify/Verify: `src/concurrent/*`, `test/concurrent/*`
 
 - [ ] **Step 1: Run all concurrent unit tests**

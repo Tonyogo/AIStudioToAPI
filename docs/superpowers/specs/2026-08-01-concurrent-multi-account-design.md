@@ -42,17 +42,17 @@ In `src/core/ProxyServerSystem.js`, inside `registerRoutes()`:
 
 ```javascript
 if (process.env.ENABLE_CONCURRENT === "true") {
-    this.logger.info("🚀 Concurrent mode ENABLED. Initializing concurrent module...");
-    const { initConcurrentMode } = require("../concurrent");
-    initConcurrentMode(this.app, {
-        authSource: this.authSource,
-        connectionRegistry: this.connectionRegistry,
-        formatConverter: this.formatConverter,
-        logger: this.logger
-    });
+  this.logger.info("🚀 Concurrent mode ENABLED. Initializing concurrent module...");
+  const { initConcurrentMode } = require("../concurrent");
+  initConcurrentMode(this.app, {
+    authSource: this.authSource,
+    connectionRegistry: this.connectionRegistry,
+    formatConverter: this.formatConverter,
+    logger: this.logger,
+  });
 } else {
-    // Standard full-featured router
-    this.requestHandler.registerRoutes(this.app);
+  // Standard full-featured router
+  this.requestHandler.registerRoutes(this.app);
 }
 ```
 

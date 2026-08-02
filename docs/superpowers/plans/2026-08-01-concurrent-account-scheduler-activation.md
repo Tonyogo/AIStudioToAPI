@@ -19,11 +19,13 @@
 ### Task 1: Add Account State Machine and Dependency Injection
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Modify: `src/concurrent/index.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `browserManager` passed to `AccountScheduler` constructor.
 - Produces: `accountStatusMap` (`Map<number, { status: string, lastActivatedAt: number|null, lastRequestAt: number|null }>`), `getAccountStatus(authIndex)`, `setAccountStatus(authIndex, status)`.
 
@@ -33,14 +35,14 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("initializes account status as INACTIVE by default", () => {
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
-    expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
 });
 
 test("updates and retrieves account status correctly", () => {
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
 });
 ```
 
@@ -52,9 +54,11 @@ Expected: FAIL (`scheduler.getAccountStatus is not a function`).
 - [ ] **Step 3: Implement constructor injection & account status methods in AccountScheduler.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 1. Update constructor signature: `constructor(authSource, connectionRegistry, logger = console, browserManager = null)`
 2. Initialize `this.browserManager = browserManager;`, `this.accountStatusMap = new Map();`, `this.lastSystemActivityAt = 0;`, `this.idleTimeoutMs = 300000;`.
 3. Add helper methods:
+
 ```javascript
 getAccountStatus(authIndex) {
     const entry = this.accountStatusMap.get(authIndex);
@@ -70,7 +74,9 @@ setAccountStatus(authIndex, status) {
     });
 }
 ```
+
 4. In `src/concurrent/index.js`, update `AccountScheduler` instantiation:
+
 ```javascript
 const browserManager = system.browserManager || null;
 const scheduler = new AccountScheduler(authSource, connectionRegistry, logger, browserManager);
@@ -95,10 +101,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 2: Implement Single Account Activation Pipeline
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `browserManager.launchOrSwitchContext(authIndex)` and `browserManager._sendActiveTrigger("[Scheduler]", page)`.
 - Produces: `async activateAccount(authIndex)` returning `boolean` (true if activation succeeded and status set to `ACTIVATED`, false otherwise).
 
@@ -108,32 +116,32 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("activateAccount successfully activates account", async () => {
-    const mockBrowserManager = {
-        _sendActiveTrigger: jest.fn(),
-        launchOrSwitchContext: jest.fn().mockResolvedValue(),
-        page: { isClosed: () => false },
-    };
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockBrowserManager = {
+    _sendActiveTrigger: jest.fn(),
+    launchOrSwitchContext: jest.fn().mockResolvedValue(),
+    page: { isClosed: () => false },
+  };
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
 
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
-    const success = await scheduler.activateAccount(0);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  const success = await scheduler.activateAccount(0);
 
-    expect(success).toBe(true);
-    expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(0);
-    expect(mockBrowserManager._sendActiveTrigger).toHaveBeenCalled();
-    expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+  expect(success).toBe(true);
+  expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(0);
+  expect(mockBrowserManager._sendActiveTrigger).toHaveBeenCalled();
+  expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
 });
 
 test("activateAccount handles failure gracefully and sets INACTIVE", async () => {
-    const mockBrowserManager = {
-        launchOrSwitchContext: jest.fn().mockRejectedValue(new Error("Context failed")),
-    };
+  const mockBrowserManager = {
+    launchOrSwitchContext: jest.fn().mockRejectedValue(new Error("Context failed")),
+  };
 
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
-    const success = await scheduler.activateAccount(0);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  const success = await scheduler.activateAccount(0);
 
-    expect(success).toBe(false);
-    expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+  expect(success).toBe(false);
+  expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
 });
 ```
 
@@ -145,6 +153,7 @@ Expected: FAIL (`scheduler.activateAccount is not a function`).
 - [ ] **Step 3: Implement activateAccount in AccountScheduler.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 ```javascript
 async activateAccount(authIndex) {
     if (!this.browserManager) {
@@ -195,10 +204,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 3: Implement ACTIVATED Account Filtering and Fallback Activation in getNextAuthIndex
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `getNextAuthIndex()` calls.
 - Produces: Selected `authIndex` that is `ACTIVATED` (or synchronously activated via fallback if no `ACTIVATED` account is ready).
 
@@ -208,30 +219,30 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("getNextAuthIndex prioritizes ACTIVATED accounts", () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
-    scheduler.setAccountStatus(0, "INACTIVE");
-    scheduler.setAccountStatus(1, "ACTIVATED");
-    scheduler.setAccountStatus(2, "INACTIVE");
+  scheduler.setAccountStatus(0, "INACTIVE");
+  scheduler.setAccountStatus(1, "ACTIVATED");
+  scheduler.setAccountStatus(2, "INACTIVE");
 
-    expect(scheduler.getNextAuthIndex()).toBe(1);
+  expect(scheduler.getNextAuthIndex()).toBe(1);
 });
 
 test("getNextAuthIndex falls back to synchronous activation if no ACTIVATED account exists", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const mockBrowserManager = {
-        _sendActiveTrigger: jest.fn(),
-        launchOrSwitchContext: jest.fn().mockResolvedValue(),
-    };
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockBrowserManager = {
+    _sendActiveTrigger: jest.fn(),
+    launchOrSwitchContext: jest.fn().mockResolvedValue(),
+  };
 
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
-    scheduler.setAccountStatus(0, "INACTIVE");
-    scheduler.setAccountStatus(1, "INACTIVE");
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  scheduler.setAccountStatus(0, "INACTIVE");
+  scheduler.setAccountStatus(1, "INACTIVE");
 
-    const index = await scheduler.getNextAuthIndex();
-    expect(index).toBe(0);
-    expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+  const index = await scheduler.getNextAuthIndex();
+  expect(index).toBe(0);
+  expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
 });
 ```
 
@@ -243,9 +254,11 @@ Expected: FAIL (returns index 0 instead of prioritizing index 1, or fails fallba
 - [ ] **Step 3: Update getNextAuthIndex in AccountScheduler.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 1. Mark `getNextAuthIndex` as `async getNextAuthIndex()`.
 2. Touch activity timestamp: `this.lastSystemActivityAt = Date.now();`.
 3. Filter candidates:
+
 ```javascript
 async getNextAuthIndex() {
     this.lastSystemActivityAt = Date.now();
@@ -289,6 +302,7 @@ async getNextAuthIndex() {
     throw error;
 }
 ```
+
 4. Note: Update `ConcurrentRequestHandler.js` line 146 where `this.scheduler.getNextAuthIndex()` is called to `await this.scheduler.getNextAuthIndex()`.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -310,10 +324,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 4: Implement Lazy Loading Loop and Idle Timeout Policy
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: Idle check interval (`idleTimeoutMs` = 300,000ms / 5 minutes).
 - Produces: `startActivationLoop()`, `stopActivationLoop()`, `isSystemActive()`.
 
@@ -323,15 +339,15 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("isSystemActive returns false when idle for longer than idleTimeoutMs", () => {
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-    scheduler.lastSystemActivityAt = Date.now() - 300001; // 5 min 1 ms ago
-    expect(scheduler.isSystemActive()).toBe(false);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+  scheduler.lastSystemActivityAt = Date.now() - 300001; // 5 min 1 ms ago
+  expect(scheduler.isSystemActive()).toBe(false);
 });
 
 test("isSystemActive returns true when recent activity exists", () => {
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-    scheduler.lastSystemActivityAt = Date.now() - 1000;
-    expect(scheduler.isSystemActive()).toBe(true);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+  scheduler.lastSystemActivityAt = Date.now() - 1000;
+  expect(scheduler.isSystemActive()).toBe(true);
 });
 ```
 
@@ -343,6 +359,7 @@ Expected: FAIL (`scheduler.isSystemActive is not a function`).
 - [ ] **Step 3: Implement lazy loading loop and activity helpers in AccountScheduler.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 ```javascript
 isSystemActive() {
     return Date.now() - this.lastSystemActivityAt < this.idleTimeoutMs;
@@ -399,6 +416,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 5: Full Suite & Integration Verification
 
 **Files:**
+
 - Modify/Verify: `src/concurrent/*`, `test/concurrent/*`
 
 - [ ] **Step 1: Run all concurrent tests**

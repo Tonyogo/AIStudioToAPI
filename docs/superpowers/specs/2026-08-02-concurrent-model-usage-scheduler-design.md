@@ -1,7 +1,7 @@
 # 按模型每日配额均衡调度系统设计规范
 
 **日期:** 2026-08-02  
-**状态:** 已批准 (Approved)  
+**状态:** 已批准 (Approved)
 
 ---
 
@@ -10,6 +10,7 @@
 在 AIStudioToAPI 的并发模式下，为了保证各个 Google 账号针对不同模型（如 `gemini-2.5-flash`、`gemini-2.5-pro` 等）的每日限额（Quota）得到均匀消耗，系统需要从简单的纯 Round-Robin 轮询调度升级为 **按模型每日配额均衡调度（Model-Based Daily Quota Load Balancing Scheduler）**。
 
 核心目标：
+
 1. 粒度精确到 **账号 (`authIndex`) + 模型名 (`modelName`)**。
 2. 统计周期以 **每日北京时间 15:00:00 (UTC+8)** 为界，跨越 15:00 自动重置归零。
 3. 调度时针对请求的模型，**优先选择当前周期内该模型使用次数最少（Least-Used）** 的激活状态账号。
@@ -25,24 +26,24 @@
 
 ```javascript
 function getBeijingCycleKey(nowDate = new Date()) {
-    // 北京时间比 UTC 快 8 小时
-    const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
-    const year = beijingTime.getUTCFullYear();
-    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, "0");
-    const day = beijingTime.getUTCDate();
-    const hours = beijingTime.getUTCHours();
+  // 北京时间比 UTC 快 8 小时
+  const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
+  const year = beijingTime.getUTCFullYear();
+  const month = String(beijingTime.getUTCMonth() + 1).padStart(2, "0");
+  const day = beijingTime.getUTCDate();
+  const hours = beijingTime.getUTCHours();
 
-    let cycleDate = new Date(Date.UTC(year, beijingTime.getUTCMonth(), day));
-    // 如果当前北京时间小于 15 点，则属于前一天 15:00 开始的周期
-    if (hours < 15) {
-        cycleDate.setUTCDate(cycleDate.getUTCDate() - 1);
-    }
+  let cycleDate = new Date(Date.UTC(year, beijingTime.getUTCMonth(), day));
+  // 如果当前北京时间小于 15 点，则属于前一天 15:00 开始的周期
+  if (hours < 15) {
+    cycleDate.setUTCDate(cycleDate.getUTCDate() - 1);
+  }
 
-    const cYear = cycleDate.getUTCFullYear();
-    const cMonth = String(cycleDate.getUTCMonth() + 1).padStart(2, "0");
-    const cDay = String(cycleDate.getUTCDate()).padStart(2, "0");
+  const cYear = cycleDate.getUTCFullYear();
+  const cMonth = String(cycleDate.getUTCMonth() + 1).padStart(2, "0");
+  const cDay = String(cycleDate.getUTCDate()).padStart(2, "0");
 
-    return `${cYear}-${cMonth}-${cDay}_15:00`;
+  return `${cYear}-${cMonth}-${cDay}_15:00`;
 }
 ```
 
@@ -50,8 +51,8 @@ function getBeijingCycleKey(nowDate = new Date()) {
 
 负责模型的计数、重置与磁盘持久化：
 
-* **文件路径**：`data/concurrent-model-usage.json`
-* **内存结构**：
+- **文件路径**：`data/concurrent-model-usage.json`
+- **内存结构**：
   ```javascript
   {
     cycleKey: "2026-08-01_15:00",
@@ -61,7 +62,7 @@ function getBeijingCycleKey(nowDate = new Date()) {
     }
   }
   ```
-* **核心 API**：
+- **核心 API**：
   - `_checkAndResetCycle()`：每次读写前比对 `getBeijingCycleKey()`，若 Key 改变则清空 `stats` 并保存。
   - `getUsage(authIndex, modelName)`：返回指定账号对应模型的当前周期使用数。
   - `recordUsage(authIndex, modelName)`：计数 `+1` 并触发 500ms 异步防抖保存（Debounce File Save）。
@@ -89,8 +90,8 @@ function getBeijingCycleKey(nowDate = new Date()) {
 
 ## 3. 受影响文件
 
-* `src/concurrent/ModelUsageTracker.js`：新建模型配额跟踪与持久化组件。
-* `src/concurrent/AccountScheduler.js`：集成 `ModelUsageTracker`，实现最小使用量优先算法。
-* `src/concurrent/ConcurrentRequestHandler.js`：提取模型名，传入调度器并记录使用次数。
-* `test/concurrent/model_usage_tracker.test.js`：新建配额跟踪器与北京时间 15:00 周期测试。
-* `test/concurrent/account_scheduler.test.js`：更新调度器测试，增加最小使用量调度验证。
+- `src/concurrent/ModelUsageTracker.js`：新建模型配额跟踪与持久化组件。
+- `src/concurrent/AccountScheduler.js`：集成 `ModelUsageTracker`，实现最小使用量优先算法。
+- `src/concurrent/ConcurrentRequestHandler.js`：提取模型名，传入调度器并记录使用次数。
+- `test/concurrent/model_usage_tracker.test.js`：新建配额跟踪器与北京时间 15:00 周期测试。
+- `test/concurrent/account_scheduler.test.js`：更新调度器测试，增加最小使用量调度验证。

@@ -1,7 +1,7 @@
 # ConcurrentRequestHandler 核心异常与状态码透传修复设计 (方案 B)
 
 **日期:** 2026-08-01  
-**状态:** 已批准 (Approved)  
+**状态:** 已批准 (Approved)
 
 ---
 
@@ -18,6 +18,7 @@
 ### 2.1 响应状态码与 Header 记录
 
 在 `_sendRequestImpl` 的 WebSocket 消息循环中：
+
 1. 增加 `responseStatus = 200` 和 `responseHeaders = {}` 局部变量。
 2. 当收到 `message.event_type === "response_headers"` 时：
    - 解析并保存 `message.status`（若不存在则默认为 200）。
@@ -28,6 +29,7 @@
 ### 2.2 非流式与流式响应状态码设置
 
 在 `handleGeminiRequest` 的回调处理中：
+
 1. **非流式响应 (Non-Streaming)**：
    - 使用从 `response_headers` 中提取的真实状态码 `res.status(responseStatus).json(body)`，不再硬编码 `res.status(200)`。
 2. **流式响应 (Streaming)**：
@@ -45,6 +47,7 @@
 ### 2.4 客户端断开连接取消机制 (Client Disconnect Handler)
 
 在 `handleGeminiRequest` 中：
+
 1. 监听 Express 响应对象的 `res.on("close")` 事件。
 2. 如果 `!res.writableEnded` 且请求尚未收到 `isFinished` 信号（说明客户端中途主动断开/取消）：
    - 构造 `cancel_request` 消息并通过 WebSocket 发送至对应的账号 context：
@@ -61,14 +64,14 @@
 
 ## 3. 受影响模块与文件
 
-* `src/concurrent/ConcurrentRequestHandler.js`：核心实现文件。
-* `test/concurrent/concurrent_request_handler.test.js`：更新和扩充单元测试，覆盖状态码透传与取消逻辑。
-* `test/concurrent/integration.test.js`：扩展集成测试逻辑。
+- `src/concurrent/ConcurrentRequestHandler.js`：核心实现文件。
+- `test/concurrent/concurrent_request_handler.test.js`：更新和扩充单元测试，覆盖状态码透传与取消逻辑。
+- `test/concurrent/integration.test.js`：扩展集成测试逻辑。
 
 ---
 
 ## 4. Spec 自查与验证
 
-* [x] **无占位符**：方案细节明确，逻辑与字段完整。
-* [x] **逻辑一致**：状态码映射与原 RequestHandler 的 Gemini 格式错误结构完全一致。
-* [x] **范围聚焦**：仅针对 Core Exceptions、Status Code Passthrough 及 Client Disconnect，无不相关改动。
+- [x] **无占位符**：方案细节明确，逻辑与字段完整。
+- [x] **逻辑一致**：状态码映射与原 RequestHandler 的 Gemini 格式错误结构完全一致。
+- [x] **范围聚焦**：仅针对 Core Exceptions、Status Code Passthrough 及 Client Disconnect，无不相关改动。

@@ -20,10 +20,12 @@
 ### Task 1: AccountScheduler Implementation & Unit Tests
 
 **Files:**
+
 - Create: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes:
   - `authSource.getAllAccounts()`: returns array of auth objects or indices.
   - `connectionRegistry.hasConnection(authIndex)`: returns boolean indicating if WebSocket is connected for given auth index.
@@ -40,54 +42,54 @@ Create `test/concurrent/account_scheduler.test.js`:
 const AccountScheduler = require("../../src/concurrent/AccountScheduler");
 
 describe("AccountScheduler", () => {
-    let mockAuthSource;
-    let mockConnectionRegistry;
-    let mockLogger;
+  let mockAuthSource;
+  let mockConnectionRegistry;
+  let mockLogger;
 
-    beforeEach(() => {
-        mockAuthSource = {
-            getAllAccounts: jest.fn().mockReturnValue([{ index: 0 }, { index: 1 }, { index: 2 }]),
-        };
-        mockConnectionRegistry = {
-            hasConnection: jest.fn(),
-        };
-        mockLogger = {
-            debug: jest.fn(),
-            error: jest.fn(),
-            info: jest.fn(),
-            warn: jest.fn(),
-        };
-    });
+  beforeEach(() => {
+    mockAuthSource = {
+      getAllAccounts: jest.fn().mockReturnValue([{ index: 0 }, { index: 1 }, { index: 2 }]),
+    };
+    mockConnectionRegistry = {
+      hasConnection: jest.fn(),
+    };
+    mockLogger = {
+      debug: jest.fn(),
+      error: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+    };
+  });
 
-    test("round-robin selects active connections sequentially", () => {
-        // Indices 0, 1, 2 all connected
-        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  test("round-robin selects active connections sequentially", () => {
+    // Indices 0, 1, 2 all connected
+    mockConnectionRegistry.hasConnection.mockReturnValue(true);
 
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
-        expect(scheduler.getNextAuthIndex()).toBe(0);
-        expect(scheduler.getNextAuthIndex()).toBe(1);
-        expect(scheduler.getNextAuthIndex()).toBe(2);
-        expect(scheduler.getNextAuthIndex()).toBe(0);
-    });
+    expect(scheduler.getNextAuthIndex()).toBe(0);
+    expect(scheduler.getNextAuthIndex()).toBe(1);
+    expect(scheduler.getNextAuthIndex()).toBe(2);
+    expect(scheduler.getNextAuthIndex()).toBe(0);
+  });
 
-    test("skips disconnected auth indices during round-robin", () => {
-        // Only index 1 is connected
-        mockConnectionRegistry.hasConnection.mockImplementation(idx => idx === 1);
+  test("skips disconnected auth indices during round-robin", () => {
+    // Only index 1 is connected
+    mockConnectionRegistry.hasConnection.mockImplementation(idx => idx === 1);
 
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
-        expect(scheduler.getNextAuthIndex()).toBe(1);
-        expect(scheduler.getNextAuthIndex()).toBe(1);
-    });
+    expect(scheduler.getNextAuthIndex()).toBe(1);
+    expect(scheduler.getNextAuthIndex()).toBe(1);
+  });
 
-    test("throws 503 error when no active connections exist", () => {
-        mockConnectionRegistry.hasConnection.mockReturnValue(false);
+  test("throws 503 error when no active connections exist", () => {
+    mockConnectionRegistry.hasConnection.mockReturnValue(false);
 
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
-        expect(() => scheduler.getNextAuthIndex()).toThrow("No active context connection available");
-    });
+    expect(() => scheduler.getNextAuthIndex()).toThrow("No active context connection available");
+  });
 });
 ```
 
@@ -107,59 +109,59 @@ Create `src/concurrent/AccountScheduler.js`:
  */
 
 class AccountScheduler {
-    /**
-     * @param {Object} authSource - AuthSource instance containing available accounts
-     * @param {Object} connectionRegistry - ConnectionRegistry instance managing WebSocket connections
-     * @param {Object} [logger] - Logger instance
-     */
-    constructor(authSource, connectionRegistry, logger = console) {
-        this.authSource = authSource;
-        this.connectionRegistry = connectionRegistry;
-        this.logger = logger;
-        this.currentIndex = 0;
+  /**
+   * @param {Object} authSource - AuthSource instance containing available accounts
+   * @param {Object} connectionRegistry - ConnectionRegistry instance managing WebSocket connections
+   * @param {Object} [logger] - Logger instance
+   */
+  constructor(authSource, connectionRegistry, logger = console) {
+    this.authSource = authSource;
+    this.connectionRegistry = connectionRegistry;
+    this.logger = logger;
+    this.currentIndex = 0;
+  }
+
+  /**
+   * Get all candidate auth indices from authSource
+   * @returns {number[]}
+   */
+  _getAccountIndices() {
+    const accounts = this.authSource ? this.authSource.getAllAccounts() : [];
+    if (!accounts || accounts.length === 0) {
+      return [];
+    }
+    return accounts.map((acc, idx) => (typeof acc.index === "number" ? acc.index : idx));
+  }
+
+  /**
+   * Select next available authIndex using Round-Robin scheduling
+   * @returns {number} The selected authIndex
+   * @throws {Error} If no connected authIndex is available
+   */
+  getNextAuthIndex() {
+    const indices = this._getAccountIndices();
+    if (indices.length === 0) {
+      const err = new Error("No authentication accounts configured");
+      err.statusCode = 503;
+      throw err;
     }
 
-    /**
-     * Get all candidate auth indices from authSource
-     * @returns {number[]}
-     */
-    _getAccountIndices() {
-        const accounts = this.authSource ? this.authSource.getAllAccounts() : [];
-        if (!accounts || accounts.length === 0) {
-            return [];
+    const total = indices.length;
+    for (let i = 0; i < total; i++) {
+      const candidateIdx = indices[(this.currentIndex + i) % total];
+      if (this.connectionRegistry && this.connectionRegistry.hasConnection(candidateIdx)) {
+        this.currentIndex = (this.currentIndex + i + 1) % total;
+        if (this.logger && typeof this.logger.debug === "function") {
+          this.logger.debug(`[AccountScheduler] Selected authIndex #${candidateIdx}`);
         }
-        return accounts.map((acc, idx) => (typeof acc.index === "number" ? acc.index : idx));
+        return candidateIdx;
+      }
     }
 
-    /**
-     * Select next available authIndex using Round-Robin scheduling
-     * @returns {number} The selected authIndex
-     * @throws {Error} If no connected authIndex is available
-     */
-    getNextAuthIndex() {
-        const indices = this._getAccountIndices();
-        if (indices.length === 0) {
-            const err = new Error("No authentication accounts configured");
-            err.statusCode = 503;
-            throw err;
-        }
-
-        const total = indices.length;
-        for (let i = 0; i < total; i++) {
-            const candidateIdx = indices[(this.currentIndex + i) % total];
-            if (this.connectionRegistry && this.connectionRegistry.hasConnection(candidateIdx)) {
-                this.currentIndex = (this.currentIndex + i + 1) % total;
-                if (this.logger && typeof this.logger.debug === "function") {
-                    this.logger.debug(`[AccountScheduler] Selected authIndex #${candidateIdx}`);
-                }
-                return candidateIdx;
-            }
-        }
-
-        const error = new Error("No active context connection available");
-        error.statusCode = 503;
-        throw error;
-    }
+    const error = new Error("No active context connection available");
+    error.statusCode = 503;
+    throw error;
+  }
 }
 
 module.exports = AccountScheduler;
@@ -182,10 +184,12 @@ git commit -m "feat(concurrent): implement AccountScheduler with Round-Robin str
 ### Task 2: ConcurrentRequestHandler Implementation & Unit Tests
 
 **Files:**
+
 - Create: `src/concurrent/ConcurrentRequestHandler.js`
 - Test: `test/concurrent/concurrent_request_handler.test.js`
 
 **Interfaces:**
+
 - Consumes:
   - `connectionRegistry.getConnection(authIndex)`: returns WebSocket connection object or MessageQueue wrapper.
   - `connectionRegistry.sendRequest(authIndex, payload, callback)` or WebSocket queue processing.
@@ -206,92 +210,90 @@ const express = require("express");
 const ConcurrentRequestHandler = require("../../src/concurrent/ConcurrentRequestHandler");
 
 describe("ConcurrentRequestHandler", () => {
-    let app;
-    let mockConnectionRegistry;
-    let mockScheduler;
-    let mockFormatConverter;
-    let mockLogger;
+  let app;
+  let mockConnectionRegistry;
+  let mockScheduler;
+  let mockFormatConverter;
+  let mockLogger;
 
-    beforeEach(() => {
-        app = express();
-        app.use(express.json());
+  beforeEach(() => {
+    app = express();
+    app.use(express.json());
 
-        mockConnectionRegistry = {
-            hasConnection: jest.fn().mockReturnValue(true),
-            sendRequest: jest.fn(),
-        };
+    mockConnectionRegistry = {
+      hasConnection: jest.fn().mockReturnValue(true),
+      sendRequest: jest.fn(),
+    };
 
-        mockScheduler = {
-            getNextAuthIndex: jest.fn().mockReturnValue(0),
-        };
+    mockScheduler = {
+      getNextAuthIndex: jest.fn().mockReturnValue(0),
+    };
 
-        mockFormatConverter = {};
+    mockFormatConverter = {};
 
-        mockLogger = {
-            debug: jest.fn(),
-            error: jest.fn(),
-            info: jest.fn(),
-            warn: jest.fn(),
-        };
+    mockLogger = {
+      debug: jest.fn(),
+      error: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+    };
+  });
+
+  test("registers routes on express app", () => {
+    const handler = new ConcurrentRequestHandler(
+      mockConnectionRegistry,
+      mockScheduler,
+      mockFormatConverter,
+      mockLogger,
+      [{ name: "models/gemini-2.5-flash" }]
+    );
+
+    handler.registerRoutes(app);
+
+    // Verify route stack contains expected paths
+    const routes = app._router.stack.filter(r => r.route).map(r => ({ path: r.route.path, methods: r.route.methods }));
+
+    expect(routes.some(r => r.path.includes("/v1beta/models"))).toBe(true);
+  });
+
+  test("handleGeminiRequest handles 503 when scheduler has no active connections", async () => {
+    mockScheduler.getNextAuthIndex.mockImplementation(() => {
+      const err = new Error("No active context connection available");
+      err.statusCode = 503;
+      throw err;
     });
 
-    test("registers routes on express app", () => {
-        const handler = new ConcurrentRequestHandler(
-            mockConnectionRegistry,
-            mockScheduler,
-            mockFormatConverter,
-            mockLogger,
-            [{ name: "models/gemini-2.5-flash" }]
-        );
+    const handler = new ConcurrentRequestHandler(
+      mockConnectionRegistry,
+      mockScheduler,
+      mockFormatConverter,
+      mockLogger
+    );
 
-        handler.registerRoutes(app);
+    const req = {
+      method: "POST",
+      path: "/v1beta/models/gemini-2.5-flash:generateContent",
+      params: { 0: "gemini-2.5-flash:generateContent" },
+      query: {},
+      body: { contents: [] },
+    };
 
-        // Verify route stack contains expected paths
-        const routes = app._router.stack
-            .filter(r => r.route)
-            .map(r => ({ path: r.route.path, methods: r.route.methods }));
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
 
-        expect(routes.some(r => r.path.includes("/v1beta/models"))).toBe(true);
-    });
+    await handler.handleGeminiRequest(req, res);
 
-    test("handleGeminiRequest handles 503 when scheduler has no active connections", async () => {
-        mockScheduler.getNextAuthIndex.mockImplementation(() => {
-            const err = new Error("No active context connection available");
-            err.statusCode = 503;
-            throw err;
-        });
-
-        const handler = new ConcurrentRequestHandler(
-            mockConnectionRegistry,
-            mockScheduler,
-            mockFormatConverter,
-            mockLogger
-        );
-
-        const req = {
-            method: "POST",
-            path: "/v1beta/models/gemini-2.5-flash:generateContent",
-            params: { 0: "gemini-2.5-flash:generateContent" },
-            query: {},
-            body: { contents: [] },
-        };
-
-        const res = {
-            status: jest.fn().mockReturnThis(),
-            json: jest.fn(),
-        };
-
-        await handler.handleGeminiRequest(req, res);
-
-        expect(res.status).toHaveBeenCalledWith(503);
-        expect(res.json).toHaveBeenCalledWith(
-            expect.objectContaining({
-                error: expect.objectContaining({
-                    message: expect.stringContaining("No active context connection available"),
-                }),
-            })
-        );
-    });
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          message: expect.stringContaining("No active context connection available"),
+        }),
+      })
+    );
+  });
 });
 ```
 
@@ -311,140 +313,138 @@ Create `src/concurrent/ConcurrentRequestHandler.js`:
  */
 
 class ConcurrentRequestHandler {
-    /**
-     * @param {Object} connectionRegistry - ConnectionRegistry instance
-     * @param {Object} scheduler - AccountScheduler instance
-     * @param {Object} [formatConverter] - FormatConverter instance
-     * @param {Object} [logger] - Logger instance
-     * @param {Array} [modelList] - Model list from configuration
-     */
-    constructor(connectionRegistry, scheduler, formatConverter, logger = console, modelList = []) {
-        this.connectionRegistry = connectionRegistry;
-        this.scheduler = scheduler;
-        this.formatConverter = formatConverter;
-        this.logger = logger;
-        this.modelList = modelList;
+  /**
+   * @param {Object} connectionRegistry - ConnectionRegistry instance
+   * @param {Object} scheduler - AccountScheduler instance
+   * @param {Object} [formatConverter] - FormatConverter instance
+   * @param {Object} [logger] - Logger instance
+   * @param {Array} [modelList] - Model list from configuration
+   */
+  constructor(connectionRegistry, scheduler, formatConverter, logger = console, modelList = []) {
+    this.connectionRegistry = connectionRegistry;
+    this.scheduler = scheduler;
+    this.formatConverter = formatConverter;
+    this.logger = logger;
+    this.modelList = modelList;
+  }
+
+  /**
+   * Register Express routes for native Gemini API endpoints
+   * @param {Object} app - Express application instance
+   */
+  registerRoutes(app) {
+    // Models list endpoint
+    app.get(["/v1beta/models", "/v1/models"], (req, res) => {
+      if (req.path.startsWith("/v1/models")) {
+        const models = this.modelList.map(model => ({
+          context_window: model.inputTokenLimit,
+          created: Math.floor(Date.now() / 1000),
+          id: model.name.replace("models/", ""),
+          max_tokens: model.outputTokenLimit,
+          object: "model",
+          owned_by: "google",
+        }));
+        return res.status(200).json({ data: models, object: "list" });
+      }
+      return res.status(200).json({ models: this.modelList });
+    });
+
+    // Gemini API POST endpoints
+    app.post("/v1beta/models/*", (req, res) => {
+      this.handleGeminiRequest(req, res);
+    });
+
+    app.post("/v1/models/*", (req, res) => {
+      this.handleGeminiRequest(req, res);
+    });
+  }
+
+  /**
+   * Process native Gemini API request
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async handleGeminiRequest(req, res) {
+    let authIndex;
+    try {
+      authIndex = this.scheduler.getNextAuthIndex();
+    } catch (err) {
+      const statusCode = err.statusCode || 503;
+      if (this.logger && typeof this.logger.error === "function") {
+        this.logger.error(`[ConcurrentRequestHandler] Scheduling failed: ${err.message}`);
+      }
+      return res.status(statusCode).json({
+        error: {
+          code: statusCode,
+          message: err.message,
+          status: "UNAVAILABLE",
+        },
+      });
     }
 
-    /**
-     * Register Express routes for native Gemini API endpoints
-     * @param {Object} app - Express application instance
-     */
-    registerRoutes(app) {
-        // Models list endpoint
-        app.get(["/v1beta/models", "/v1/models"], (req, res) => {
-            if (req.path.startsWith("/v1/models")) {
-                const models = this.modelList.map(model => ({
-                    context_window: model.inputTokenLimit,
-                    created: Math.floor(Date.now() / 1000),
-                    id: model.name.replace("models/", ""),
-                    max_tokens: model.outputTokenLimit,
-                    object: "model",
-                    owned_by: "google",
-                }));
-                return res.status(200).json({ data: models, object: "list" });
-            }
-            return res.status(200).json({ models: this.modelList });
-        });
+    try {
+      const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
+      const requestPayload = {
+        action: "generateContent",
+        body: req.body,
+        isStream,
+        path: req.path,
+        query: req.query,
+      };
 
-        // Gemini API POST endpoints
-        app.post("/v1beta/models/*", (req, res) => {
-            this.handleGeminiRequest(req, res);
-        });
+      if (this.logger && typeof this.logger.info === "function") {
+        this.logger.info(`[ConcurrentRequestHandler] Forwarding request (${req.path}) to authIndex #${authIndex}`);
+      }
 
-        app.post("/v1/models/*", (req, res) => {
-            this.handleGeminiRequest(req, res);
-        });
-    }
+      if (isStream) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.flushHeaders?.();
+      }
 
-    /**
-     * Process native Gemini API request
-     * @param {Object} req - Express request object
-     * @param {Object} res - Express response object
-     */
-    async handleGeminiRequest(req, res) {
-        let authIndex;
-        try {
-            authIndex = this.scheduler.getNextAuthIndex();
-        } catch (err) {
-            const statusCode = err.statusCode || 503;
-            if (this.logger && typeof this.logger.error === "function") {
-                this.logger.error(`[ConcurrentRequestHandler] Scheduling failed: ${err.message}`);
-            }
-            return res.status(statusCode).json({
-                error: {
-                    code: statusCode,
-                    message: err.message,
-                    status: "UNAVAILABLE",
-                },
+      await this.connectionRegistry.sendRequest(authIndex, requestPayload, (chunk, isFinished, isError) => {
+        if (isError) {
+          if (!res.headersSent) {
+            res.status(500).json({
+              error: { code: 500, message: chunk || "Internal Error", status: "INTERNAL" },
             });
+          } else if (isStream) {
+            res.write(`data: ${JSON.stringify({ error: chunk })}\n\n`);
+            res.end();
+          }
+          return;
         }
 
-        try {
-            const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
-            const requestPayload = {
-                action: "generateContent",
-                body: req.body,
-                isStream,
-                path: req.path,
-                query: req.query,
-            };
-
-            if (this.logger && typeof this.logger.info === "function") {
-                this.logger.info(
-                    `[ConcurrentRequestHandler] Forwarding request (${req.path}) to authIndex #${authIndex}`
-                );
-            }
-
-            if (isStream) {
-                res.setHeader("Content-Type", "text/event-stream");
-                res.setHeader("Cache-Control", "no-cache");
-                res.setHeader("Connection", "keep-alive");
-                res.flushHeaders?.();
-            }
-
-            await this.connectionRegistry.sendRequest(authIndex, requestPayload, (chunk, isFinished, isError) => {
-                if (isError) {
-                    if (!res.headersSent) {
-                        res.status(500).json({
-                            error: { code: 500, message: chunk || "Internal Error", status: "INTERNAL" },
-                        });
-                    } else if (isStream) {
-                        res.write(`data: ${JSON.stringify({ error: chunk })}\n\n`);
-                        res.end();
-                    }
-                    return;
-                }
-
-                if (isStream) {
-                    if (chunk) {
-                        const dataStr = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
-                        res.write(`data: ${dataStr}\n\n`);
-                    }
-                    if (isFinished) {
-                        res.end();
-                    }
-                } else {
-                    if (isFinished && !res.headersSent) {
-                        res.status(200).json(chunk);
-                    }
-                }
-            });
-        } catch (error) {
-            if (this.logger && typeof this.logger.error === "function") {
-                this.logger.error(`[ConcurrentRequestHandler] Request processing error: ${error.message}`);
-            }
-            if (!res.headersSent) {
-                res.status(500).json({
-                    error: {
-                        code: 500,
-                        message: error.message,
-                        status: "INTERNAL",
-                    },
-                });
-            }
+        if (isStream) {
+          if (chunk) {
+            const dataStr = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
+            res.write(`data: ${dataStr}\n\n`);
+          }
+          if (isFinished) {
+            res.end();
+          }
+        } else {
+          if (isFinished && !res.headersSent) {
+            res.status(200).json(chunk);
+          }
         }
+      });
+    } catch (error) {
+      if (this.logger && typeof this.logger.error === "function") {
+        this.logger.error(`[ConcurrentRequestHandler] Request processing error: ${error.message}`);
+      }
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: {
+            code: 500,
+            message: error.message,
+            status: "INTERNAL",
+          },
+        });
+      }
     }
+  }
 }
 
 module.exports = ConcurrentRequestHandler;
@@ -467,10 +467,12 @@ git commit -m "feat(concurrent): implement ConcurrentRequestHandler for native G
 ### Task 3: Concurrent Module Facade Entrypoint (`src/concurrent/index.js`)
 
 **Files:**
+
 - Create: `src/concurrent/index.js`
 - Test: `test/concurrent/index.test.js`
 
 **Interfaces:**
+
 - Consumes:
   - `AccountScheduler`: Class from `./AccountScheduler`
   - `ConcurrentRequestHandler`: Class from `./ConcurrentRequestHandler`
@@ -487,23 +489,23 @@ const express = require("express");
 const { initConcurrentMode } = require("../../src/concurrent");
 
 describe("concurrent module facade (index.js)", () => {
-    test("initConcurrentMode initializes scheduler and request handler", () => {
-        const app = express();
-        const mockAuthSource = { getAllAccounts: jest.fn().mockReturnValue([]) };
-        const mockConnectionRegistry = { hasConnection: jest.fn() };
-        const mockLogger = { info: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  test("initConcurrentMode initializes scheduler and request handler", () => {
+    const app = express();
+    const mockAuthSource = { getAllAccounts: jest.fn().mockReturnValue([]) };
+    const mockConnectionRegistry = { hasConnection: jest.fn() };
+    const mockLogger = { info: jest.fn(), debug: jest.fn(), error: jest.fn() };
 
-        const result = initConcurrentMode(app, {
-            authSource: mockAuthSource,
-            connectionRegistry: mockConnectionRegistry,
-            formatConverter: {},
-            logger: mockLogger,
-            modelList: [],
-        });
-
-        expect(result).toHaveProperty("scheduler");
-        expect(result).toHaveProperty("concurrentRequestHandler");
+    const result = initConcurrentMode(app, {
+      authSource: mockAuthSource,
+      connectionRegistry: mockConnectionRegistry,
+      formatConverter: {},
+      logger: mockLogger,
+      modelList: [],
     });
+
+    expect(result).toHaveProperty("scheduler");
+    expect(result).toHaveProperty("concurrentRequestHandler");
+  });
 });
 ```
 
@@ -537,33 +539,33 @@ const ConcurrentRequestHandler = require("./ConcurrentRequestHandler");
  * @returns {Object} Initialized concurrent components
  */
 function initConcurrentMode(app, dependencies) {
-    const { authSource, connectionRegistry, formatConverter, logger = console, modelList = [] } = dependencies;
+  const { authSource, connectionRegistry, formatConverter, logger = console, modelList = [] } = dependencies;
 
-    if (logger && typeof logger.info === "function") {
-        logger.info("[Concurrent] Initializing concurrent multi-account forwarding subsystem...");
-    }
+  if (logger && typeof logger.info === "function") {
+    logger.info("[Concurrent] Initializing concurrent multi-account forwarding subsystem...");
+  }
 
-    const scheduler = new AccountScheduler(authSource, connectionRegistry, logger);
-    const concurrentRequestHandler = new ConcurrentRequestHandler(
-        connectionRegistry,
-        scheduler,
-        formatConverter,
-        logger,
-        modelList
-    );
+  const scheduler = new AccountScheduler(authSource, connectionRegistry, logger);
+  const concurrentRequestHandler = new ConcurrentRequestHandler(
+    connectionRegistry,
+    scheduler,
+    formatConverter,
+    logger,
+    modelList
+  );
 
-    concurrentRequestHandler.registerRoutes(app);
+  concurrentRequestHandler.registerRoutes(app);
 
-    return {
-        concurrentRequestHandler,
-        scheduler,
-    };
+  return {
+    concurrentRequestHandler,
+    scheduler,
+  };
 }
 
 module.exports = {
-    AccountScheduler,
-    ConcurrentRequestHandler,
-    initConcurrentMode,
+  AccountScheduler,
+  ConcurrentRequestHandler,
+  initConcurrentMode,
 };
 ```
 
@@ -584,10 +586,12 @@ git commit -m "feat(concurrent): implement concurrent subsystem facade entrypoin
 ### Task 4: System Integration in `ProxyServerSystem.js` & Verification
 
 **Files:**
+
 - Modify: `src/core/ProxyServerSystem.js:460-535`
 - Test: `test/concurrent/integration.test.js`
 
 **Interfaces:**
+
 - Consumes:
   - `initConcurrentMode(app, dependencies)` from `../concurrent`
   - `process.env.ENABLE_CONCURRENT`
@@ -603,40 +607,40 @@ Create `test/concurrent/integration.test.js`:
 const { initConcurrentMode } = require("../../src/concurrent");
 
 describe("Concurrent System Integration Check", () => {
-    let originalEnv;
+  let originalEnv;
 
-    beforeEach(() => {
-        originalEnv = { ...process.env };
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  test("ENABLE_CONCURRENT environment variable is recognized", () => {
+    process.env.ENABLE_CONCURRENT = "true";
+    const isConcurrent = process.env.ENABLE_CONCURRENT === "true";
+    expect(isConcurrent).toBe(true);
+  });
+
+  test("initConcurrentMode can be safely invoked with mock ProxyServerSystem dependencies", () => {
+    const mockApp = {
+      get: jest.fn(),
+      post: jest.fn(),
+    };
+
+    const result = initConcurrentMode(mockApp, {
+      authSource: { getAllAccounts: () => [] },
+      connectionRegistry: { hasConnection: () => false },
+      formatConverter: {},
+      logger: { info: jest.fn() },
+      modelList: [{ name: "models/gemini-2.5-flash" }],
     });
 
-    afterEach(() => {
-        process.env = originalEnv;
-    });
-
-    test("ENABLE_CONCURRENT environment variable is recognized", () => {
-        process.env.ENABLE_CONCURRENT = "true";
-        const isConcurrent = process.env.ENABLE_CONCURRENT === "true";
-        expect(isConcurrent).toBe(true);
-    });
-
-    test("initConcurrentMode can be safely invoked with mock ProxyServerSystem dependencies", () => {
-        const mockApp = {
-            get: jest.fn(),
-            post: jest.fn(),
-        };
-
-        const result = initConcurrentMode(mockApp, {
-            authSource: { getAllAccounts: () => [] },
-            connectionRegistry: { hasConnection: () => false },
-            formatConverter: {},
-            logger: { info: jest.fn() },
-            modelList: [{ name: "models/gemini-2.5-flash" }],
-        });
-
-        expect(result.scheduler).toBeDefined();
-        expect(mockApp.get).toHaveBeenCalled();
-        expect(mockApp.post).toHaveBeenCalled();
-    });
+    expect(result.scheduler).toBeDefined();
+    expect(mockApp.get).toHaveBeenCalled();
+    expect(mockApp.post).toHaveBeenCalled();
+  });
 });
 ```
 
@@ -652,12 +656,14 @@ Modify `src/core/ProxyServerSystem.js`:
 In `_createExpressApp()`, find the API routes section (around line 463):
 
 Replace:
+
 ```javascript
         // API routes
         app.get(["/v1/models"], (req, res) => {
 ```
 
 With:
+
 ```javascript
         // API routes
         const { initConcurrentMode } = require("../concurrent");

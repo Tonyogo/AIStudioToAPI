@@ -19,10 +19,12 @@
 ### Task 1: Support Response Status & Header Passthrough
 
 **Files:**
+
 - Modify: `src/concurrent/ConcurrentRequestHandler.js`
 - Test: `test/concurrent/concurrent_request_handler.test.js`
 
 **Interfaces:**
+
 - Consumes: WebSocket messages with `event_type === "response_headers"` containing `status` and `headers`.
 - Produces: `callback(chunk, isFinished, isError, responseMeta)` where `responseMeta` holds `{ status, headers }`.
 
@@ -32,29 +34,34 @@ Edit `test/concurrent/concurrent_request_handler.test.js` to add tests for `resp
 
 ```javascript
 test("_sendRequestImpl captures response status and headers from response_headers event", async () => {
-    const mockWS = { send: jest.fn() };
-    const mockQueue = {
-        dequeue: jest
-            .fn()
-            .mockResolvedValueOnce({ event_type: "response_headers", headers: { "x-custom-header": "value" }, status: 201 })
-            .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
-            .mockResolvedValueOnce({ type: "STREAM_END" }),
-    };
-    const minimalRegistry = {
-        createMessageQueue: jest.fn().mockReturnValue(mockQueue),
-        getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
-        removeMessageQueue: jest.fn(),
-    };
+  const mockWS = { send: jest.fn() };
+  const mockQueue = {
+    dequeue: jest
+      .fn()
+      .mockResolvedValueOnce({ event_type: "response_headers", headers: { "x-custom-header": "value" }, status: 201 })
+      .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+      .mockResolvedValueOnce({ type: "STREAM_END" }),
+  };
+  const minimalRegistry = {
+    createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+    getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+    removeMessageQueue: jest.fn(),
+  };
 
-    new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+  new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
 
-    const callback = jest.fn();
-    await minimalRegistry.sendRequest(0, { body: {}, isStream: false, path: "/foo" }, callback);
+  const callback = jest.fn();
+  await minimalRegistry.sendRequest(0, { body: {}, isStream: false, path: "/foo" }, callback);
 
-    expect(callback).toHaveBeenCalledWith({ ok: true }, true, false, expect.objectContaining({
-        headers: { "x-custom-header": "value" },
-        status: 201,
-    }));
+  expect(callback).toHaveBeenCalledWith(
+    { ok: true },
+    true,
+    false,
+    expect.objectContaining({
+      headers: { "x-custom-header": "value" },
+      status: 201,
+    })
+  );
 });
 ```
 
@@ -66,6 +73,7 @@ Expected: FAIL (callback was called with 3 arguments instead of 4, or fourth arg
 - [ ] **Step 3: Implement response status and header passthrough in ConcurrentRequestHandler.js**
 
 In `src/concurrent/ConcurrentRequestHandler.js`:
+
 1. In `_sendRequestImpl`, define `let responseStatus = 200;` and `let responseHeaders = {};`.
 2. When handling `message.event_type === "response_headers"`:
    - Update `if (message.status) responseStatus = Number(message.status);`
@@ -92,10 +100,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 2: Implement Gemini Error Status & Format Passthrough
 
 **Files:**
+
 - Modify: `src/concurrent/ConcurrentRequestHandler.js`
 - Test: `test/concurrent/concurrent_request_handler.test.js`
 
 **Interfaces:**
+
 - Consumes: WebSocket error messages containing `status` and `message`.
 - Produces: Express error response JSON with correct status code (e.g., 429, 400, 503) and Gemini `status` text (`RESOURCE_EXHAUSTED`, `INVALID_ARGUMENT`, `UNAVAILABLE`, `INTERNAL`).
 
@@ -105,44 +115,42 @@ Edit `test/concurrent/concurrent_request_handler.test.js`:
 
 ```javascript
 test("handleGeminiRequest returns correct HTTP status and Gemini error payload for 429 rate limit", async () => {
-    const mockWS = { send: jest.fn() };
-    const mockQueue = {
-        dequeue: jest
-            .fn()
-            .mockResolvedValueOnce({ event_type: "error", message: "Quota exceeded", status: 429 }),
-    };
-    const minimalRegistry = {
-        createMessageQueue: jest.fn().mockReturnValue(mockQueue),
-        getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
-        removeMessageQueue: jest.fn(),
-        sendRequest: null,
-    };
+  const mockWS = { send: jest.fn() };
+  const mockQueue = {
+    dequeue: jest.fn().mockResolvedValueOnce({ event_type: "error", message: "Quota exceeded", status: 429 }),
+  };
+  const minimalRegistry = {
+    createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+    getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+    removeMessageQueue: jest.fn(),
+    sendRequest: null,
+  };
 
-    const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+  const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
 
-    const req = {
-        body: { contents: [] },
-        method: "POST",
-        path: "/v1beta/models/gemini-2.5-flash:generateContent",
-        query: {},
-    };
+  const req = {
+    body: { contents: [] },
+    method: "POST",
+    path: "/v1beta/models/gemini-2.5-flash:generateContent",
+    query: {},
+  };
 
-    const res = {
-        headersSent: false,
-        json: jest.fn(),
-        status: jest.fn().mockReturnThis(),
-    };
+  const res = {
+    headersSent: false,
+    json: jest.fn(),
+    status: jest.fn().mockReturnThis(),
+  };
 
-    await handler.handleGeminiRequest(req, res);
+  await handler.handleGeminiRequest(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith({
-        error: {
-            code: 429,
-            message: "Quota exceeded",
-            status: "RESOURCE_EXHAUSTED",
-        },
-    });
+  expect(res.status).toHaveBeenCalledWith(429);
+  expect(res.json).toHaveBeenCalledWith({
+    error: {
+      code: 429,
+      message: "Quota exceeded",
+      status: "RESOURCE_EXHAUSTED",
+    },
+  });
 });
 ```
 
@@ -154,17 +162,18 @@ Expected: FAIL (res.status was called with 500 instead of 429, status was "INTER
 - [ ] **Step 3: Implement Gemini error status and statusText mapping**
 
 In `src/concurrent/ConcurrentRequestHandler.js`:
+
 1. In `_sendRequestImpl`, when `message.event_type === "error"`, extract `const errStatus = message.status || 500;` and invoke `callback(message.message || "Request failed", true, true, { status: errStatus });`.
 2. In `handleGeminiRequest`, map `responseStatus`:
    ```javascript
    const statusText =
-       responseStatus === 429
-           ? "RESOURCE_EXHAUSTED"
-           : responseStatus === 400
-             ? "INVALID_ARGUMENT"
-             : responseStatus === 503
-               ? "UNAVAILABLE"
-               : "INTERNAL";
+     responseStatus === 429
+       ? "RESOURCE_EXHAUSTED"
+       : responseStatus === 400
+         ? "INVALID_ARGUMENT"
+         : responseStatus === 503
+           ? "UNAVAILABLE"
+           : "INTERNAL";
    ```
 3. Update error response formatting to use `res.status(responseStatus).json({ error: { code: responseStatus, message: chunk || "Internal Error", status: statusText } })`.
 
@@ -187,10 +196,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 3: Implement Client Disconnect Cancellation Mechanism
 
 **Files:**
+
 - Modify: `src/concurrent/ConcurrentRequestHandler.js`
 - Test: `test/concurrent/concurrent_request_handler.test.js`
 
 **Interfaces:**
+
 - Consumes: Express `res.on("close")` event.
 - Produces: `cancel_request` WebSocket message to the browser context if client disconnects before completion.
 
@@ -200,50 +211,48 @@ Edit `test/concurrent/concurrent_request_handler.test.js`:
 
 ```javascript
 test("handleGeminiRequest sends cancel_request when client disconnects early", async () => {
-    const mockWS = { send: jest.fn() };
-    let closeListener;
-    const mockQueue = {
-        dequeue: jest.fn().mockImplementation(() => {
-            // Trigger client disconnect while waiting
-            if (closeListener) closeListener();
-            return new Promise(() => {}); // hang
-        }),
-    };
-    const minimalRegistry = {
-        createMessageQueue: jest.fn().mockReturnValue(mockQueue),
-        getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
-        removeMessageQueue: jest.fn(),
-    };
+  const mockWS = { send: jest.fn() };
+  let closeListener;
+  const mockQueue = {
+    dequeue: jest.fn().mockImplementation(() => {
+      // Trigger client disconnect while waiting
+      if (closeListener) closeListener();
+      return new Promise(() => {}); // hang
+    }),
+  };
+  const minimalRegistry = {
+    createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+    getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+    removeMessageQueue: jest.fn(),
+  };
 
-    const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+  const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
 
-    const req = {
-        body: { contents: [] },
-        method: "POST",
-        path: "/v1beta/models/gemini-2.5-flash:generateContent",
-        query: {},
-    };
+  const req = {
+    body: { contents: [] },
+    method: "POST",
+    path: "/v1beta/models/gemini-2.5-flash:generateContent",
+    query: {},
+  };
 
-    const res = {
-        headersSent: false,
-        json: jest.fn(),
-        on: jest.fn((event, fn) => {
-            if (event === "close") closeListener = fn;
-        }),
-        status: jest.fn().mockReturnThis(),
-        writableEnded: false,
-    };
+  const res = {
+    headersSent: false,
+    json: jest.fn(),
+    on: jest.fn((event, fn) => {
+      if (event === "close") closeListener = fn;
+    }),
+    status: jest.fn().mockReturnThis(),
+    writableEnded: false,
+  };
 
-    // Run handleGeminiRequest asynchronously
-    handler.handleGeminiRequest(req, res);
+  // Run handleGeminiRequest asynchronously
+  handler.handleGeminiRequest(req, res);
 
-    // Wait a tick for queue dequeue to run and trigger closeListener
-    await new Promise(resolve => setTimeout(resolve, 50));
+  // Wait a tick for queue dequeue to run and trigger closeListener
+  await new Promise(resolve => setTimeout(resolve, 50));
 
-    expect(mockWS.send).toHaveBeenCalledWith(
-        expect.stringContaining('"event_type":"cancel_request"')
-    );
-    expect(minimalRegistry.removeMessageQueue).toHaveBeenCalledWith(expect.any(String), "client_disconnect");
+  expect(mockWS.send).toHaveBeenCalledWith(expect.stringContaining('"event_type":"cancel_request"'));
+  expect(minimalRegistry.removeMessageQueue).toHaveBeenCalledWith(expect.any(String), "client_disconnect");
 });
 ```
 
@@ -255,28 +264,29 @@ Expected: FAIL (res.on was not called or cancel_request message was not sent).
 - [ ] **Step 3: Implement client disconnect handling in handleGeminiRequest**
 
 In `src/concurrent/ConcurrentRequestHandler.js`:
+
 1. Generate `requestId` and `requestAttemptId` inside `handleGeminiRequest`.
 2. Pass `requestId` and `requestAttemptId` in `requestPayload`.
 3. Track completion state with `let isRequestCompleted = false;`.
 4. Register `res.on("close", ...)`:
    ```javascript
    res.on("close", () => {
-       if (!isRequestCompleted && !res.writableEnded) {
-           if (this.logger && typeof this.logger.warn === "function") {
-               this.logger.warn(`[ConcurrentRequestHandler] Client closed connection prematurely for request #${requestId}`);
-           }
-           const connection = this.connectionRegistry.getConnectionByAuth(authIndex);
-           if (connection) {
-               connection.send(
-                   JSON.stringify({
-                       event_type: "cancel_request",
-                       request_attempt_id: requestAttemptId,
-                       request_id: requestId,
-                   })
-               );
-           }
-           this.connectionRegistry.removeMessageQueue(requestId, "client_disconnect");
+     if (!isRequestCompleted && !res.writableEnded) {
+       if (this.logger && typeof this.logger.warn === "function") {
+         this.logger.warn(`[ConcurrentRequestHandler] Client closed connection prematurely for request #${requestId}`);
        }
+       const connection = this.connectionRegistry.getConnectionByAuth(authIndex);
+       if (connection) {
+         connection.send(
+           JSON.stringify({
+             event_type: "cancel_request",
+             request_attempt_id: requestAttemptId,
+             request_id: requestId,
+           })
+         );
+       }
+       this.connectionRegistry.removeMessageQueue(requestId, "client_disconnect");
+     }
    });
    ```
 5. Set `isRequestCompleted = true` when streaming finishes or non-stream response is sent.
@@ -300,6 +310,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 4: Full Suite & Lint Verification
 
 **Files:**
+
 - Modify/Verify: `src/concurrent/ConcurrentRequestHandler.js`, `test/concurrent/*`
 
 - [ ] **Step 1: Run all concurrent tests**
