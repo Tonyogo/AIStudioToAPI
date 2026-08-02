@@ -201,7 +201,7 @@ describe("AccountScheduler", () => {
         expect(scheduler.isSystemActive()).toBe(true);
     });
 
-    test("getNextAuthIndex selects least-used account for specified model", async () => {
+    test("getNextAuthIndex selects least-used account for specified model and logs decision", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockModelTracker = {
             getUsage: jest.fn((idx, model) => {
@@ -227,6 +227,11 @@ describe("AccountScheduler", () => {
 
         const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
         expect(selected).toBe(1);
+        expect(mockLogger.info).toHaveBeenCalledWith(
+            expect.stringContaining(
+                '[AccountScheduler] Selected authIndex #1 for model="gemini-2.5-pro" (Phase 1: Free Activated, inFlight=0, usage=1/'
+            )
+        );
     });
 
     test("recordUsage delegates to modelUsageTracker", () => {

@@ -239,11 +239,21 @@ class AccountScheduler {
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
                 if (usage >= limit) {
                     cappedOnlineAccountCount++;
+                    if (this.logger && typeof this.logger.debug === "function") {
+                        this.logger.debug(
+                            `[AccountScheduler] AuthIndex #${candidateIdx} skipped: daily limit reached (${usage}/${limit}) for model="${modelName}"`
+                        );
+                    }
                     continue;
                 }
                 const inFlight = this.getInFlightCount(candidateIdx);
                 if (inFlight >= this.maxInFlightPerAccount) {
                     busyOnlineAccountCount++;
+                    if (this.logger && typeof this.logger.debug === "function") {
+                        this.logger.debug(
+                            `[AccountScheduler] AuthIndex #${candidateIdx} skipped: max in-flight limit reached (${inFlight}/${this.maxInFlightPerAccount})`
+                        );
+                    }
                     continue;
                 }
 
@@ -294,9 +304,9 @@ class AccountScheduler {
             const selectedOrder = activatedFree[0].order;
             this.currentIndex = (this.currentIndex + selectedOrder + 1) % total;
 
-            if (this.logger && typeof this.logger.debug === "function") {
-                this.logger.debug(
-                    `[AccountScheduler] Selected free ACTIVATED authIndex #${selectedIdx} for model="${modelName}" (usage=${activatedFree[0].usage}/${limit})`
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 1: Free Activated, inFlight=0, usage=${activatedFree[0].usage}/${limit})`
                 );
             }
             return selectedIdx;
@@ -314,6 +324,11 @@ class AccountScheduler {
                 const activated = await this.activateAccount(candidate.idx);
                 if (activated) {
                     this.currentIndex = (this.currentIndex + candidate.order + 1) % total;
+                    if (this.logger && typeof this.logger.info === "function") {
+                        this.logger.info(
+                            `[AccountScheduler] Selected authIndex #${candidate.idx} for model="${modelName}" (Phase 2: Proactive Activated, inFlight=0, usage=${candidate.usage}/${limit})`
+                        );
+                    }
                     return candidate.idx;
                 }
             }
@@ -326,9 +341,9 @@ class AccountScheduler {
             const selectedOrder = activatedBusy[0].order;
             this.currentIndex = (this.currentIndex + selectedOrder + 1) % total;
 
-            if (this.logger && typeof this.logger.debug === "function") {
-                this.logger.debug(
-                    `[AccountScheduler] Selected busy ACTIVATED authIndex #${selectedIdx} for model="${modelName}" (inFlight=1, usage=${activatedBusy[0].usage}/${limit})`
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 3: Lightly Busy, inFlight=1, usage=${activatedBusy[0].usage}/${limit})`
                 );
             }
             return selectedIdx;
@@ -344,6 +359,11 @@ class AccountScheduler {
                 const activated = await this.activateAccount(candidate.idx);
                 if (activated) {
                     this.currentIndex = (this.currentIndex + candidate.order + 1) % total;
+                    if (this.logger && typeof this.logger.info === "function") {
+                        this.logger.info(
+                            `[AccountScheduler] Selected authIndex #${candidate.idx} for model="${modelName}" (Phase 4: Fallback Activated, inFlight=0, usage=${candidate.usage}/${limit})`
+                        );
+                    }
                     return candidate.idx;
                 }
             }
