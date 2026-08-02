@@ -182,10 +182,7 @@ describe("AccountScheduler", () => {
     });
 
     test("getModelDailyLimit returns configured dailyLimit or Infinity if omitted", () => {
-        const mockModelList = [
-            { name: "models/gemini-2.5-pro", dailyLimit: 50 },
-            { name: "models/gemini-2.5-flash" },
-        ];
+        const mockModelList = [{ dailyLimit: 50, name: "models/gemini-2.5-pro" }, { name: "models/gemini-2.5-flash" }];
         const scheduler = new AccountScheduler(
             mockAuthSource,
             mockConnectionRegistry,
@@ -198,5 +195,55 @@ describe("AccountScheduler", () => {
         expect(scheduler.getModelDailyLimit("gemini-2.5-pro")).toBe(50);
         expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(Infinity);
         expect(scheduler.getModelDailyLimit("unknown-model")).toBe(Infinity);
+    });
+
+    test("getNextAuthIndex skips accounts that reached dailyLimit", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
+        const mockModelTracker = {
+            getUsage: jest.fn((idx, model) => {
+                if (idx === 0) return 5; // Account 0 reached limit
+                return 2; // Account 1 has 2 uses
+            }),
+        };
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            null,
+            mockModelTracker,
+            mockModelList
+        );
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+
+        const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
+        expect(selected).toBe(1);
+    });
+
+    test("getNextAuthIndex throws 429 when all online accounts reach dailyLimit", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
+        const mockModelTracker = {
+            getUsage: jest.fn(() => 5), // All accounts reached limit
+        };
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            null,
+            mockModelTracker,
+            mockModelList
+        );
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+
+        await expect(scheduler.getNextAuthIndex("gemini-2.5-pro")).rejects.toMatchObject({
+            message: expect.stringContaining("All accounts reached daily limit"),
+            statusCode: 429,
+            statusText: "RESOURCE_EXHAUSTED",
+        });
     });
 });

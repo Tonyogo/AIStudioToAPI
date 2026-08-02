@@ -12,7 +12,14 @@ class AccountScheduler {
      * @param {Object} [modelUsageTracker] - ModelUsageTracker instance
      * @param {Array} [modelList=[]] - List of configured models and their limits
      */
-    constructor(authSource, connectionRegistry, logger = console, browserManager = null, modelUsageTracker = null, modelList = []) {
+    constructor(
+        authSource,
+        connectionRegistry,
+        logger = console,
+        browserManager = null,
+        modelUsageTracker = null,
+        modelList = []
+    ) {
         this.authSource = authSource;
         this.connectionRegistry = connectionRegistry;
         this.logger = logger;
@@ -169,14 +176,26 @@ class AccountScheduler {
             throw err;
         }
 
+        const limit = this.getModelDailyLimit(modelName);
         const total = indices.length;
-        // Collect online & ACTIVATED candidates ordered from current Round-Robin index
+
+        // Check if online accounts exist and if all online accounts are capped
+        let onlineAccountCount = 0;
+        let cappedOnlineAccountCount = 0;
+
         const candidateList = [];
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
-            if (this._hasConnection(candidateIdx) && this.getAccountStatus(candidateIdx) === "ACTIVATED") {
+            if (this._hasConnection(candidateIdx)) {
+                onlineAccountCount++;
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
-                candidateList.push({ idx: candidateIdx, order: i, usage });
+                if (usage >= limit) {
+                    cappedOnlineAccountCount++;
+                    continue; // Exclude accounts that reached limit
+                }
+                if (this.getAccountStatus(candidateIdx) === "ACTIVATED") {
+                    candidateList.push({ idx: candidateIdx, order: i, usage });
+                }
             }
         }
 
@@ -195,16 +214,20 @@ class AccountScheduler {
 
             if (this.logger && typeof this.logger.debug === "function") {
                 this.logger.debug(
-                    `[AccountScheduler] Selected least-used authIndex #${selectedIdx} for model="${modelName}" (usage=${candidateList[0].usage})`
+                    `[AccountScheduler] Selected least-used authIndex #${selectedIdx} for model="${modelName}" (usage=${candidateList[0].usage}/${limit})`
                 );
             }
             return selectedIdx;
         }
 
-        // Fallback: Find first online INACTIVE account and activate it synchronously
+        // Fallback: Find first online INACTIVE account that is NOT capped, and activate it synchronously
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx)) {
+                const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
+                if (usage >= limit) {
+                    continue;
+                }
                 if (this.logger && typeof this.logger.info === "function") {
                     this.logger.info(
                         `[AccountScheduler] No ACTIVATED accounts available, synchronously activating authIndex #${candidateIdx}...`
@@ -216,6 +239,16 @@ class AccountScheduler {
                     return candidateIdx;
                 }
             }
+        }
+
+        // If online accounts exist but ALL are capped by dailyLimit, throw 429
+        if (onlineAccountCount > 0 && cappedOnlineAccountCount >= onlineAccountCount) {
+            const error = new Error(
+                `All accounts reached daily limit of ${limit} requests for model "${modelName}"`
+            );
+            error.statusCode = 429;
+            error.statusText = "RESOURCE_EXHAUSTED";
+            throw error;
         }
 
         const error = new Error("No active context connection available");
