@@ -10,17 +10,37 @@ class AccountScheduler {
      * @param {Object} [logger] - Logger instance
      * @param {Object} [browserManager] - BrowserManager instance
      * @param {Object} [modelUsageTracker] - ModelUsageTracker instance
+     * @param {Array} [modelList=[]] - List of configured models and their limits
      */
-    constructor(authSource, connectionRegistry, logger = console, browserManager = null, modelUsageTracker = null) {
+    constructor(authSource, connectionRegistry, logger = console, browserManager = null, modelUsageTracker = null, modelList = []) {
         this.authSource = authSource;
         this.connectionRegistry = connectionRegistry;
         this.logger = logger;
         this.browserManager = browserManager;
         this.modelUsageTracker = modelUsageTracker;
+        this.modelList = modelList;
         this.currentIndex = 0;
         this.accountStatusMap = new Map();
         this.lastSystemActivityAt = 0;
         this.idleTimeoutMs = 300000;
+    }
+
+    /**
+     * Get the configured daily limit for a specific model
+     * @param {string} modelName - Model name
+     * @returns {number} Daily limit or Infinity
+     */
+    getModelDailyLimit(modelName) {
+        if (!modelName || !Array.isArray(this.modelList)) return Infinity;
+        const match = this.modelList.find(m => {
+            if (!m || !m.name) return false;
+            const cleanName = m.name.replace("models/", "");
+            return cleanName === modelName || m.name === modelName;
+        });
+        if (match && typeof match.dailyLimit === "number" && match.dailyLimit > 0) {
+            return match.dailyLimit;
+        }
+        return Infinity;
     }
 
     /**

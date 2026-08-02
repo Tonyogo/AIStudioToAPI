@@ -34,7 +34,7 @@ function initConcurrentMode(app, system) {
     }
 
     const modelUsageTracker = new ModelUsageTracker(logger);
-    const scheduler = new AccountScheduler(authSource, connectionRegistry, logger, browserManager, modelUsageTracker);
+    const scheduler = new AccountScheduler(authSource, connectionRegistry, logger, browserManager, modelUsageTracker, modelList);
     const concurrentRequestHandler = new ConcurrentRequestHandler(connectionRegistry, scheduler, logger, modelList);
 
     concurrentRequestHandler.registerRoutes(app);

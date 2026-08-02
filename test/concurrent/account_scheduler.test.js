@@ -180,4 +180,23 @@ describe("AccountScheduler", () => {
 
         expect(mockModelTracker.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
     });
+
+    test("getModelDailyLimit returns configured dailyLimit or Infinity if omitted", () => {
+        const mockModelList = [
+            { name: "models/gemini-2.5-pro", dailyLimit: 50 },
+            { name: "models/gemini-2.5-flash" },
+        ];
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            null,
+            null,
+            mockModelList
+        );
+
+        expect(scheduler.getModelDailyLimit("gemini-2.5-pro")).toBe(50);
+        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(Infinity);
+        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(Infinity);
+    });
 });
