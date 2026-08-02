@@ -30,6 +30,8 @@ class AccountScheduler {
         this.accountStatusMap = new Map();
         this.lastSystemActivityAt = 0;
         this.idleTimeoutMs = 300000;
+        this.lastGlobalActivationAt = 0;
+        this.activationCooldownMs = 30000;
     }
 
     /**
@@ -269,9 +271,21 @@ class AccountScheduler {
             return false;
         }
 
+        const elapsed = Date.now() - this.lastGlobalActivationAt;
+        if (this.lastGlobalActivationAt > 0 && elapsed < this.activationCooldownMs) {
+            const remaining = Math.ceil((this.activationCooldownMs - elapsed) / 1000);
+            if (this.logger && typeof this.logger.debug === "function") {
+                this.logger.debug(
+                    `[AccountScheduler] Skipping activation for account #${authIndex}: 30s global cooldown active (${remaining}s remaining)`
+                );
+            }
+            return false;
+        }
+
         this.setAccountStatus(authIndex, "ACTIVATING");
         try {
             await this.browserManager.launchOrSwitchContext(authIndex);
+            this.lastGlobalActivationAt = Date.now();
             const page = this.browserManager.page;
             if (typeof this.browserManager._sendActiveTrigger === "function") {
                 this.browserManager._sendActiveTrigger("[AccountScheduler]", page);

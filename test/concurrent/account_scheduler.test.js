@@ -246,4 +246,21 @@ describe("AccountScheduler", () => {
             statusText: "RESOURCE_EXHAUSTED",
         });
     });
+
+    test("activateAccount skips activation if 30s global cooldown has not elapsed", async () => {
+        const mockBrowserManager = {
+            _sendActiveTrigger: jest.fn(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+
+        // First activation succeeds
+        const first = await scheduler.activateAccount(0);
+        expect(first).toBe(true);
+
+        // Immediate second activation should be skipped due to cooldown
+        const second = await scheduler.activateAccount(1);
+        expect(second).toBe(false);
+        expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledTimes(1);
+    });
 });
