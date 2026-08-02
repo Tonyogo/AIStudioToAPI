@@ -178,6 +178,7 @@ class ConcurrentRequestHandler {
             authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
         } catch (err) {
             const statusCode = err.statusCode || 503;
+            const statusText = err.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
             if (this.logger && typeof this.logger.error === "function") {
                 this.logger.error(`[ConcurrentRequestHandler] Scheduling failed: ${err.message}`);
             }
@@ -185,7 +186,7 @@ class ConcurrentRequestHandler {
                 error: {
                     code: statusCode,
                     message: err.message,
-                    status: "UNAVAILABLE",
+                    status: statusText,
                 },
             });
         }

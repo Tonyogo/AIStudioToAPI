@@ -78,6 +78,40 @@ describe("ConcurrentRequestHandler", () => {
         );
     });
 
+    test("handleGeminiRequest returns 429 RESOURCE_EXHAUSTED when scheduler throws 429 quota error", async () => {
+        mockScheduler.getNextAuthIndex.mockImplementation(async () => {
+            const err = new Error('All accounts reached daily limit of 50 requests for model "gemini-2.5-pro"');
+            err.statusCode = 429;
+            err.statusText = "RESOURCE_EXHAUSTED";
+            throw err;
+        });
+
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-pro:generateContent",
+            query: {},
+        };
+
+        const res = {
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(429);
+        expect(res.json).toHaveBeenCalledWith({
+            error: {
+                code: 429,
+                message: 'All accounts reached daily limit of 50 requests for model "gemini-2.5-pro"',
+                status: "RESOURCE_EXHAUSTED",
+            },
+        });
+    });
+
     test("handleGeminiRequest passes clean model name to scheduler and records usage", async () => {
         const mockWS = { send: jest.fn() };
         const mockQueue = {
