@@ -216,8 +216,8 @@ class AccountScheduler {
         let cappedOnlineAccountCount = 0;
         let busyOnlineAccountCount = 0;
 
-        const activatedFree = [];  // inFlight === 0
-        const activatedBusy = [];  // inFlight === 1
+        const activatedFree = []; // inFlight === 0
+        const activatedBusy = []; // inFlight === 1
         const inactiveCandidates = []; // INACTIVE & inFlight < 2
 
         for (let i = 0; i < total; i++) {
@@ -272,7 +272,8 @@ class AccountScheduler {
         }
 
         // Phase 2: Proactive Scale-Out: If all ACTIVATED accounts have inFlight > 0 and INACTIVE accounts exist, try activating one if 30s cooldown met
-        const canCooldown = this.lastGlobalActivationAt === 0 || (Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs);
+        const canCooldown =
+            this.lastGlobalActivationAt === 0 || Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
         if (inactiveCandidates.length > 0 && canCooldown) {
             inactiveCandidates.sort(usageSort);
             for (const candidate of inactiveCandidates) {
@@ -309,9 +310,7 @@ class AccountScheduler {
             inactiveCandidates.sort(usageSort);
             for (const candidate of inactiveCandidates) {
                 if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(
-                        `[AccountScheduler] Synchronously activating authIndex #${candidate.idx}...`
-                    );
+                    this.logger.info(`[AccountScheduler] Synchronously activating authIndex #${candidate.idx}...`);
                 }
                 const activated = await this.activateAccount(candidate.idx);
                 if (activated) {
