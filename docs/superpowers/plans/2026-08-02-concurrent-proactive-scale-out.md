@@ -19,10 +19,12 @@
 ### Task 1: Refactor getNextAuthIndex Selection Pipeline for Proactive Scale-Out Spreading
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `getNextAuthIndex(modelName)`.
 - Produces: Proactively activates online `INACTIVE` accounts when existing `ACTIVATED` accounts have `inFlight > 0` and 30s cooldown is satisfied.
 
@@ -32,27 +34,27 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("getNextAuthIndex proactively activates INACTIVE account when existing ACTIVATED accounts have inFlight > 0 and 30s cooldown is met", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const mockBrowserManager = {
-        _sendActiveTrigger: jest.fn(),
-        launchOrSwitchContext: jest.fn().mockResolvedValue(),
-    };
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockBrowserManager = {
+    _sendActiveTrigger: jest.fn(),
+    launchOrSwitchContext: jest.fn().mockResolvedValue(),
+  };
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
-    // Account 0 is ACTIVATED and handling 1 request (inFlight = 1)
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    scheduler.acquireInFlight(0);
+  // Account 0 is ACTIVATED and handling 1 request (inFlight = 1)
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  scheduler.acquireInFlight(0);
 
-    // Account 1 is INACTIVE and online
-    scheduler.setAccountStatus(1, "INACTIVE");
+  // Account 1 is INACTIVE and online
+  scheduler.setAccountStatus(1, "INACTIVE");
 
-    // Fast-forward cooldown so 30s has elapsed
-    scheduler.lastGlobalActivationAt = Date.now() - 31000;
+  // Fast-forward cooldown so 30s has elapsed
+  scheduler.lastGlobalActivationAt = Date.now() - 31000;
 
-    // Call getNextAuthIndex: should NOT re-use Account 0 (inFlight=1), but proactively activate Account 1
-    const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
-    expect(selected).toBe(1);
-    expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
+  // Call getNextAuthIndex: should NOT re-use Account 0 (inFlight=1), but proactively activate Account 1
+  const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+  expect(selected).toBe(1);
+  expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
 });
 ```
 
@@ -229,6 +231,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 2: Full Suite Verification & Linting
 
 **Files:**
+
 - Modify/Verify: `src/concurrent/*`, `test/concurrent/*`
 
 - [ ] **Step 1: Run all concurrent unit tests**

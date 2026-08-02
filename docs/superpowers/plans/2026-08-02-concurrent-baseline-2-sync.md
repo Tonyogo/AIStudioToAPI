@@ -19,10 +19,12 @@
 ### Task 1: Automatically Sync currentAuthIndex and Maintain Baseline = 2 ACTIVATED Accounts in getNextAuthIndex
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `browserManager.currentAuthIndex`.
 - Produces: Automatically sets `status = "ACTIVATED"` for `browserManager.currentAuthIndex` when online, and automatically activates a second `INACTIVE` account when `activatedCount < 2` and cooldown is satisfied.
 
@@ -32,43 +34,43 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("getNextAuthIndex automatically marks browserManager.currentAuthIndex as ACTIVATED", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const mockBrowserManager = {
-        _currentAuthIndex: 0,
-        _sendActiveTrigger: jest.fn(),
-        launchOrSwitchContext: jest.fn().mockResolvedValue(),
-    };
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockBrowserManager = {
+    _currentAuthIndex: 0,
+    _sendActiveTrigger: jest.fn(),
+    launchOrSwitchContext: jest.fn().mockResolvedValue(),
+  };
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
-    // Initial status for 0 is INACTIVE
-    expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+  // Initial status for 0 is INACTIVE
+  expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
 
-    // Call getNextAuthIndex: should auto-sync Account 0 to ACTIVATED
-    await scheduler.getNextAuthIndex("gemini-2.5-flash");
-    expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+  // Call getNextAuthIndex: should auto-sync Account 0 to ACTIVATED
+  await scheduler.getNextAuthIndex("gemini-2.5-flash");
+  expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
 });
 
 test("getNextAuthIndex maintains baseline = 2 ACTIVATED accounts when 30s cooldown is met", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const mockBrowserManager = {
-        _currentAuthIndex: 0,
-        _sendActiveTrigger: jest.fn(),
-        launchOrSwitchContext: jest.fn().mockResolvedValue(),
-    };
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockBrowserManager = {
+    _currentAuthIndex: 0,
+    _sendActiveTrigger: jest.fn(),
+    launchOrSwitchContext: jest.fn().mockResolvedValue(),
+  };
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
-    // Account 0 is ACTIVATED
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    scheduler.setAccountStatus(1, "INACTIVE");
+  // Account 0 is ACTIVATED
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  scheduler.setAccountStatus(1, "INACTIVE");
 
-    // Fast-forward cooldown
-    scheduler.lastGlobalActivationAt = Date.now() - 31000;
+  // Fast-forward cooldown
+  scheduler.lastGlobalActivationAt = Date.now() - 31000;
 
-    // Call getNextAuthIndex: only 1 ACTIVATED account exists (< 2). It should trigger baseline activation for Account 1!
-    const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
-    expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(1);
-    expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
-    expect(selected).toBe(0); // Free activated account 0 selected for this request
+  // Call getNextAuthIndex: only 1 ACTIVATED account exists (< 2). It should trigger baseline activation for Account 1!
+  const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+  expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(1);
+  expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
+  expect(selected).toBe(0); // Free activated account 0 selected for this request
 });
 ```
 
@@ -265,6 +267,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 2: Full Suite Verification & Linting
 
 **Files:**
+
 - Modify/Verify: `src/concurrent/*`, `test/concurrent/*`
 
 - [ ] **Step 1: Run all concurrent unit tests**

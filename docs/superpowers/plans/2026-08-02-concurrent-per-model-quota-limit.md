@@ -19,11 +19,13 @@
 ### Task 1: Add modelList Dependency & getModelDailyLimit to AccountScheduler
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Modify: `src/concurrent/index.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `modelList` array in `AccountScheduler` constructor.
 - Produces: `getModelDailyLimit(modelName)` method returning `number` (`dailyLimit` or `Infinity`).
 
@@ -33,22 +35,12 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("getModelDailyLimit returns configured dailyLimit or Infinity if omitted", () => {
-    const mockModelList = [
-        { name: "models/gemini-2.5-pro", dailyLimit: 50 },
-        { name: "models/gemini-2.5-flash" },
-    ];
-    const scheduler = new AccountScheduler(
-        mockAuthSource,
-        mockConnectionRegistry,
-        mockLogger,
-        null,
-        null,
-        mockModelList
-    );
+  const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 50 }, { name: "models/gemini-2.5-flash" }];
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, null, mockModelList);
 
-    expect(scheduler.getModelDailyLimit("gemini-2.5-pro")).toBe(50);
-    expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(Infinity);
-    expect(scheduler.getModelDailyLimit("unknown-model")).toBe(Infinity);
+  expect(scheduler.getModelDailyLimit("gemini-2.5-pro")).toBe(50);
+  expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(Infinity);
+  expect(scheduler.getModelDailyLimit("unknown-model")).toBe(Infinity);
 });
 ```
 
@@ -60,7 +52,9 @@ Expected: FAIL (`scheduler.getModelDailyLimit is not a function`).
 - [ ] **Step 3: Implement getModelDailyLimit and constructor update in AccountScheduler.js and index.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 1. Update constructor signature:
+
 ```javascript
 constructor(
     authSource,
@@ -82,7 +76,9 @@ constructor(
     this.idleTimeoutMs = 300000;
 }
 ```
+
 2. Add `getModelDailyLimit(modelName)` helper:
+
 ```javascript
 getModelDailyLimit(modelName) {
     if (!modelName || !Array.isArray(this.modelList)) return Infinity;
@@ -100,14 +96,15 @@ getModelDailyLimit(modelName) {
 
 In `src/concurrent/index.js`:
 Pass `modelList` when creating `AccountScheduler`:
+
 ```javascript
 const scheduler = new AccountScheduler(
-    authSource,
-    connectionRegistry,
-    logger,
-    browserManager,
-    modelUsageTracker,
-    modelList
+  authSource,
+  connectionRegistry,
+  logger,
+  browserManager,
+  modelUsageTracker,
+  modelList
 );
 ```
 
@@ -130,10 +127,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 2: Implement Quota Limit Filtering and 429 Quota Exceeded Exception in getNextAuthIndex
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `getNextAuthIndex(modelName)`.
 - Produces: Filters out accounts with `usage >= dailyLimit`. Throws 429 error if all online accounts are capped.
 
@@ -143,53 +142,53 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("getNextAuthIndex skips accounts that reached dailyLimit", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
-    const mockModelTracker = {
-        getUsage: jest.fn((idx, model) => {
-            if (idx === 0) return 5; // Account 0 reached limit
-            return 2; // Account 1 has 2 uses
-        }),
-    };
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
+  const mockModelTracker = {
+    getUsage: jest.fn((idx, model) => {
+      if (idx === 0) return 5; // Account 0 reached limit
+      return 2; // Account 1 has 2 uses
+    }),
+  };
 
-    const scheduler = new AccountScheduler(
-        mockAuthSource,
-        mockConnectionRegistry,
-        mockLogger,
-        null,
-        mockModelTracker,
-        mockModelList
-    );
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    scheduler.setAccountStatus(1, "ACTIVATED");
+  const scheduler = new AccountScheduler(
+    mockAuthSource,
+    mockConnectionRegistry,
+    mockLogger,
+    null,
+    mockModelTracker,
+    mockModelList
+  );
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  scheduler.setAccountStatus(1, "ACTIVATED");
 
-    const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
-    expect(selected).toBe(1);
+  const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
+  expect(selected).toBe(1);
 });
 
 test("getNextAuthIndex throws 429 when all online accounts reach dailyLimit", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
-    const mockModelTracker = {
-        getUsage: jest.fn(() => 5), // All accounts reached limit
-    };
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const mockModelList = [{ name: "models/gemini-2.5-pro", dailyLimit: 5 }];
+  const mockModelTracker = {
+    getUsage: jest.fn(() => 5), // All accounts reached limit
+  };
 
-    const scheduler = new AccountScheduler(
-        mockAuthSource,
-        mockConnectionRegistry,
-        mockLogger,
-        null,
-        mockModelTracker,
-        mockModelList
-    );
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    scheduler.setAccountStatus(1, "ACTIVATED");
+  const scheduler = new AccountScheduler(
+    mockAuthSource,
+    mockConnectionRegistry,
+    mockLogger,
+    null,
+    mockModelTracker,
+    mockModelList
+  );
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  scheduler.setAccountStatus(1, "ACTIVATED");
 
-    await expect(scheduler.getNextAuthIndex("gemini-2.5-pro")).rejects.toMatchObject({
-        message: expect.stringContaining("All accounts reached daily limit"),
-        statusCode: 429,
-        statusText: "RESOURCE_EXHAUSTED",
-    });
+  await expect(scheduler.getNextAuthIndex("gemini-2.5-pro")).rejects.toMatchObject({
+    message: expect.stringContaining("All accounts reached daily limit"),
+    statusCode: 429,
+    statusText: "RESOURCE_EXHAUSTED",
+  });
 });
 ```
 
@@ -201,6 +200,7 @@ Expected: FAIL (account 0 is selected or throws 503 instead of 429).
 - [ ] **Step 3: Update getNextAuthIndex in AccountScheduler.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 ```javascript
 async getNextAuthIndex(modelName = null) {
     this.lastSystemActivityAt = Date.now();
@@ -311,10 +311,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 3: Ensure 429 Error Format Passthrough in ConcurrentRequestHandler
 
 **Files:**
+
 - Modify: `src/concurrent/ConcurrentRequestHandler.js`
 - Test: `test/concurrent/concurrent_request_handler.test.js`
 
 **Interfaces:**
+
 - Consumes: 429 Error thrown by `this.scheduler.getNextAuthIndex()`.
 - Produces: `res.status(429).json({ error: { code: 429, message: err.message, status: "RESOURCE_EXHAUSTED" } })`.
 
@@ -324,37 +326,37 @@ Edit `test/concurrent/concurrent_request_handler.test.js`:
 
 ```javascript
 test("handleGeminiRequest returns 429 RESOURCE_EXHAUSTED when scheduler throws 429 quota error", async () => {
-    mockScheduler.getNextAuthIndex.mockImplementation(async () => {
-        const err = new Error('All accounts reached daily limit of 50 requests for model "gemini-2.5-pro"');
-        err.statusCode = 429;
-        err.statusText = "RESOURCE_EXHAUSTED";
-        throw err;
-    });
+  mockScheduler.getNextAuthIndex.mockImplementation(async () => {
+    const err = new Error('All accounts reached daily limit of 50 requests for model "gemini-2.5-pro"');
+    err.statusCode = 429;
+    err.statusText = "RESOURCE_EXHAUSTED";
+    throw err;
+  });
 
-    const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
+  const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
 
-    const req = {
-        body: { contents: [] },
-        method: "POST",
-        path: "/v1beta/models/gemini-2.5-pro:generateContent",
-        query: {},
-    };
+  const req = {
+    body: { contents: [] },
+    method: "POST",
+    path: "/v1beta/models/gemini-2.5-pro:generateContent",
+    query: {},
+  };
 
-    const res = {
-        json: jest.fn(),
-        status: jest.fn().mockReturnThis(),
-    };
+  const res = {
+    json: jest.fn(),
+    status: jest.fn().mockReturnThis(),
+  };
 
-    await handler.handleGeminiRequest(req, res);
+  await handler.handleGeminiRequest(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith({
-        error: {
-            code: 429,
-            message: 'All accounts reached daily limit of 50 requests for model "gemini-2.5-pro"',
-            status: "RESOURCE_EXHAUSTED",
-        },
-    });
+  expect(res.status).toHaveBeenCalledWith(429);
+  expect(res.json).toHaveBeenCalledWith({
+    error: {
+      code: 429,
+      message: 'All accounts reached daily limit of 50 requests for model "gemini-2.5-pro"',
+      status: "RESOURCE_EXHAUSTED",
+    },
+  });
 });
 ```
 
@@ -366,6 +368,7 @@ Expected: FAIL (`res.json` called with status `"UNAVAILABLE"` instead of `"RESOU
 - [ ] **Step 3: Update handleGeminiRequest error catch block in ConcurrentRequestHandler.js**
 
 In `src/concurrent/ConcurrentRequestHandler.js`:
+
 ```javascript
 async handleGeminiRequest(req, res) {
     const cleanModelName = this._extractCleanModelName(req.path);
@@ -407,6 +410,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 4: Full Suite & Lint Verification
 
 **Files:**
+
 - Modify/Verify: `src/concurrent/*`, `test/concurrent/*`
 
 - [ ] **Step 1: Run all concurrent unit tests**

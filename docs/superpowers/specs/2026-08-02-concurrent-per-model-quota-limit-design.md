@@ -1,7 +1,7 @@
 # 模型单账号每日上限限额与调度过滤设计规范
 
 **日期:** 2026-08-02  
-**状态:** 已批准 (Approved)  
+**状态:** 已批准 (Approved)
 
 ---
 
@@ -29,7 +29,7 @@
 }
 ```
 
-* **缺省处理**：若模型未配置 `dailyLimit` 字段，或值为 `null` / `0` / `< 0`，则代表无使用上限（`Infinity`）。
+- **缺省处理**：若模型未配置 `dailyLimit` 字段，或值为 `null` / `0` / `< 0`，则代表无使用上限（`Infinity`）。
 
 ### 2.2 模型的 `dailyLimit` 提取与匹配 (`AccountScheduler.js`)
 
@@ -54,9 +54,7 @@
 5. **全账号配额耗尽响应 (429 RESOURCE_EXHAUSTED)**：
    - 若存在在线账号，但**所有在线账号针对该模型的用量均已 `>= limit`**，抛出 HTTP 状态码为 **429** 的 Error：
      ```javascript
-     const error = new Error(
-         `All accounts reached daily limit of ${limit} requests for model "${modelName}"`
-     );
+     const error = new Error(`All accounts reached daily limit of ${limit} requests for model "${modelName}"`);
      error.statusCode = 429;
      error.statusText = "RESOURCE_EXHAUSTED";
      throw error;
@@ -81,8 +79,8 @@
 
 ## 3. 受影响文件
 
-* `configs/models.json`：可选增加 `dailyLimit` 配置示例。
-* `src/concurrent/AccountScheduler.js`：实现 `getModelDailyLimit` 提取、限额过滤与 429 配额耗尽报错。
-* `src/concurrent/index.js`：向 `AccountScheduler` 传递 `modelList` 数组。
-* `src/concurrent/ConcurrentRequestHandler.js`：确保正确处理并透传 429 配额耗尽错误。
-* `test/concurrent/account_scheduler.test.js`：增加 `dailyLimit` 过滤与 429 报错单元测试。
+- `configs/models.json`：可选增加 `dailyLimit` 配置示例。
+- `src/concurrent/AccountScheduler.js`：实现 `getModelDailyLimit` 提取、限额过滤与 429 配额耗尽报错。
+- `src/concurrent/index.js`：向 `AccountScheduler` 传递 `modelList` 数组。
+- `src/concurrent/ConcurrentRequestHandler.js`：确保正确处理并透传 429 配额耗尽错误。
+- `test/concurrent/account_scheduler.test.js`：增加 `dailyLimit` 过滤与 429 报错单元测试。

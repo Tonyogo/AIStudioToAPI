@@ -1,7 +1,7 @@
 # 并发账号 30s 激活冷却、默认双账号底座与负载驱动增量扩容设计规范
 
 **日期:** 2026-08-02  
-**状态:** 已批准 (Approved)  
+**状态:** 已批准 (Approved)
 
 ---
 
@@ -26,10 +26,12 @@
 ### 2.2 全局 30s 激活冷却机制 (`AccountScheduler.js`)
 
 在 `AccountScheduler.js` 中维护属性：
+
 - `lastGlobalActivationAt`: 上一次尝试/完成激活的时间戳（初始 `0`）。
 - `activationCooldownMs`: 冷却间隔，固定为 `30000`（30 秒）。
 
 在 `activateAccount(authIndex)` 逻辑中：
+
 - 判断 `Date.now() - this.lastGlobalActivationAt < this.activationCooldownMs`。
 - 若冷却未满 30 秒，跳过本次激活，返回 `false`。
 - 若满 30 秒，更新 `this.lastGlobalActivationAt = Date.now()` 并继续执行账号切换与探测激活。
@@ -37,6 +39,7 @@
 ### 2.3 在途并发计数器 (`AccountScheduler.js`)
 
 在 `AccountScheduler.js` 中维护 `inFlightMap`（`Map<number, number>`）与生命周期方法：
+
 - `getInFlightCount(authIndex)`: 返回账号当前在途请求数，默认 `0`。
 - `acquireInFlight(authIndex)`: 当前账号在途数 `+1`。
 - `releaseInFlight(authIndex)`: 当前账号在途数 `-1`（最小为 `0`）。
@@ -81,24 +84,24 @@
 ```javascript
 let authIndex;
 try {
-    authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
-    this.scheduler.acquireInFlight(authIndex); // 在途请求 +1
+  authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
+  this.scheduler.acquireInFlight(authIndex); // 在途请求 +1
 } catch (err) {
-    const statusCode = err.statusCode || 503;
-    const statusText = err.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
-    return res.status(statusCode).json({
-        error: { code: statusCode, message: err.message, status: statusText }
-    });
+  const statusCode = err.statusCode || 503;
+  const statusText = err.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
+  return res.status(statusCode).json({
+    error: { code: statusCode, message: err.message, status: statusText },
+  });
 }
 
 try {
-    if (cleanModelName) {
-        this.scheduler.recordUsage(authIndex, cleanModelName);
-    }
-    // 执行 WebSocket 透传处理 ...
+  if (cleanModelName) {
+    this.scheduler.recordUsage(authIndex, cleanModelName);
+  }
+  // 执行 WebSocket 透传处理 ...
 } finally {
-    // try ... finally 确保无论成功、失败还是客户端提前断开，均能释放计数
-    this.scheduler.releaseInFlight(authIndex); // 在途请求 -1
+  // try ... finally 确保无论成功、失败还是客户端提前断开，均能释放计数
+  this.scheduler.releaseInFlight(authIndex); // 在途请求 -1
 }
 ```
 
@@ -106,6 +109,6 @@ try {
 
 ## 3. 受影响文件
 
-* `src/concurrent/AccountScheduler.js`：实现默认启动账号自动感知、双账号底座（Baseline=2）维持、30s 激活冷却与主动扩容打散调度。
-* `src/concurrent/ConcurrentRequestHandler.js`：配对调用 `acquireInFlight` / `releaseInFlight`。
-* `test/concurrent/account_scheduler.test.js`：更新单元测试，覆盖默认账号识别、双账号底座自动拉起与打散分发。
+- `src/concurrent/AccountScheduler.js`：实现默认启动账号自动感知、双账号底座（Baseline=2）维持、30s 激活冷却与主动扩容打散调度。
+- `src/concurrent/ConcurrentRequestHandler.js`：配对调用 `acquireInFlight` / `releaseInFlight`。
+- `test/concurrent/account_scheduler.test.js`：更新单元测试，覆盖默认账号识别、双账号底座自动拉起与打散分发。

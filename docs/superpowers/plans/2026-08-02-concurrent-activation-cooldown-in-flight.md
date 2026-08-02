@@ -19,10 +19,12 @@
 ### Task 1: Implement 30s Global Activation Cooldown in AccountScheduler
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `activateAccount(authIndex)` calls.
 - Produces: Enforces `Date.now() - lastGlobalActivationAt >= 30000`. Returns `false` and skips activation if cooldown is active.
 
@@ -32,20 +34,20 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("activateAccount skips activation if 30s global cooldown has not elapsed", async () => {
-    const mockBrowserManager = {
-        _sendActiveTrigger: jest.fn(),
-        launchOrSwitchContext: jest.fn().mockResolvedValue(),
-    };
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+  const mockBrowserManager = {
+    _sendActiveTrigger: jest.fn(),
+    launchOrSwitchContext: jest.fn().mockResolvedValue(),
+  };
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
-    // First activation succeeds
-    const first = await scheduler.activateAccount(0);
-    expect(first).toBe(true);
+  // First activation succeeds
+  const first = await scheduler.activateAccount(0);
+  expect(first).toBe(true);
 
-    // Immediate second activation should be skipped due to cooldown
-    const second = await scheduler.activateAccount(1);
-    expect(second).toBe(false);
-    expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledTimes(1);
+  // Immediate second activation should be skipped due to cooldown
+  const second = await scheduler.activateAccount(1);
+  expect(second).toBe(false);
+  expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledTimes(1);
 });
 ```
 
@@ -57,8 +59,10 @@ Expected: FAIL (`second` returned `true` and `launchOrSwitchContext` was called 
 - [ ] **Step 3: Implement 30s cooldown check in AccountScheduler.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 1. In constructor, add `this.lastGlobalActivationAt = 0;` and `this.activationCooldownMs = 30000;`.
 2. Update `activateAccount(authIndex)`:
+
 ```javascript
 async activateAccount(authIndex) {
     if (!this.browserManager) {
@@ -123,10 +127,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 2: Implement In-Flight Request Tracking and Max Concurrency Control (Max = 2)
 
 **Files:**
+
 - Modify: `src/concurrent/AccountScheduler.js`
 - Test: `test/concurrent/account_scheduler.test.js`
 
 **Interfaces:**
+
 - Consumes: `acquireInFlight(authIndex)`, `releaseInFlight(authIndex)`.
 - Produces: `inFlightMap`, `getInFlightCount(authIndex)`, `acquireInFlight(authIndex)`, `releaseInFlight(authIndex)`. In `getNextAuthIndex`: filters candidates with `inFlight >= 2`, sorts primary by `inFlightCount` ascending, and throws 503 `UNAVAILABLE` when all online accounts reach max in-flight limit.
 
@@ -136,50 +142,50 @@ Edit `test/concurrent/account_scheduler.test.js`:
 
 ```javascript
 test("tracks in-flight requests and enforces acquire/release", () => {
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-    expect(scheduler.getInFlightCount(0)).toBe(0);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+  expect(scheduler.getInFlightCount(0)).toBe(0);
 
-    scheduler.acquireInFlight(0);
-    expect(scheduler.getInFlightCount(0)).toBe(1);
+  scheduler.acquireInFlight(0);
+  expect(scheduler.getInFlightCount(0)).toBe(1);
 
-    scheduler.acquireInFlight(0);
-    expect(scheduler.getInFlightCount(0)).toBe(2);
+  scheduler.acquireInFlight(0);
+  expect(scheduler.getInFlightCount(0)).toBe(2);
 
-    scheduler.releaseInFlight(0);
-    expect(scheduler.getInFlightCount(0)).toBe(1);
+  scheduler.releaseInFlight(0);
+  expect(scheduler.getInFlightCount(0)).toBe(1);
 });
 
 test("getNextAuthIndex prioritizes accounts with lower inFlightCount to spread load", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    scheduler.setAccountStatus(1, "ACTIVATED");
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  scheduler.setAccountStatus(1, "ACTIVATED");
 
-    scheduler.acquireInFlight(0); // Account 0 has 1 in-flight
-    // Account 1 has 0 in-flight
+  scheduler.acquireInFlight(0); // Account 0 has 1 in-flight
+  // Account 1 has 0 in-flight
 
-    const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
-    expect(selected).toBe(1);
+  const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+  expect(selected).toBe(1);
 });
 
 test("getNextAuthIndex throws 503 when all online accounts have 2 in-flight requests", async () => {
-    mockConnectionRegistry.hasConnection.mockReturnValue(true);
-    const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+  mockConnectionRegistry.hasConnection.mockReturnValue(true);
+  const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
-    scheduler.setAccountStatus(0, "ACTIVATED");
-    scheduler.setAccountStatus(1, "ACTIVATED");
+  scheduler.setAccountStatus(0, "ACTIVATED");
+  scheduler.setAccountStatus(1, "ACTIVATED");
 
-    scheduler.acquireInFlight(0);
-    scheduler.acquireInFlight(0); // Account 0 has 2 in-flight
-    scheduler.acquireInFlight(1);
-    scheduler.acquireInFlight(1); // Account 1 has 2 in-flight
+  scheduler.acquireInFlight(0);
+  scheduler.acquireInFlight(0); // Account 0 has 2 in-flight
+  scheduler.acquireInFlight(1);
+  scheduler.acquireInFlight(1); // Account 1 has 2 in-flight
 
-    await expect(scheduler.getNextAuthIndex("gemini-2.5-flash")).rejects.toMatchObject({
-        message: expect.stringContaining("All available accounts are busy"),
-        statusCode: 503,
-        statusText: "UNAVAILABLE",
-    });
+  await expect(scheduler.getNextAuthIndex("gemini-2.5-flash")).rejects.toMatchObject({
+    message: expect.stringContaining("All available accounts are busy"),
+    statusCode: 503,
+    statusText: "UNAVAILABLE",
+  });
 });
 ```
 
@@ -191,8 +197,10 @@ Expected: FAIL (`scheduler.getInFlightCount is not a function`).
 - [ ] **Step 3: Implement in-flight methods and update getNextAuthIndex in AccountScheduler.js**
 
 In `src/concurrent/AccountScheduler.js`:
+
 1. In constructor, initialize `this.inFlightMap = new Map();` and `this.maxInFlightPerAccount = 2;`.
 2. Add in-flight methods:
+
 ```javascript
 getInFlightCount(authIndex) {
     return this.inFlightMap.get(authIndex) || 0;
@@ -210,7 +218,9 @@ releaseInFlight(authIndex) {
     this.inFlightMap.set(authIndex, Math.max(0, current - 1));
 }
 ```
+
 3. Update `getNextAuthIndex(modelName)`:
+
 ```javascript
 async getNextAuthIndex(modelName = null) {
     this.lastSystemActivityAt = Date.now();
@@ -339,10 +349,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 3: Integrate In-Flight Acquire and Release Pair in ConcurrentRequestHandler
 
 **Files:**
+
 - Modify: `src/concurrent/ConcurrentRequestHandler.js`
 - Test: `test/concurrent/concurrent_request_handler.test.js`
 
 **Interfaces:**
+
 - Consumes: `scheduler.acquireInFlight(authIndex)` and `scheduler.releaseInFlight(authIndex)`.
 - Produces: Calls `acquireInFlight` after `getNextAuthIndex` and guarantees `releaseInFlight` in a `try ... finally` block.
 
@@ -352,42 +364,42 @@ Edit `test/concurrent/concurrent_request_handler.test.js`:
 
 ```javascript
 test("handleGeminiRequest acquires and releases in-flight request count", async () => {
-    const mockWS = { send: jest.fn() };
-    const mockQueue = {
-        dequeue: jest
-            .fn()
-            .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
-            .mockResolvedValueOnce({ type: "STREAM_END" }),
-    };
-    const minimalRegistry = {
-        createMessageQueue: jest.fn().mockReturnValue(mockQueue),
-        getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
-        removeMessageQueue: jest.fn(),
-    };
+  const mockWS = { send: jest.fn() };
+  const mockQueue = {
+    dequeue: jest
+      .fn()
+      .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+      .mockResolvedValueOnce({ type: "STREAM_END" }),
+  };
+  const minimalRegistry = {
+    createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+    getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+    removeMessageQueue: jest.fn(),
+  };
 
-    mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValue(0);
-    mockScheduler.acquireInFlight = jest.fn();
-    mockScheduler.releaseInFlight = jest.fn();
+  mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValue(0);
+  mockScheduler.acquireInFlight = jest.fn();
+  mockScheduler.releaseInFlight = jest.fn();
 
-    const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+  const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
 
-    const req = {
-        body: { contents: [] },
-        method: "POST",
-        path: "/v1beta/models/gemini-2.5-flash:generateContent",
-        query: {},
-    };
+  const req = {
+    body: { contents: [] },
+    method: "POST",
+    path: "/v1beta/models/gemini-2.5-flash:generateContent",
+    query: {},
+  };
 
-    const res = {
-        headersSent: false,
-        json: jest.fn(),
-        status: jest.fn().mockReturnThis(),
-    };
+  const res = {
+    headersSent: false,
+    json: jest.fn(),
+    status: jest.fn().mockReturnThis(),
+  };
 
-    await handler.handleGeminiRequest(req, res);
+  await handler.handleGeminiRequest(req, res);
 
-    expect(mockScheduler.acquireInFlight).toHaveBeenCalledWith(0);
-    expect(mockScheduler.releaseInFlight).toHaveBeenCalledWith(0);
+  expect(mockScheduler.acquireInFlight).toHaveBeenCalledWith(0);
+  expect(mockScheduler.releaseInFlight).toHaveBeenCalledWith(0);
 });
 ```
 
@@ -399,6 +411,7 @@ Expected: FAIL (`mockScheduler.acquireInFlight` not called).
 - [ ] **Step 3: Update handleGeminiRequest in ConcurrentRequestHandler.js**
 
 In `src/concurrent/ConcurrentRequestHandler.js`:
+
 ```javascript
 async handleGeminiRequest(req, res) {
     const cleanModelName = this._extractCleanModelName(req.path);
@@ -592,6 +605,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### Task 4: Full Suite Verification & Linting
 
 **Files:**
+
 - Modify/Verify: `src/concurrent/*`, `test/concurrent/*`
 
 - [ ] **Step 1: Run all concurrent unit tests**
