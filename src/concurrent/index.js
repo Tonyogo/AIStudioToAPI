@@ -5,6 +5,7 @@
 
 const AccountScheduler = require("./AccountScheduler");
 const ConcurrentRequestHandler = require("./ConcurrentRequestHandler");
+const ModelUsageTracker = require("./ModelUsageTracker");
 
 /**
  * Initialize concurrent mode components and attach routes to Express app
@@ -32,7 +33,8 @@ function initConcurrentMode(app, system) {
         logger.info("[Concurrent] Initializing concurrent multi-account forwarding subsystem...");
     }
 
-    const scheduler = new AccountScheduler(authSource, connectionRegistry, logger, browserManager);
+    const modelUsageTracker = new ModelUsageTracker(logger);
+    const scheduler = new AccountScheduler(authSource, connectionRegistry, logger, browserManager, modelUsageTracker);
     const concurrentRequestHandler = new ConcurrentRequestHandler(connectionRegistry, scheduler, logger, modelList);
 
     concurrentRequestHandler.registerRoutes(app);

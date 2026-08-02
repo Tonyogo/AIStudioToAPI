@@ -78,6 +78,44 @@ describe("ConcurrentRequestHandler", () => {
         );
     });
 
+    test("handleGeminiRequest passes clean model name to scheduler and records usage", async () => {
+        const mockWS = { send: jest.fn() };
+        const mockQueue = {
+            dequeue: jest
+                .fn()
+                .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+                .mockResolvedValueOnce({ type: "STREAM_END" }),
+        };
+        const minimalRegistry = {
+            createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+            getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+            removeMessageQueue: jest.fn(),
+        };
+
+        mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValue(0);
+        mockScheduler.recordUsage = jest.fn();
+
+        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash-think-high:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash");
+        expect(mockScheduler.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
+    });
+
     describe("_sendRequestImpl integration", () => {
         test("binds _sendRequestImpl when connectionRegistry does not have sendRequest", () => {
             const minimalRegistry = {
