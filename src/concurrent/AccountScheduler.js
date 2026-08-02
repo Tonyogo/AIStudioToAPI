@@ -209,6 +209,14 @@ class AccountScheduler {
             throw err;
         }
 
+        // Auto-sync browserManager.currentAuthIndex as ACTIVATED if online and currently INACTIVE
+        if (this.browserManager && typeof this.browserManager._currentAuthIndex === "number") {
+            const currentIdx = this.browserManager._currentAuthIndex;
+            if (currentIdx >= 0 && this._hasConnection(currentIdx) && this.getAccountStatus(currentIdx) === "INACTIVE") {
+                this.setAccountStatus(currentIdx, "ACTIVATED");
+            }
+        }
+
         const limit = this.getModelDailyLimit(modelName);
         const total = indices.length;
 
@@ -256,6 +264,22 @@ class AccountScheduler {
             return a.order - b.order;
         };
 
+        const totalActivated = activatedFree.length + activatedBusy.length;
+        const canCooldown =
+            this.lastGlobalActivationAt === 0 || Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
+
+        // Baseline = 2 Check: If activated count < 2 and inactive candidates exist and 30s cooldown met, trigger background baseline activation
+        if (totalActivated < 2 && inactiveCandidates.length > 0 && canCooldown) {
+            inactiveCandidates.sort(usageSort);
+            const baselineCandidate = inactiveCandidates.shift();
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(
+                    `[AccountScheduler] Activated accounts count (${totalActivated}) < 2, activating authIndex #${baselineCandidate.idx} for baseline...`
+                );
+            }
+            await this.activateAccount(baselineCandidate.idx);
+        }
+
         // Phase 1: Use an absolutely free ACTIVATED account (inFlight === 0)
         if (activatedFree.length > 0) {
             activatedFree.sort(usageSort);
@@ -272,8 +296,6 @@ class AccountScheduler {
         }
 
         // Phase 2: Proactive Scale-Out: If all ACTIVATED accounts have inFlight > 0 and INACTIVE accounts exist, try activating one if 30s cooldown met
-        const canCooldown =
-            this.lastGlobalActivationAt === 0 || Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
         if (inactiveCandidates.length > 0 && canCooldown) {
             inactiveCandidates.sort(usageSort);
             for (const candidate of inactiveCandidates) {

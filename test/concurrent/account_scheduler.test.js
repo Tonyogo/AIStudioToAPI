@@ -47,6 +47,46 @@ describe("AccountScheduler", () => {
         expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
     });
 
+    test("getNextAuthIndex automatically marks browserManager.currentAuthIndex as ACTIVATED", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockBrowserManager = {
+            _currentAuthIndex: 0,
+            _sendActiveTrigger: jest.fn(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+
+        // Initial status for 0 is INACTIVE
+        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+
+        // Call getNextAuthIndex: should auto-sync Account 0 to ACTIVATED
+        await scheduler.getNextAuthIndex("gemini-2.5-flash");
+        expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+    });
+
+    test("getNextAuthIndex maintains baseline = 2 ACTIVATED accounts when 30s cooldown is met", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockBrowserManager = {
+            _currentAuthIndex: 0,
+            _sendActiveTrigger: jest.fn(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+
+        // Account 0 is ACTIVATED
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "INACTIVE");
+
+        // Fast-forward cooldown
+        scheduler.lastGlobalActivationAt = Date.now() - 31000;
+
+        // Call getNextAuthIndex: only 1 ACTIVATED account exists (< 2). It should trigger baseline activation for Account 1!
+        const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+        expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(1);
+        expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
+        expect(selected).toBe(0); // Free activated account 0 selected for this request
+    });
+
     test("round-robin selects active connections sequentially", async () => {
         // Indices 0, 1, 2 all connected
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
