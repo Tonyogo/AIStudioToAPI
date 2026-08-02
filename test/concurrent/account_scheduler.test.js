@@ -296,6 +296,9 @@ describe("AccountScheduler", () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
+        // Only account 0 and 1 are available indices
+        mockAuthSource.availableIndices = [0, 1];
+
         scheduler.setAccountStatus(0, "ACTIVATED");
         scheduler.setAccountStatus(1, "ACTIVATED");
 
