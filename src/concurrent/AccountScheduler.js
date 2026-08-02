@@ -9,12 +9,14 @@ class AccountScheduler {
      * @param {Object} connectionRegistry - ConnectionRegistry instance managing WebSocket connections
      * @param {Object} [logger] - Logger instance
      * @param {Object} [browserManager] - BrowserManager instance
+     * @param {Object} [modelUsageTracker] - ModelUsageTracker instance
      */
-    constructor(authSource, connectionRegistry, logger = console, browserManager = null) {
+    constructor(authSource, connectionRegistry, logger = console, browserManager = null, modelUsageTracker = null) {
         this.authSource = authSource;
         this.connectionRegistry = connectionRegistry;
         this.logger = logger;
         this.browserManager = browserManager;
+        this.modelUsageTracker = modelUsageTracker;
         this.currentIndex = 0;
         this.accountStatusMap = new Map();
         this.lastSystemActivityAt = 0;
@@ -122,11 +124,23 @@ class AccountScheduler {
     }
 
     /**
-     * Select next available authIndex using Round-Robin scheduling
+     * Record usage for a specific account and model
+     * @param {number} authIndex
+     * @param {string} modelName
+     */
+    recordUsage(authIndex, modelName) {
+        if (this.modelUsageTracker && typeof this.modelUsageTracker.recordUsage === "function") {
+            this.modelUsageTracker.recordUsage(authIndex, modelName);
+        }
+    }
+
+    /**
+     * Select next available authIndex using Round-Robin scheduling and model usage tracking
+     * @param {string} [modelName=null] - Optional model name for least-used scheduling
      * @returns {Promise<number>} The selected authIndex
      * @throws {Error} If no connected authIndex is available
      */
-    async getNextAuthIndex() {
+    async getNextAuthIndex(modelName = null) {
         this.lastSystemActivityAt = Date.now();
         const indices = this._getAccountIndices();
         if (indices.length === 0) {
@@ -136,19 +150,38 @@ class AccountScheduler {
         }
 
         const total = indices.length;
-        // 1. Try to find an ACTIVATED account first
+        // Collect online & ACTIVATED candidates ordered from current Round-Robin index
+        const candidateList = [];
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx) && this.getAccountStatus(candidateIdx) === "ACTIVATED") {
-                this.currentIndex = (this.currentIndex + i + 1) % total;
-                if (this.logger && typeof this.logger.debug === "function") {
-                    this.logger.debug(`[AccountScheduler] Selected ACTIVATED authIndex #${candidateIdx}`);
-                }
-                return candidateIdx;
+                const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
+                candidateList.push({ idx: candidateIdx, order: i, usage });
             }
         }
 
-        // 2. Fallback: Find first online INACTIVE account and activate it synchronously
+        if (candidateList.length > 0) {
+            // Sort primary by usage ascending, secondary by Round-Robin relative order
+            candidateList.sort((a, b) => {
+                if (a.usage !== b.usage) {
+                    return a.usage - b.usage;
+                }
+                return a.order - b.order;
+            });
+
+            const selectedIdx = candidateList[0].idx;
+            const selectedOrder = candidateList[0].order;
+            this.currentIndex = (this.currentIndex + selectedOrder + 1) % total;
+
+            if (this.logger && typeof this.logger.debug === "function") {
+                this.logger.debug(
+                    `[AccountScheduler] Selected least-used authIndex #${selectedIdx} for model="${modelName}" (usage=${candidateList[0].usage})`
+                );
+            }
+            return selectedIdx;
+        }
+
+        // Fallback: Find first online INACTIVE account and activate it synchronously
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx)) {

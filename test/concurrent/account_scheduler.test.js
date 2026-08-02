@@ -136,4 +136,36 @@ describe("AccountScheduler", () => {
         scheduler.lastSystemActivityAt = Date.now() - 1000;
         expect(scheduler.isSystemActive()).toBe(true);
     });
+
+    test("getNextAuthIndex selects least-used account for specified model", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockModelTracker = {
+            getUsage: jest.fn((idx, model) => {
+                if (model === "gemini-2.5-pro") {
+                    if (idx === 0) return 5;
+                    if (idx === 1) return 1; // Account 1 has least usage for pro
+                    if (idx === 2) return 3;
+                }
+                return 0;
+            }),
+        };
+
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+        scheduler.setAccountStatus(2, "ACTIVATED");
+
+        const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
+        expect(selected).toBe(1);
+    });
+
+    test("recordUsage delegates to modelUsageTracker", () => {
+        const mockModelTracker = {
+            recordUsage: jest.fn(),
+        };
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
+        scheduler.recordUsage(0, "gemini-2.5-flash");
+
+        expect(mockModelTracker.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
+    });
 });
