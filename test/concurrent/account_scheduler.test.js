@@ -150,7 +150,13 @@ describe("AccountScheduler", () => {
             }),
         };
 
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            null,
+            mockModelTracker
+        );
         scheduler.setAccountStatus(0, "ACTIVATED");
         scheduler.setAccountStatus(1, "ACTIVATED");
         scheduler.setAccountStatus(2, "ACTIVATED");
@@ -163,7 +169,13 @@ describe("AccountScheduler", () => {
         const mockModelTracker = {
             recordUsage: jest.fn(),
         };
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, null, mockModelTracker);
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            null,
+            mockModelTracker
+        );
         scheduler.recordUsage(0, "gemini-2.5-flash");
 
         expect(mockModelTracker.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");

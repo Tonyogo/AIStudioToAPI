@@ -100,7 +100,7 @@ describe("ConcurrentRequestHandler", () => {
         const req = {
             body: { contents: [] },
             method: "POST",
-            path: "/v1beta/models/gemini-2.5-flash-think-high:generateContent",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
             query: {},
         };
 

@@ -29,7 +29,6 @@ class ModelUsageTracker {
     getBeijingCycleKey(nowDate = new Date()) {
         const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
         const year = beijingTime.getUTCFullYear();
-        const month = String(beijingTime.getUTCMonth() + 1).padStart(2, "0");
         const day = beijingTime.getUTCDate();
         const hours = beijingTime.getUTCHours();
 
@@ -52,7 +51,9 @@ class ModelUsageTracker {
         const newKey = this.getBeijingCycleKey();
         if (newKey !== this.currentCycleKey) {
             if (this.logger && typeof this.logger.info === "function") {
-                this.logger.info(`[ModelUsageTracker] Resetting model usage cycle from ${this.currentCycleKey} to ${newKey}`);
+                this.logger.info(
+                    `[ModelUsageTracker] Resetting model usage cycle from ${this.currentCycleKey} to ${newKey}`
+                );
             }
             this.currentCycleKey = newKey;
             this.stats = {};
