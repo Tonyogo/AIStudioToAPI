@@ -112,6 +112,45 @@ describe("ConcurrentRequestHandler", () => {
         });
     });
 
+    test("handleGeminiRequest acquires and releases in-flight request count", async () => {
+        const mockWS = { send: jest.fn() };
+        const mockQueue = {
+            dequeue: jest
+                .fn()
+                .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+                .mockResolvedValueOnce({ type: "STREAM_END" }),
+        };
+        const minimalRegistry = {
+            createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+            getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+            removeMessageQueue: jest.fn(),
+        };
+
+        mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValue(0);
+        mockScheduler.acquireInFlight = jest.fn();
+        mockScheduler.releaseInFlight = jest.fn();
+
+        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(mockScheduler.acquireInFlight).toHaveBeenCalledWith(0);
+        expect(mockScheduler.releaseInFlight).toHaveBeenCalledWith(0);
+    });
+
     test("handleGeminiRequest passes clean model name to scheduler and records usage", async () => {
         const mockWS = { send: jest.fn() };
         const mockQueue = {

@@ -285,15 +285,13 @@ class AccountScheduler {
 
         // Error classification
         if (onlineAccountCount > 0 && cappedOnlineAccountCount >= onlineAccountCount) {
-            const error = new Error(
-                `All accounts reached daily limit of ${limit} requests for model "${modelName}"`
-            );
+            const error = new Error(`All accounts reached daily limit of ${limit} requests for model "${modelName}"`);
             error.statusCode = 429;
             error.statusText = "RESOURCE_EXHAUSTED";
             throw error;
         }
 
-        if (onlineAccountCount > 0 && (busyOnlineAccountCount + cappedOnlineAccountCount) >= onlineAccountCount) {
+        if (onlineAccountCount > 0 && busyOnlineAccountCount + cappedOnlineAccountCount >= onlineAccountCount) {
             const error = new Error(
                 `All available accounts are busy at maximum concurrency limit (${this.maxInFlightPerAccount}/${this.maxInFlightPerAccount})`
             );

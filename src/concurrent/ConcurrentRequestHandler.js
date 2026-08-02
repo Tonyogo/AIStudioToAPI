@@ -176,6 +176,9 @@ class ConcurrentRequestHandler {
         let authIndex;
         try {
             authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
+            if (typeof this.scheduler.acquireInFlight === "function") {
+                this.scheduler.acquireInFlight(authIndex);
+            }
         } catch (err) {
             const statusCode = err.statusCode || 503;
             const statusText = err.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
@@ -322,6 +325,10 @@ class ConcurrentRequestHandler {
                         status: "INTERNAL",
                     },
                 });
+            }
+        } finally {
+            if (typeof this.scheduler.releaseInFlight === "function") {
+                this.scheduler.releaseInFlight(authIndex);
             }
         }
     }
