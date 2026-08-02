@@ -23,6 +23,30 @@ describe("AccountScheduler", () => {
         mockBrowserManager = {};
     });
 
+    test("getNextAuthIndex proactively activates INACTIVE account when existing ACTIVATED accounts have inFlight > 0 and 30s cooldown is met", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockBrowserManager = {
+            _sendActiveTrigger: jest.fn(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+
+        // Account 0 is ACTIVATED and handling 1 request (inFlight = 1)
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.acquireInFlight(0);
+
+        // Account 1 is INACTIVE and online
+        scheduler.setAccountStatus(1, "INACTIVE");
+
+        // Fast-forward cooldown so 30s has elapsed
+        scheduler.lastGlobalActivationAt = Date.now() - 31000;
+
+        // Call getNextAuthIndex: should NOT re-use Account 0 (inFlight=1), but proactively activate Account 1
+        const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+        expect(selected).toBe(1);
+        expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
+    });
+
     test("round-robin selects active connections sequentially", async () => {
         // Indices 0, 1, 2 all connected
         mockConnectionRegistry.hasConnection.mockReturnValue(true);

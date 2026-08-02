@@ -216,7 +216,10 @@ class AccountScheduler {
         let cappedOnlineAccountCount = 0;
         let busyOnlineAccountCount = 0;
 
-        const candidateList = [];
+        const activatedFree = [];  // inFlight === 0
+        const activatedBusy = [];  // inFlight === 1
+        const inactiveCandidates = []; // INACTIVE & inFlight < 2
+
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx)) {
@@ -231,54 +234,89 @@ class AccountScheduler {
                     busyOnlineAccountCount++;
                     continue;
                 }
-                if (this.getAccountStatus(candidateIdx) === "ACTIVATED") {
-                    candidateList.push({ idx: candidateIdx, inFlight, order: i, usage });
+
+                const status = this.getAccountStatus(candidateIdx);
+                if (status === "ACTIVATED") {
+                    if (inFlight === 0) {
+                        activatedFree.push({ idx: candidateIdx, inFlight, order: i, usage });
+                    } else {
+                        activatedBusy.push({ idx: candidateIdx, inFlight, order: i, usage });
+                    }
+                } else if (status === "INACTIVE") {
+                    inactiveCandidates.push({ idx: candidateIdx, inFlight, order: i, usage });
                 }
             }
         }
 
-        if (candidateList.length > 0) {
-            // Sort primary by inFlight ascending (spread concurrency), secondary by usage ascending, tertiary by Round-Robin order
-            candidateList.sort((a, b) => {
-                if (a.inFlight !== b.inFlight) {
-                    return a.inFlight - b.inFlight;
-                }
-                if (a.usage !== b.usage) {
-                    return a.usage - b.usage;
-                }
-                return a.order - b.order;
-            });
+        // Sort function: primary by usage ascending, secondary by Round-Robin order
+        const usageSort = (a, b) => {
+            if (a.usage !== b.usage) {
+                return a.usage - b.usage;
+            }
+            return a.order - b.order;
+        };
 
-            const selectedIdx = candidateList[0].idx;
-            const selectedOrder = candidateList[0].order;
+        // Phase 1: Use an absolutely free ACTIVATED account (inFlight === 0)
+        if (activatedFree.length > 0) {
+            activatedFree.sort(usageSort);
+            const selectedIdx = activatedFree[0].idx;
+            const selectedOrder = activatedFree[0].order;
             this.currentIndex = (this.currentIndex + selectedOrder + 1) % total;
 
             if (this.logger && typeof this.logger.debug === "function") {
                 this.logger.debug(
-                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (inFlight=${candidateList[0].inFlight}, usage=${candidateList[0].usage}/${limit})`
+                    `[AccountScheduler] Selected free ACTIVATED authIndex #${selectedIdx} for model="${modelName}" (usage=${activatedFree[0].usage}/${limit})`
                 );
             }
             return selectedIdx;
         }
 
-        // Fallback: Find first online INACTIVE account that is NOT capped and NOT busy, and activate it synchronously
-        for (let i = 0; i < total; i++) {
-            const candidateIdx = indices[(this.currentIndex + i) % total];
-            if (this._hasConnection(candidateIdx)) {
-                const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
-                if (usage >= limit) continue;
-                const inFlight = this.getInFlightCount(candidateIdx);
-                if (inFlight >= this.maxInFlightPerAccount) continue;
-
+        // Phase 2: Proactive Scale-Out: If all ACTIVATED accounts have inFlight > 0 and INACTIVE accounts exist, try activating one if 30s cooldown met
+        const canCooldown = this.lastGlobalActivationAt === 0 || (Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs);
+        if (inactiveCandidates.length > 0 && canCooldown) {
+            inactiveCandidates.sort(usageSort);
+            for (const candidate of inactiveCandidates) {
                 if (this.logger && typeof this.logger.info === "function") {
                     this.logger.info(
-                        `[AccountScheduler] No ACTIVATED accounts available, synchronously activating authIndex #${candidateIdx}...`
+                        `[AccountScheduler] Proactively activating INACTIVE authIndex #${candidate.idx} to spread concurrent load...`
                     );
                 }
-                const activated = await this.activateAccount(candidateIdx);
+                const activated = await this.activateAccount(candidate.idx);
                 if (activated) {
-                    this.currentIndex = (this.currentIndex + i + 1) % total;
-                    return candidateIdx;
+                    this.currentIndex = (this.currentIndex + candidate.order + 1) % total;
+                    return candidate.idx;
+                }
+            }
+        }
+
+        // Phase 3: Reuse a lightly-busy ACTIVATED account (inFlight === 1)
+        if (activatedBusy.length > 0) {
+            activatedBusy.sort(usageSort);
+            const selectedIdx = activatedBusy[0].idx;
+            const selectedOrder = activatedBusy[0].order;
+            this.currentIndex = (this.currentIndex + selectedOrder + 1) % total;
+
+            if (this.logger && typeof this.logger.debug === "function") {
+                this.logger.debug(
+                    `[AccountScheduler] Selected busy ACTIVATED authIndex #${selectedIdx} for model="${modelName}" (inFlight=1, usage=${activatedBusy[0].usage}/${limit})`
+                );
+            }
+            return selectedIdx;
+        }
+
+        // Phase 4: Forced fallback activation (when no ACTIVATED accounts exist or all are capped at inFlight >= 2)
+        if (inactiveCandidates.length > 0) {
+            inactiveCandidates.sort(usageSort);
+            for (const candidate of inactiveCandidates) {
+                if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(
+                        `[AccountScheduler] Synchronously activating authIndex #${candidate.idx}...`
+                    );
+                }
+                const activated = await this.activateAccount(candidate.idx);
+                if (activated) {
+                    this.currentIndex = (this.currentIndex + candidate.order + 1) % total;
+                    return candidate.idx;
                 }
             }
         }
