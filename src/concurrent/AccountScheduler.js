@@ -392,7 +392,23 @@ class AccountScheduler {
     }
 
     /**
-     * Activate a specific account by authIndex
+     * Mark an account as ACTIVATED
+     * @param {number} authIndex
+     */
+    markAccountActivated(authIndex) {
+        this.setAccountStatus(authIndex, "ACTIVATED");
+    }
+
+    /**
+     * Mark an account as INACTIVE
+     * @param {number} authIndex
+     */
+    markAccountInactive(authIndex) {
+        this.setAccountStatus(authIndex, "INACTIVE");
+    }
+
+    /**
+     * Activate a specific account by authIndex using BrowserManager native switch
      * @param {number} authIndex
      * @returns {Promise<boolean>}
      */
@@ -421,13 +437,9 @@ class AccountScheduler {
         try {
             await this.browserManager.launchOrSwitchContext(authIndex);
             this.lastGlobalActivationAt = Date.now();
-            const page = this.browserManager.page;
-            if (typeof this.browserManager._sendActiveTrigger === "function") {
-                this.browserManager._sendActiveTrigger("[AccountScheduler]", page);
-            }
             this.setAccountStatus(authIndex, "ACTIVATED");
             if (this.logger && typeof this.logger.info === "function") {
-                this.logger.info(`[AccountScheduler] Account #${authIndex} successfully activated`);
+                this.logger.info(`[AccountScheduler] Account #${authIndex} successfully activated via BrowserManager`);
             }
             return true;
         } catch (error) {

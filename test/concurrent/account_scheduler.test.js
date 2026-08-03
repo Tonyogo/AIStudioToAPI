@@ -23,6 +23,17 @@ describe("AccountScheduler", () => {
         mockBrowserManager = {};
     });
 
+    test("markAccountActivated and markAccountInactive update accountStatusMap correctly", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+
+        scheduler.markAccountActivated(0);
+        expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+
+        scheduler.markAccountInactive(0);
+        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+    });
+
     test("getNextAuthIndex proactively activates INACTIVE account when existing ACTIVATED accounts have inFlight > 0 and 30s cooldown is met", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockBrowserManager = {
@@ -145,7 +156,6 @@ describe("AccountScheduler", () => {
 
         expect(success).toBe(true);
         expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(0);
-        expect(mockBrowserManager._sendActiveTrigger).toHaveBeenCalled();
         expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
     });
 
