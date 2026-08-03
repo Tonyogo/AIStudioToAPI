@@ -206,6 +206,20 @@ class ConcurrentRequestHandler {
         let attempt = 0;
         let lastError = null;
 
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
+
+        this.usageStatsService?.startRequest(requestId, {
+            apiFormat: "gemini",
+            clientIp: req.ip || (req.headers && req.headers["x-forwarded-for"]) || null,
+            initialAuthIndex: null, // will be updated per attempt or set below
+            isStreaming: isStream,
+            method: req.method,
+            model: cleanModelName,
+            path: req.path,
+            requestCategory: "generation",
+        });
+
         while (attempt < maxAttempts) {
             attempt++;
             let authIndex;
@@ -219,9 +233,13 @@ class ConcurrentRequestHandler {
                 break;
             }
 
-            const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
             const requestAttemptId = `${requestId}_attempt_${attempt}_${Math.random().toString(36).substring(2, 8)}`;
             let isRequestCompleted = false;
+
+            this.usageStatsService?.recordAttempt(requestId, {
+                attemptNumber: attempt,
+                authIndex,
+            });
 
             if (typeof res.on === "function") {
                 res.on("close", () => {
@@ -242,7 +260,6 @@ class ConcurrentRequestHandler {
             }
 
             try {
-                const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
                 const requestBodyStr = req.method !== "GET" ? JSON.stringify(req.body) : undefined;
 
                 const requestPayload = {
@@ -339,7 +356,8 @@ class ConcurrentRequestHandler {
                                         }
                                     }
                                 }
-                                res.status(responseStatus).json(chunk);
+                                const processedChunk = this._processImageInResponse(chunk);
+                                res.status(responseStatus).json(processedChunk);
                             }
                         }
                     }
@@ -385,6 +403,11 @@ class ConcurrentRequestHandler {
                 error: { code: statusCode, message: lastError.message, status: statusText },
             });
         }
+
+        this.usageStatsService?.finishRequest(requestId, res, {
+            outcome: lastError ? "error" : "success",
+            statusCode: lastError ? lastError.statusCode || 500 : 200,
+        });
     }
 }
 

@@ -42,7 +42,14 @@ function initConcurrentMode(app, system) {
         modelUsageTracker,
         modelList
     );
-    const concurrentRequestHandler = new ConcurrentRequestHandler(connectionRegistry, scheduler, logger, modelList);
+    const usageStatsService = system.usageStatsService || null;
+    const concurrentRequestHandler = new ConcurrentRequestHandler(
+        connectionRegistry,
+        scheduler,
+        logger,
+        modelList,
+        usageStatsService
+    );
 
     concurrentRequestHandler.registerRoutes(app);
 

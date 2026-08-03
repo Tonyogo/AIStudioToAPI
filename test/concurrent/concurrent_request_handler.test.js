@@ -400,22 +400,13 @@ describe("ConcurrentRequestHandler", () => {
         };
 
         const minimalRegistry = {
-            createMessageQueue: jest
-                .fn()
-                .mockReturnValueOnce(mockQueue1)
-                .mockReturnValueOnce(mockQueue2),
-            getConnectionByAuth: jest
-                .fn()
-                .mockReturnValueOnce(mockWS1)
-                .mockReturnValueOnce(mockWS2),
+            createMessageQueue: jest.fn().mockReturnValueOnce(mockQueue1).mockReturnValueOnce(mockQueue2),
+            getConnectionByAuth: jest.fn().mockReturnValueOnce(mockWS1).mockReturnValueOnce(mockWS2),
             removeMessageQueue: jest.fn(),
             sendRequest: null,
         };
 
-        mockScheduler.getNextAuthIndex = jest
-            .fn()
-            .mockResolvedValueOnce(0)
-            .mockResolvedValueOnce(1);
+        mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1);
         mockScheduler.acquireInFlight = jest.fn();
         mockScheduler.releaseInFlight = jest.fn();
         mockScheduler.recordFailure = jest.fn();
