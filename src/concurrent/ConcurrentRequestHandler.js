@@ -88,6 +88,7 @@ class ConcurrentRequestHandler {
                     const errStatus = message.status || 500;
                     const responseMeta = { headers: responseHeaders, status: errStatus };
                     callback(message.message || "Request failed", true, true, responseMeta);
+                    break;
                 } else if (message.event_type === "response_headers") {
                     if (message.status) {
                         responseStatus = Number(message.status);
@@ -173,163 +174,188 @@ class ConcurrentRequestHandler {
      */
     async handleGeminiRequest(req, res) {
         const cleanModelName = this._extractCleanModelName(req.path);
-        let authIndex;
-        try {
-            authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
-            if (typeof this.scheduler.acquireInFlight === "function") {
-                this.scheduler.acquireInFlight(authIndex);
-            }
-        } catch (err) {
-            const statusCode = err.statusCode || 503;
-            const statusText = err.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
-            if (this.logger && typeof this.logger.error === "function") {
-                this.logger.error(`[ConcurrentRequestHandler] Scheduling failed: ${err.message}`);
-            }
-            return res.status(statusCode).json({
-                error: {
-                    code: statusCode,
-                    message: err.message,
-                    status: statusText,
-                },
-            });
-        }
+        const maxAttempts = 2;
+        let attempt = 0;
+        let lastError = null;
 
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        const requestAttemptId = `${requestId}_attempt_1_${Math.random().toString(36).substring(2, 8)}`;
-        let isRequestCompleted = false;
-
-        if (typeof res.on === "function") {
-            res.on("close", () => {
-                if (!isRequestCompleted && !res.writableEnded) {
-                    if (this.logger && typeof this.logger.warn === "function") {
-                        this.logger.warn(
-                            `[ConcurrentRequestHandler] Client closed connection prematurely for request #${requestId}`
-                        );
-                    }
-                    const connection = this.connectionRegistry.getConnectionByAuth(authIndex);
-                    if (connection) {
-                        connection.send(
-                            JSON.stringify({
-                                event_type: "cancel_request",
-                                request_attempt_id: requestAttemptId,
-                                request_id: requestId,
-                            })
-                        );
-                    }
-                    this.connectionRegistry.removeMessageQueue(requestId, "client_disconnect");
+        while (attempt < maxAttempts) {
+            attempt++;
+            let authIndex;
+            try {
+                authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
+                if (typeof this.scheduler.acquireInFlight === "function") {
+                    this.scheduler.acquireInFlight(authIndex);
                 }
-            });
-        }
-
-        try {
-            const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
-            const requestBodyStr = req.method !== "GET" ? JSON.stringify(req.body) : undefined;
-
-            const requestPayload = {
-                action: "generateContent",
-                body: requestBodyStr,
-                headers: req.headers,
-                isStream,
-                method: req.method,
-                path: req.path,
-                query: req.query,
-                requestAttemptId,
-                requestId,
-            };
-
-            if (this.logger && typeof this.logger.info === "function") {
-                this.logger.info(
-                    `[ConcurrentRequestHandler] Forwarding request (${req.path}) to authIndex #${authIndex}`
-                );
+            } catch (err) {
+                lastError = err;
+                break;
             }
 
-            if (typeof this.scheduler.recordUsage === "function" && cleanModelName) {
-                this.scheduler.recordUsage(authIndex, cleanModelName);
-            }
+            const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+            const requestAttemptId = `${requestId}_attempt_${attempt}_${Math.random().toString(36).substring(2, 8)}`;
+            let isRequestCompleted = false;
 
-            if (isStream) {
-                res.setHeader("Content-Type", "text/event-stream");
-                res.setHeader("Cache-Control", "no-cache");
-                res.setHeader("Connection", "keep-alive");
-                res.flushHeaders?.();
-            }
-
-            await this.connectionRegistry.sendRequest(
-                authIndex,
-                requestPayload,
-                (chunk, isFinished, isError, meta = {}) => {
-                    if (isFinished || isError) {
-                        isRequestCompleted = true;
-                    }
-                    if (isError) {
-                        const responseStatus = meta.status || 500;
-                        const statusText =
-                            responseStatus === 429
-                                ? "RESOURCE_EXHAUSTED"
-                                : responseStatus === 400
-                                  ? "INVALID_ARGUMENT"
-                                  : responseStatus === 503
-                                    ? "UNAVAILABLE"
-                                    : "INTERNAL";
-
-                        if (!res.headersSent) {
-                            res.status(responseStatus).json({
-                                error: { code: responseStatus, message: chunk || "Internal Error", status: statusText },
-                            });
-                        } else if (isStream) {
-                            res.write(
-                                `data: ${JSON.stringify({ error: { code: responseStatus, message: chunk || "Internal Error", status: statusText } })}\n\n`
+            if (typeof res.on === "function") {
+                res.on("close", () => {
+                    if (!isRequestCompleted && !res.writableEnded) {
+                        const connection = this.connectionRegistry.getConnectionByAuth(authIndex);
+                        if (connection) {
+                            connection.send(
+                                JSON.stringify({
+                                    event_type: "cancel_request",
+                                    request_attempt_id: requestAttemptId,
+                                    request_id: requestId,
+                                })
                             );
-                            res.end();
                         }
-                        return;
+                        this.connectionRegistry.removeMessageQueue(requestId, "client_disconnect");
                     }
-
-                    if (isStream) {
-                        if (chunk) {
-                            const dataStr = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
-                            res.write(dataStr);
-                        }
-                        if (isFinished) {
-                            res.end();
-                        }
-                    } else {
-                        if (isFinished && !res.headersSent) {
-                            const responseStatus = meta.status || 200;
-                            if (meta.headers) {
-                                for (const [headerName, headerVal] of Object.entries(meta.headers)) {
-                                    if (
-                                        headerName.toLowerCase() !== "transfer-encoding" &&
-                                        headerName.toLowerCase() !== "content-encoding"
-                                    ) {
-                                        res.setHeader(headerName, headerVal);
-                                    }
-                                }
-                            }
-                            res.status(responseStatus).json(chunk);
-                        }
-                    }
-                }
-            );
-            isRequestCompleted = true;
-        } catch (error) {
-            isRequestCompleted = true;
-            if (this.logger && typeof this.logger.error === "function") {
-                this.logger.error(`[ConcurrentRequestHandler] Request processing error: ${error.message}`);
-            }
-            if (!res.headersSent) {
-                res.status(500).json({
-                    error: {
-                        code: 500,
-                        message: error.message,
-                        status: "INTERNAL",
-                    },
                 });
             }
-        } finally {
-            if (typeof this.scheduler.releaseInFlight === "function") {
-                this.scheduler.releaseInFlight(authIndex);
+
+            try {
+                const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
+                const requestBodyStr = req.method !== "GET" ? JSON.stringify(req.body) : undefined;
+
+                const requestPayload = {
+                    action: "generateContent",
+                    body: requestBodyStr,
+                    headers: req.headers,
+                    isStream,
+                    method: req.method,
+                    path: req.path,
+                    query: req.query,
+                    requestAttemptId,
+                    requestId,
+                };
+
+                if (typeof this.scheduler.recordUsage === "function" && cleanModelName) {
+                    this.scheduler.recordUsage(authIndex, cleanModelName);
+                }
+
+                let attemptError = null;
+
+                await this.connectionRegistry.sendRequest(
+                    authIndex,
+                    requestPayload,
+                    (chunk, isFinished, isError, meta = {}) => {
+                        if (isFinished || isError) {
+                            isRequestCompleted = true;
+                        }
+                        if (isError) {
+                            const responseStatus = meta.status || 500;
+                            const statusText =
+                                responseStatus === 429
+                                    ? "RESOURCE_EXHAUSTED"
+                                    : responseStatus === 400
+                                      ? "INVALID_ARGUMENT"
+                                      : responseStatus === 503
+                                        ? "UNAVAILABLE"
+                                        : "INTERNAL";
+
+                            attemptError = {
+                                message: chunk || "Internal Error",
+                                statusCode: responseStatus,
+                                statusText,
+                            };
+
+                            if (!res.headersSent) {
+                                if (attempt >= maxAttempts || attemptError.statusCode === 429) {
+                                    res.status(responseStatus).json({
+                                        error: {
+                                            code: responseStatus,
+                                            message: chunk || "Internal Error",
+                                            status: statusText,
+                                        },
+                                    });
+                                }
+                            } else if (isStream) {
+                                res.write(
+                                    `data: ${JSON.stringify({
+                                        error: {
+                                            code: responseStatus,
+                                            message: chunk || "Internal Error",
+                                            status: statusText,
+                                        },
+                                    })}\n\n`
+                                );
+                                res.end();
+                            }
+                            return;
+                        }
+
+                        if (isStream) {
+                            if (!res.headersSent) {
+                                res.setHeader("Content-Type", "text/event-stream");
+                                res.setHeader("Cache-Control", "no-cache");
+                                res.setHeader("Connection", "keep-alive");
+                                res.flushHeaders?.();
+                            }
+                            if (chunk) {
+                                const dataStr = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
+                                res.write(dataStr);
+                            }
+                            if (isFinished) {
+                                res.end();
+                            }
+                        } else {
+                            if (isFinished && !res.headersSent) {
+                                const responseStatus = meta.status || 200;
+                                if (meta.headers) {
+                                    for (const [headerName, headerVal] of Object.entries(meta.headers)) {
+                                        if (
+                                            headerName.toLowerCase() !== "transfer-encoding" &&
+                                            headerName.toLowerCase() !== "content-encoding"
+                                        ) {
+                                            res.setHeader(headerName, headerVal);
+                                        }
+                                    }
+                                }
+                                res.status(responseStatus).json(chunk);
+                            }
+                        }
+                    }
+                );
+
+                isRequestCompleted = true;
+
+                if (attemptError) {
+                    if (typeof this.scheduler.recordFailure === "function") {
+                        this.scheduler.recordFailure(authIndex, attemptError.statusCode);
+                    }
+                    lastError = attemptError;
+                    if (res.headersSent || attemptError.statusCode === 429) {
+                        break;
+                    }
+                } else {
+                    if (typeof this.scheduler.recordSuccess === "function") {
+                        this.scheduler.recordSuccess(authIndex);
+                    }
+                    lastError = null;
+                    break;
+                }
+            } catch (error) {
+                isRequestCompleted = true;
+                if (typeof this.scheduler.recordFailure === "function") {
+                    this.scheduler.recordFailure(authIndex, 500);
+                }
+                lastError = { message: error.message, statusCode: 500, statusText: "INTERNAL" };
+                if (res.headersSent) {
+                    break;
+                }
+            } finally {
+                if (typeof this.scheduler.releaseInFlight === "function") {
+                    this.scheduler.releaseInFlight(authIndex);
+                }
             }
+        }
+
+        if (lastError && !res.headersSent) {
+            const statusCode = lastError.statusCode || 503;
+            const statusText = lastError.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
+            res.status(statusCode).json({
+                error: { code: statusCode, message: lastError.message, status: statusText },
+            });
         }
     }
 }
