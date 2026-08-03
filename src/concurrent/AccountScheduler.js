@@ -29,6 +29,8 @@ class AccountScheduler {
         this.currentIndex = 0;
         this.accountStatusMap = new Map();
         this.inFlightMap = new Map();
+        this.failureCountMap = new Map();
+        this.suspendedUntilMap = new Map();
         this.maxInFlightPerAccount = 2;
         this.lastSystemActivityAt = 0;
         this.idleTimeoutMs = 300000;
@@ -123,6 +125,49 @@ class AccountScheduler {
             lastActivatedAt: status === "ACTIVATED" ? Date.now() : existing.lastActivatedAt,
             status,
         });
+    }
+
+    /**
+     * Check if account is currently suspended
+     * @param {number} authIndex
+     * @returns {boolean}
+     */
+    isAccountSuspended(authIndex) {
+        const suspendedUntil = this.suspendedUntilMap.get(authIndex) || 0;
+        return Date.now() < suspendedUntil;
+    }
+
+    /**
+     * Record failure for an account and trigger suspension if threshold reached
+     * @param {number} authIndex
+     * @param {number} statusCode
+     */
+    recordFailure(authIndex, statusCode) {
+        if (authIndex === undefined || authIndex < 0) return;
+        const currentFailures = (this.failureCountMap.get(authIndex) || 0) + 1;
+        this.failureCountMap.set(authIndex, currentFailures);
+
+        if (statusCode === 429) {
+            this.suspendedUntilMap.set(authIndex, Date.now() + 60000);
+            if (this.logger && typeof this.logger.warn === "function") {
+                this.logger.warn(`[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to HTTP 429 rate limit`);
+            }
+        } else if (currentFailures >= 2) {
+            this.suspendedUntilMap.set(authIndex, Date.now() + 60000);
+            this.failureCountMap.set(authIndex, 0);
+            if (this.logger && typeof this.logger.warn === "function") {
+                this.logger.warn(`[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to 2 consecutive failures`);
+            }
+        }
+    }
+
+    /**
+     * Record success for an account, resetting its consecutive failure counter
+     * @param {number} authIndex
+     */
+    recordSuccess(authIndex) {
+        if (authIndex === undefined || authIndex < 0) return;
+        this.failureCountMap.set(authIndex, 0);
     }
 
     /**
@@ -235,6 +280,14 @@ class AccountScheduler {
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
             if (this._hasConnection(candidateIdx)) {
+                if (this.isAccountSuspended(candidateIdx)) {
+                    if (this.logger && typeof this.logger.debug === "function") {
+                        this.logger.debug(
+                            `[AccountScheduler] AuthIndex #${candidateIdx} skipped: account is suspended`
+                        );
+                    }
+                    continue;
+                }
                 onlineAccountCount++;
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
                 if (usage >= limit) {

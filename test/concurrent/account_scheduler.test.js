@@ -357,6 +357,36 @@ describe("AccountScheduler", () => {
         expect(scheduler.getInFlightCount(0)).toBe(1);
     });
 
+    test("recordFailure suspends account for 1 minute on 429 error", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        expect(scheduler.isAccountSuspended(0)).toBe(false);
+
+        scheduler.recordFailure(0, 429);
+        expect(scheduler.isAccountSuspended(0)).toBe(true);
+    });
+
+    test("recordFailure suspends account after 2 consecutive non-429 5xx errors", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        expect(scheduler.isAccountSuspended(0)).toBe(false);
+
+        scheduler.recordFailure(0, 500);
+        expect(scheduler.isAccountSuspended(0)).toBe(false);
+
+        scheduler.recordFailure(0, 500);
+        expect(scheduler.isAccountSuspended(0)).toBe(true);
+    });
+
+    test("getNextAuthIndex skips suspended accounts", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+
+        scheduler.recordFailure(0, 429); // Account 0 is suspended
+        const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+        expect(selected).toBe(1);
+    });
+
     test("getNextAuthIndex prioritizes accounts with lower inFlightCount to spread load", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
