@@ -10,11 +10,12 @@ class ConcurrentRequestHandler {
      * @param {Object} [logger] - Logger instance
      * @param {Array} [modelList] - Model list from configuration
      */
-    constructor(connectionRegistry, scheduler, logger = console, modelList = []) {
+    constructor(connectionRegistry, scheduler, logger = console, modelList = [], usageStatsService = null) {
         this.connectionRegistry = connectionRegistry;
         this.scheduler = scheduler;
         this.logger = logger;
         this.modelList = modelList;
+        this.usageStatsService = usageStatsService;
 
         if (this.connectionRegistry && typeof this.connectionRegistry.sendRequest !== "function") {
             this.connectionRegistry.sendRequest = this._sendRequestImpl.bind(this);
@@ -165,6 +166,33 @@ class ConcurrentRequestHandler {
         const { cleanModelName: streamStripped } = FormatConverter.parseModelStreamingModeSuffix(toolStripped);
         const { cleanModelName } = FormatConverter.parseModelThinkingLevel(streamStripped);
         return cleanModelName;
+    }
+
+    /**
+     * Process image in response, converting inlineData to Markdown Data URL if present
+     * @param {Object} chunk
+     * @returns {Object}
+     */
+    _processImageInResponse(chunk) {
+        if (!chunk || typeof chunk !== "object") return chunk;
+        try {
+            const candidate = chunk.candidates?.[0];
+            if (candidate?.content?.parts) {
+                const imagePartIndex = candidate.content.parts.findIndex(p => p && p.inlineData);
+                if (imagePartIndex > -1) {
+                    const imagePart = candidate.content.parts[imagePartIndex];
+                    const image = imagePart.inlineData;
+                    candidate.content.parts[imagePartIndex] = {
+                        text: `![Generated Image](data:${image.mimeType};base64,${image.data})`,
+                    };
+                }
+            }
+        } catch (e) {
+            if (this.logger && typeof this.logger.warn === "function") {
+                this.logger.warn(`[ConcurrentRequestHandler] Image process error: ${e.message}`);
+            }
+        }
+        return chunk;
     }
 
     /**

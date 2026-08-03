@@ -444,4 +444,107 @@ describe("ConcurrentRequestHandler", () => {
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.json).toHaveBeenCalledWith({ ok: true });
     });
+
+    test("handleGeminiRequest tracks request lifecycle in usageStatsService", async () => {
+        const mockUsageStats = {
+            finishRequest: jest.fn(),
+            recordAttempt: jest.fn(),
+            startRequest: jest.fn(),
+        };
+        const mockWS = { send: jest.fn() };
+        const mockQueue = {
+            dequeue: jest
+                .fn()
+                .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+                .mockResolvedValueOnce({ type: "STREAM_END" }),
+        };
+        const minimalRegistry = {
+            createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+            getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+            removeMessageQueue: jest.fn(),
+        };
+
+        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger, [], mockUsageStats);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(mockUsageStats.startRequest).toHaveBeenCalled();
+        expect(mockUsageStats.recordAttempt).toHaveBeenCalled();
+        expect(mockUsageStats.finishRequest).toHaveBeenCalled();
+    });
+
+    test("handleGeminiRequest converts inline image data to Markdown in non-stream responses", async () => {
+        const rawImageBody = {
+            candidates: [
+                {
+                    content: {
+                        parts: [
+                            {
+                                inlineData: {
+                                    data: "base64data",
+                                    mimeType: "image/png",
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        };
+        const mockWS = { send: jest.fn() };
+        const mockQueue = {
+            dequeue: jest
+                .fn()
+                .mockResolvedValueOnce({ data: JSON.stringify(rawImageBody), event_type: "chunk" })
+                .mockResolvedValueOnce({ type: "STREAM_END" }),
+        };
+        const minimalRegistry = {
+            createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+            getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+            removeMessageQueue: jest.fn(),
+        };
+
+        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash-image:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(res.json).toHaveBeenCalledWith({
+            candidates: [
+                {
+                    content: {
+                        parts: [
+                            {
+                                text: "![Generated Image](data:image/png;base64,base64data)",
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
+    });
 });
