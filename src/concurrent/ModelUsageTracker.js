@@ -93,6 +93,33 @@ class ModelUsageTracker {
     }
 
     /**
+     * Get structured usage details and limits for a specific account
+     * @param {number} authIndex
+     * @param {Array} [modelList=[]]
+     * @returns {{total: number, byModel: Object}}
+     */
+    getAccountUsageDetails(authIndex, modelList = []) {
+        this._checkAndResetCycle();
+        const usageMap = this.stats[authIndex] || {};
+        let totalUsage = 0;
+        const byModel = {};
+
+        const effectiveModelList =
+            Array.isArray(modelList) && modelList.length > 0 ? modelList : [{ name: "models/gemini-2.5-flash" }];
+
+        for (const m of effectiveModelList) {
+            if (!m || !m.name) continue;
+            const cleanName = m.name.replace("models/", "");
+            const usage = usageMap[cleanName] || 0;
+            const limit = typeof m.dailyLimit === "number" && m.dailyLimit > 0 ? m.dailyLimit : 1000;
+            byModel[cleanName] = { limit, usage };
+            totalUsage += usage;
+        }
+
+        return { byModel, total: totalUsage };
+    }
+
+    /**
      * Schedule debounced save to file (500ms)
      */
     scheduleDebouncedSave() {
