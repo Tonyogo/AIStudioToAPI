@@ -308,6 +308,7 @@
             "version": "3.5-flash-05-2026",
             "displayName": "Gemini 3.5 Flash",
             "description": "Gemini 3.5 Flash",
+            "dailyLimit": 100,
             "inputTokenLimit": 1048576,
             "outputTokenLimit": 65536,
             "supportedGenerationMethods": [
@@ -346,6 +347,7 @@
             "version": "3.6-flash-07-2026",
             "displayName": "Gemini 3.6 Flash",
             "description": "Gemini 3.6 Flash",
+            "dailyLimit": 100,
             "inputTokenLimit": 1048576,
             "outputTokenLimit": 65536,
             "supportedGenerationMethods": [
