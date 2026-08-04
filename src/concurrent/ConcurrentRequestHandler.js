@@ -414,6 +414,9 @@ class ConcurrentRequestHandler {
                 if (typeof this.scheduler.releaseInFlight === "function") {
                     this.scheduler.releaseInFlight(authIndex);
                 }
+                if (typeof this.scheduler.checkAndRetireAccount === "function" && authIndex !== undefined) {
+                    this.scheduler.checkAndRetireAccount(authIndex).catch(() => {});
+                }
             }
         }
 

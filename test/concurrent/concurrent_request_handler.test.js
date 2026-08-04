@@ -493,6 +493,42 @@ describe("ConcurrentRequestHandler", () => {
         );
     });
 
+    test("handleGeminiRequest triggers checkAndRetireAccount after request completes", async () => {
+        const mockWS = { send: jest.fn() };
+        const mockQueue = {
+            dequeue: jest
+                .fn()
+                .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
+                .mockResolvedValueOnce({ type: "STREAM_END" }),
+        };
+        const minimalRegistry = {
+            createMessageQueue: jest.fn().mockReturnValue(mockQueue),
+            getConnectionByAuth: jest.fn().mockReturnValue(mockWS),
+            removeMessageQueue: jest.fn(),
+        };
+
+        mockScheduler.checkAndRetireAccount = jest.fn().mockResolvedValue(false);
+
+        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(mockScheduler.checkAndRetireAccount).toHaveBeenCalledWith(0);
+    });
+
     test("handleGeminiRequest converts inline image data to Markdown in non-stream responses", async () => {
         const rawImageBody = {
             candidates: [

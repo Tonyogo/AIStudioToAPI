@@ -34,13 +34,15 @@ function initConcurrentMode(app, system) {
     }
 
     const modelUsageTracker = new ModelUsageTracker(logger);
+    const config = system.config || {};
     const scheduler = new AccountScheduler(
         authSource,
         connectionRegistry,
         logger,
         browserManager,
         modelUsageTracker,
-        modelList
+        modelList,
+        config
     );
     const usageStatsService = system.usageStatsService || null;
     const concurrentRequestHandler = new ConcurrentRequestHandler(
