@@ -44,7 +44,8 @@ class AccountScheduler {
      * @returns {number} Daily limit or Infinity
      */
     getModelDailyLimit(modelName) {
-        if (!modelName || !Array.isArray(this.modelList)) return Infinity;
+        if (!Array.isArray(this.modelList) || this.modelList.length === 0) return 1000;
+        if (!modelName) return 1000;
         const match = this.modelList.find(m => {
             if (!m || !m.name) return false;
             const cleanName = m.name.replace("models/", "");
@@ -53,7 +54,7 @@ class AccountScheduler {
         if (match && typeof match.dailyLimit === "number" && match.dailyLimit > 0) {
             return match.dailyLimit;
         }
-        return Infinity;
+        return 1000;
     }
 
     /**
@@ -150,13 +151,17 @@ class AccountScheduler {
         if (statusCode === 429) {
             this.suspendedUntilMap.set(authIndex, Date.now() + 60000);
             if (this.logger && typeof this.logger.warn === "function") {
-                this.logger.warn(`[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to HTTP 429 rate limit`);
+                this.logger.warn(
+                    `[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to HTTP 429 rate limit`
+                );
             }
         } else if (currentFailures >= 2) {
             this.suspendedUntilMap.set(authIndex, Date.now() + 60000);
             this.failureCountMap.set(authIndex, 0);
             if (this.logger && typeof this.logger.warn === "function") {
-                this.logger.warn(`[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to 2 consecutive failures`);
+                this.logger.warn(
+                    `[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to 2 consecutive failures`
+                );
             }
         }
     }

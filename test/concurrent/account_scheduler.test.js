@@ -272,8 +272,23 @@ describe("AccountScheduler", () => {
         );
 
         expect(scheduler.getModelDailyLimit("gemini-2.5-pro")).toBe(50);
-        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(Infinity);
-        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(Infinity);
+        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(1000);
+        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(1000);
+    });
+
+    test("getModelDailyLimit returns 1000 when model dailyLimit is not configured", () => {
+        const mockModelList = [{ name: "models/gemini-2.5-flash" }];
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            null,
+            null,
+            mockModelList
+        );
+
+        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(1000);
+        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(1000);
     });
 
     test("getNextAuthIndex skips accounts that reached dailyLimit", async () => {

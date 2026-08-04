@@ -26,6 +26,7 @@ class ConfigLoader {
             checkUpdate: true,
             enableAuthUpdate: true,
             enableUsageStats: true,
+            exhaustedModelsThreshold: 1,
             failureThreshold: 3,
             fakeStreamTimeoutMs: 300000,
             forceCodeExecution: false,
@@ -55,6 +56,10 @@ class ConfigLoader {
         if (process.env.FAILURE_THRESHOLD) {
             const parsed = parseInt(process.env.FAILURE_THRESHOLD, 10);
             config.failureThreshold = Number.isFinite(parsed) ? Math.max(0, parsed) : config.failureThreshold;
+        }
+        if (process.env.EXHAUSTED_MODELS_THRESHOLD) {
+            const parsed = parseInt(process.env.EXHAUSTED_MODELS_THRESHOLD, 10);
+            config.exhaustedModelsThreshold = Number.isFinite(parsed) ? Math.max(1, parsed) : config.exhaustedModelsThreshold;
         }
         if (process.env.SWITCH_ON_USES) {
             const parsed = parseInt(process.env.SWITCH_ON_USES, 10);
@@ -219,6 +224,7 @@ class ConfigLoader {
                 config.failureThreshold > 0 ? `Switch after ${config.failureThreshold} failures` : "Disabled"
             }`
         );
+        this.logger.info(`  Exhausted Models Threshold: ${config.exhaustedModelsThreshold}`);
         this.logger.info(
             `  Immediate Switch Status Codes: ${
                 config.immediateSwitchStatusCodes.length > 0 ? config.immediateSwitchStatusCodes.join(", ") : "Disabled"
