@@ -50,7 +50,7 @@ describe("ModelUsageTracker", () => {
         expect(tracker2.getUsage(0, "gemini-2.5-pro")).toBe(1);
     });
 
-    test("getAccountUsageDetails calculates total and per-model usage with limits", () => {
+    test("getAccountUsageDetails calculates total and per-model usage with limits, omitting unused models", () => {
         const tracker = new ModelUsageTracker(null, testFilePath);
         tracker.recordUsage(0, "gemini-2.5-flash");
         tracker.recordUsage(0, "gemini-2.5-flash");
@@ -59,6 +59,7 @@ describe("ModelUsageTracker", () => {
         const modelList = [
             { dailyLimit: 1000, name: "models/gemini-2.5-flash" },
             { dailyLimit: 50, name: "models/gemini-2.5-pro" },
+            { dailyLimit: 200, name: "models/gemini-2.5-flash-lite" },
         ];
 
         const details = tracker.getAccountUsageDetails(0, modelList);
@@ -66,5 +67,6 @@ describe("ModelUsageTracker", () => {
         expect(details.total).toBe(3);
         expect(details.byModel["gemini-2.5-flash"]).toEqual({ limit: 1000, usage: 2 });
         expect(details.byModel["gemini-2.5-pro"]).toEqual({ limit: 50, usage: 1 });
+        expect(details.byModel["gemini-2.5-flash-lite"]).toBeUndefined();
     });
 });

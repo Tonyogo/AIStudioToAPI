@@ -3512,6 +3512,7 @@ const formatAccount = (authIndex, accountName) => {
     return `#${authIndex} ${accountName || "N/A"}`;
 };
 const fetchUsageStats = async () => {
+    if (activeTab.value !== "stats") return;
     const res = await fetch("/api/usage-stats");
     if (res.redirected) {
         window.location.href = res.url;
@@ -3729,6 +3730,12 @@ const switchTab = tabName => {
     }
 
     activeTab.value = tabName;
+
+    if (tabName === "stats") {
+        fetchUsageStats().catch(err => {
+            console.error("Error fetching stats data:", err.message || err);
+        });
+    }
 
     if (tabName === "logs") {
         nextTick(() => {
@@ -5066,7 +5073,6 @@ onMounted(() => {
     statsFiltersMobileMediaQuery.addEventListener("change", syncStatsFiltersViewport);
 
     updateContent().finally(scheduleUpdate);
-    fetchUsageStats().finally(scheduleUpdate);
 
     // Check for updates once on initial load
     checkForUpdates();

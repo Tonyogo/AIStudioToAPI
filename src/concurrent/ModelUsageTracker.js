@@ -111,9 +111,11 @@ class ModelUsageTracker {
             if (!m || !m.name) continue;
             const cleanName = m.name.replace("models/", "");
             const usage = usageMap[cleanName] || 0;
-            const limit = typeof m.dailyLimit === "number" && m.dailyLimit > 0 ? m.dailyLimit : 1000;
-            byModel[cleanName] = { limit, usage };
-            totalUsage += usage;
+            if (usage > 0) {
+                const limit = typeof m.dailyLimit === "number" && m.dailyLimit > 0 ? m.dailyLimit : 1000;
+                byModel[cleanName] = { limit, usage };
+                totalUsage += usage;
+            }
         }
 
         return { byModel, total: totalUsage };
