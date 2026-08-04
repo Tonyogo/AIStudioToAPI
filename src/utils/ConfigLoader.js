@@ -59,7 +59,9 @@ class ConfigLoader {
         }
         if (process.env.EXHAUSTED_MODELS_THRESHOLD) {
             const parsed = parseInt(process.env.EXHAUSTED_MODELS_THRESHOLD, 10);
-            config.exhaustedModelsThreshold = Number.isFinite(parsed) ? Math.max(1, parsed) : config.exhaustedModelsThreshold;
+            config.exhaustedModelsThreshold = Number.isFinite(parsed)
+                ? Math.max(1, parsed)
+                : config.exhaustedModelsThreshold;
         }
         if (process.env.SWITCH_ON_USES) {
             const parsed = parseInt(process.env.SWITCH_ON_USES, 10);

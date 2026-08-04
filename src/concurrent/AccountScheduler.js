@@ -259,7 +259,10 @@ class AccountScheduler {
         if (this.getAccountStatus(authIndex) === "RETIRED") return false;
 
         let exhaustedCount = 0;
-        const modelList = Array.isArray(this.modelList) && this.modelList.length > 0 ? this.modelList : [{ name: "models/gemini-2.5-flash" }];
+        const modelList =
+            Array.isArray(this.modelList) && this.modelList.length > 0
+                ? this.modelList
+                : [{ name: "models/gemini-2.5-flash" }];
         for (const modelConfig of modelList) {
             if (!modelConfig || !modelConfig.name) continue;
             const cleanName = modelConfig.name.replace("models/", "");

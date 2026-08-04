@@ -440,7 +440,7 @@ describe("AccountScheduler", () => {
 
     test("checkAndRetireAccount retires account when model usage reaches dailyLimit", async () => {
         const mockModelTracker = {
-            getUsage: jest.fn((idx, model) => (idx === 0 ? 1000 : 0)),
+            getUsage: jest.fn(idx => (idx === 0 ? 1000 : 0)),
         };
         const mockBrowserManager = {
             closeContext: jest.fn().mockResolvedValue(),
