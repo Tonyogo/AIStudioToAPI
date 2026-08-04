@@ -3805,6 +3805,26 @@ const browserConnectedText = computed(() => {
     return state.browserConnected ? t("running") : t("disconnected");
 });
 
+function getConcurrentStatusTagType(status) {
+    switch (status) {
+        case "ACTIVATED":
+            return "success";
+        case "ACTIVATING":
+            return "primary";
+        case "INACTIVE":
+            return "info";
+        case "RETIRED":
+            return "danger";
+        default:
+            return "info";
+    }
+}
+
+function capitalize(str) {
+    if (!str || typeof str !== "string") return "";
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
 // Total scanned accounts count
 const totalScannedCount = computed(() => state.accountDetails.length);
 
