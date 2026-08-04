@@ -169,6 +169,16 @@ class ConcurrentRequestHandler {
     }
 
     /**
+     * Get account name for a given authIndex
+     * @param {number} authIndex
+     * @returns {string|null}
+     */
+    _getAccountName(authIndex) {
+        if (!Number.isInteger(authIndex) || authIndex < 0) return null;
+        return this.scheduler?.authSource?.accountNameMap?.get(authIndex) || null;
+    }
+
+    /**
      * Process image in response, converting inlineData to Markdown Data URL if present
      * @param {Object} chunk
      * @returns {Object}
@@ -205,6 +215,8 @@ class ConcurrentRequestHandler {
         const maxAttempts = 2;
         let attempt = 0;
         let lastError = null;
+        let successfulAuthIndex = null;
+        let lastAttemptAuthIndex = null;
 
         const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
         const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
@@ -212,12 +224,14 @@ class ConcurrentRequestHandler {
         this.usageStatsService?.startRequest(requestId, {
             apiFormat: "gemini",
             clientIp: req.ip || (req.headers && req.headers["x-forwarded-for"]) || null,
-            initialAuthIndex: null, // will be updated per attempt or set below
+            initialAccountName: null,
+            initialAuthIndex: null,
             isStreaming: isStream,
             method: req.method,
             model: cleanModelName,
             path: req.path,
             requestCategory: "generation",
+            streamMode: isStream ? "real" : null,
         });
 
         while (attempt < maxAttempts) {
@@ -225,6 +239,7 @@ class ConcurrentRequestHandler {
             let authIndex;
             try {
                 authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
+                lastAttemptAuthIndex = authIndex;
                 if (typeof this.scheduler.acquireInFlight === "function") {
                     this.scheduler.acquireInFlight(authIndex);
                 }
@@ -233,13 +248,18 @@ class ConcurrentRequestHandler {
                 break;
             }
 
+            const accountName = this._getAccountName(authIndex);
+            if (attempt === 1 && typeof this.usageStatsService?.updateRequest === "function") {
+                this.usageStatsService.updateRequest(requestId, {
+                    initialAccountName: accountName,
+                    initialAuthIndex: authIndex,
+                });
+            }
+
+            this.usageStatsService?.recordAttempt(requestId, authIndex, accountName);
+
             const requestAttemptId = `${requestId}_attempt_${attempt}_${Math.random().toString(36).substring(2, 8)}`;
             let isRequestCompleted = false;
-
-            this.usageStatsService?.recordAttempt(requestId, {
-                attemptNumber: attempt,
-                authIndex,
-            });
 
             if (typeof res.on === "function") {
                 res.on("close", () => {
@@ -377,6 +397,7 @@ class ConcurrentRequestHandler {
                     if (typeof this.scheduler.recordSuccess === "function") {
                         this.scheduler.recordSuccess(authIndex);
                     }
+                    successfulAuthIndex = authIndex;
                     lastError = null;
                     break;
                 }
@@ -404,7 +425,14 @@ class ConcurrentRequestHandler {
             });
         }
 
-        this.usageStatsService?.finishRequest(requestId, res, {
+        const finalAuthIndex =
+            successfulAuthIndex !== null ? successfulAuthIndex : lastError ? lastAttemptAuthIndex : null;
+        const finalAccountName = finalAuthIndex !== null ? this._getAccountName(finalAuthIndex) : null;
+
+        this.usageStatsService?.finishRequest(requestId, {
+            errorMessage: lastError ? lastError.message : null,
+            finalAccountName,
+            finalAuthIndex,
             outcome: lastError ? "error" : "success",
             statusCode: lastError ? lastError.statusCode || 500 : 200,
         });

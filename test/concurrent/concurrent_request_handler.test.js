@@ -441,6 +441,7 @@ describe("ConcurrentRequestHandler", () => {
             finishRequest: jest.fn(),
             recordAttempt: jest.fn(),
             startRequest: jest.fn(),
+            updateRequest: jest.fn(),
         };
         const mockWS = { send: jest.fn() };
         const mockQueue = {
@@ -472,9 +473,24 @@ describe("ConcurrentRequestHandler", () => {
 
         await handler.handleGeminiRequest(req, res);
 
-        expect(mockUsageStats.startRequest).toHaveBeenCalled();
-        expect(mockUsageStats.recordAttempt).toHaveBeenCalled();
-        expect(mockUsageStats.finishRequest).toHaveBeenCalled();
+        expect(mockUsageStats.startRequest).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                apiFormat: "gemini",
+                isStreaming: false,
+                model: "gemini-2.5-flash",
+                streamMode: null,
+            })
+        );
+        expect(mockUsageStats.recordAttempt).toHaveBeenCalledWith(expect.any(String), 0, null);
+        expect(mockUsageStats.finishRequest).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                finalAuthIndex: 0,
+                outcome: "success",
+                statusCode: 200,
+            })
+        );
     });
 
     test("handleGeminiRequest converts inline image data to Markdown in non-stream responses", async () => {
