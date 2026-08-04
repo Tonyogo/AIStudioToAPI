@@ -1,4 +1,11 @@
 {
+    "statusActivated": "已激活",
+    "statusActivating": "激活中",
+    "statusInactive": "未激活",
+    "statusRetired": "已退休",
+    "statusSuspended": "已隔离",
+    "todayUsage": "今日用量",
+    "modelUsageBreakdown": "模型用量明细",
     "aborted": "已中止",
     "account": "账号",
     "accountDedupConfirm": "将按同一邮箱保留最大 index 的 auth 文件并删除其余重复文件（前提：同一账号的多个 auth 按 index 递增生成，index 越大越新）。是否继续？",

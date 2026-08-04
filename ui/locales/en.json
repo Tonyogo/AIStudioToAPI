@@ -1,4 +1,11 @@
 {
+    "statusActivated": "Activated",
+    "statusActivating": "Activating",
+    "statusInactive": "Inactive",
+    "statusRetired": "Retired",
+    "statusSuspended": "Suspended",
+    "todayUsage": "Today Usage",
+    "modelUsageBreakdown": "Model Usage Breakdown",
     "aborted": "Aborted",
     "account": "Account",
     "accountDedupConfirm": "Deduplicate auth files by email, keeping the highest index and deleting other duplicates (assumes indices increase over time for the same account). Continue?",
