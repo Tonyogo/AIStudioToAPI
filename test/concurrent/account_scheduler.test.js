@@ -492,4 +492,32 @@ describe("AccountScheduler", () => {
         expect(retired).toBe(true);
         expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
     });
+
+    test("daily Beijing 15:00 cycle rollover resets retired accounts and clears failures", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+
+        // Mock active cycle key as "2026-08-04_15:00"
+        scheduler.currentCycleKey = "2026-08-04_15:00";
+
+        // Set up RETIRED status, failure counts and suspension
+        scheduler.accountStatusMap.set(0, { lastActivatedAt: Date.now(), status: "RETIRED" });
+        scheduler.accountStatusMap.set(1, { lastActivatedAt: Date.now(), status: "ACTIVATED" });
+        scheduler.failureCountMap.set(0, 3);
+        scheduler.failureCountMap.set(1, 1);
+        scheduler.suspendedUntilMap.set(1, Date.now() + 60000);
+
+        // Force getBeijingCycleKey to return a new cycle key on next call
+        jest.spyOn(scheduler, "getBeijingCycleKey").mockReturnValue("2026-08-05_15:00");
+
+        // Calling getAccountStatus should trigger the rollover check
+        const status0 = scheduler.getAccountStatus(0);
+        expect(status0).toBe("INACTIVE"); // Account 0 retired -> inactive
+        expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED"); // Account 1 activated -> remains activated
+
+        // Failures and suspensions should be cleared
+        expect(scheduler.failureCountMap.get(0)).toBeUndefined();
+        expect(scheduler.failureCountMap.get(1)).toBeUndefined();
+        expect(scheduler.suspendedUntilMap.get(1)).toBeUndefined();
+        expect(scheduler.currentCycleKey).toBe("2026-08-05_15:00");
+    });
 });

@@ -39,6 +39,56 @@ class AccountScheduler {
         this.idleTimeoutMs = 300000;
         this.lastGlobalActivationAt = 0;
         this.activationCooldownMs = 30000;
+        this.currentCycleKey = this.getBeijingCycleKey();
+    }
+
+    /**
+     * Calculate Beijing 15:00 cycle key (YYYY-MM-DD_15:00)
+     * @param {Date} [nowDate]
+     * @returns {string}
+     */
+    getBeijingCycleKey(nowDate = new Date()) {
+        const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
+        const year = beijingTime.getUTCFullYear();
+        const day = beijingTime.getUTCDate();
+        const hours = beijingTime.getUTCHours();
+
+        const cycleDate = new Date(Date.UTC(year, beijingTime.getUTCMonth(), day));
+        if (hours < 15) {
+            cycleDate.setUTCDate(cycleDate.getUTCDate() - 1);
+        }
+
+        const cYear = cycleDate.getUTCFullYear();
+        const cMonth = String(cycleDate.getUTCMonth() + 1).padStart(2, "0");
+        const cDay = String(cycleDate.getUTCDate()).padStart(2, "0");
+
+        return `${cYear}-${cMonth}-${cDay}_15:00`;
+    }
+
+    /**
+     * Check if cycle key changed and reset account statuses and failure counts if needed
+     */
+    _checkAndResetCycle() {
+        const newKey = this.getBeijingCycleKey();
+        if (newKey !== this.currentCycleKey) {
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(
+                    `[AccountScheduler] Resetting account retirement cycle from ${this.currentCycleKey} to ${newKey}`
+                );
+            }
+            this.currentCycleKey = newKey;
+
+            for (const [authIndex, entry] of this.accountStatusMap.entries()) {
+                if (entry && entry.status === "RETIRED") {
+                    this.accountStatusMap.set(authIndex, {
+                        ...entry,
+                        status: "INACTIVE",
+                    });
+                }
+            }
+            this.failureCountMap.clear();
+            this.suspendedUntilMap.clear();
+        }
     }
 
     /**
@@ -114,6 +164,7 @@ class AccountScheduler {
      * @returns {string}
      */
     getAccountStatus(authIndex) {
+        this._checkAndResetCycle();
         const entry = this.accountStatusMap.get(authIndex);
         return entry ? entry.status : "INACTIVE";
     }
@@ -124,6 +175,7 @@ class AccountScheduler {
      * @param {string} status
      */
     setAccountStatus(authIndex, status) {
+        this._checkAndResetCycle();
         const existing = this.accountStatusMap.get(authIndex) || { lastActivatedAt: null, lastRequestAt: null };
         this.accountStatusMap.set(authIndex, {
             ...existing,
@@ -148,6 +200,7 @@ class AccountScheduler {
      * @param {number} statusCode
      */
     recordFailure(authIndex, statusCode) {
+        this._checkAndResetCycle();
         if (authIndex === undefined || authIndex < 0) return;
         if (this.getAccountStatus(authIndex) === "RETIRED") return;
         const currentFailures = (this.failureCountMap.get(authIndex) || 0) + 1;
@@ -176,6 +229,7 @@ class AccountScheduler {
      * @param {number} authIndex
      */
     recordSuccess(authIndex) {
+        this._checkAndResetCycle();
         if (authIndex === undefined || authIndex < 0) return;
         this.failureCountMap.set(authIndex, 0);
     }
@@ -255,6 +309,7 @@ class AccountScheduler {
      * @returns {Promise<boolean>}
      */
     async checkAndRetireAccount(authIndex) {
+        this._checkAndResetCycle();
         if (authIndex === undefined || authIndex < 0) return false;
         if (this.getAccountStatus(authIndex) === "RETIRED") return false;
 
@@ -345,6 +400,7 @@ class AccountScheduler {
      * @throws {Error} If no connected authIndex is available
      */
     async getNextAuthIndex(modelName = null) {
+        this._checkAndResetCycle();
         this.lastSystemActivityAt = Date.now();
         const indices = this._getAccountIndices();
         if (indices.length === 0) {
