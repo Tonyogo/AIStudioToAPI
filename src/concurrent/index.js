@@ -57,6 +57,7 @@ function initConcurrentMode(app, system) {
 
     return {
         concurrentRequestHandler,
+        modelUsageTracker,
         scheduler,
     };
 }

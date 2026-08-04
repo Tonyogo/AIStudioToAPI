@@ -462,7 +462,7 @@ class ProxyServerSystem extends EventEmitter {
 
         // API routes
         const { initConcurrentMode } = require("../concurrent");
-        initConcurrentMode(app, this);
+        this.concurrentComponents = initConcurrentMode(app, this);
 
         app.get(["/v1/models"], (req, res) => {
             // OpenAI format

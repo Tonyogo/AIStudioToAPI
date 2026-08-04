@@ -827,12 +827,59 @@
                                         >
                                             {{ getAccountDisplayName(item) }}
                                         </span>
+
+                                        <template v-if="state.isConcurrentMode && item.concurrentStatus">
+                                            <el-tag
+                                                size="small"
+                                                :type="getConcurrentStatusTagType(item.concurrentStatus)"
+                                                class="status-tag"
+                                            >
+                                                {{ t("status" + capitalize(item.concurrentStatus)) }}
+                                                <span v-if="item.inFlight > 0" class="in-flight-badge"
+                                                    >({{ item.inFlight }})</span
+                                                >
+                                            </el-tag>
+
+                                            <el-tag
+                                                v-if="item.isSuspended"
+                                                size="small"
+                                                type="warning"
+                                                class="status-tag"
+                                                :title="t('statusSuspended')"
+                                            >
+                                                {{ t("statusSuspended") }}
+                                            </el-tag>
+                                        </template>
+
                                         <span v-if="item.index === state.currentAuthIndex" class="current-badge">
                                             {{ t("tagCurrent") }}
                                         </span>
                                         <span v-if="item.isExpired" class="expired-badge">
                                             {{ t("tagExpired") }}
                                         </span>
+
+                                        <template v-if="state.isConcurrentMode && item.usage">
+                                            <el-popover placement="top" :width="280" trigger="hover" effect="dark">
+                                                <template #reference>
+                                                    <el-tag size="small" type="info" class="usage-tag">
+                                                        {{ t("todayUsage") }}: {{ item.usage.total }}
+                                                    </el-tag>
+                                                </template>
+                                                <div class="usage-popover-content">
+                                                    <div class="popover-title">{{ t("modelUsageBreakdown") }}</div>
+                                                    <div
+                                                        v-for="(val, model) in item.usage.byModel"
+                                                        :key="model"
+                                                        class="popover-row"
+                                                    >
+                                                        <span class="model-name">{{ model }}</span>
+                                                        <span class="model-count"
+                                                            >{{ val.usage }} / {{ val.limit }}</span
+                                                        >
+                                                    </div>
+                                                </div>
+                                            </el-popover>
+                                        </template>
                                     </div>
                                 </el-tooltip>
                                 <div class="account-actions">
