@@ -962,7 +962,7 @@ class StatusRoutes {
     }
 
     _getStatusData() {
-        const { config, requestHandler, authSource, browserManager } = this.serverSystem;
+        const { config, requestHandler, authSource, browserManager, concurrentComponents } = this.serverSystem;
         const initialIndices = authSource.initialIndices || [];
         const invalidIndices = initialIndices.filter(i => !authSource.availableIndices.includes(i));
         const rotationIndices = authSource.getRotationIndices();
@@ -972,6 +972,11 @@ class StatusRoutes {
         const allLogs = this.logger.logBuffer || [];
         const displayLogs = allLogs.slice(-limit);
         const accountNameMap = authSource.accountNameMap;
+
+        const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true";
+        const scheduler = concurrentComponents?.scheduler;
+        const modelUsageTracker = concurrentComponents?.modelUsageTracker;
+
         const accountDetails = initialIndices.map(index => {
             const isInvalid = invalidIndices.includes(index);
             const name = isInvalid ? null : accountNameMap.get(index) || null;
@@ -983,7 +988,16 @@ class StatusRoutes {
 
             const hasContext = browserManager.contexts.has(index);
 
-            return { canonicalIndex, hasContext, index, isDuplicate, isExpired, isInvalid, isRotation, name };
+            const detail = { canonicalIndex, hasContext, index, isDuplicate, isExpired, isInvalid, isRotation, name };
+
+            if (isConcurrentMode) {
+                detail.concurrentStatus = scheduler ? scheduler.getAccountStatus(index) : "unknown";
+                detail.inFlight = scheduler ? scheduler.getInFlightCount(index) : 0;
+                detail.isSuspended = scheduler ? scheduler.isAccountSuspended(index) : false;
+                detail.usage = modelUsageTracker ? modelUsageTracker.getAccountUsageDetails(index) : null;
+            }
+
+            return detail;
         });
 
         const currentAuthIndex = requestHandler.currentAuthIndex;
@@ -999,41 +1013,47 @@ class StatusRoutes {
                 ? `${requestHandler.failureCount} / ${config.failureThreshold}`
                 : requestHandler.failureCount;
 
+        const statusObj = {
+            accountDetails,
+            activeContextsCount: browserManager.contexts.size,
+            apiKeySource: config.apiKeySource,
+            browserConnected: !!this.serverSystem.connectionRegistry.getConnectionByAuth(currentAuthIndex, false),
+            checkUpdate: config.checkUpdate,
+            currentAccountName,
+            currentAuthIndex,
+            debugMode: LoggingService.isDebugEnabled(),
+            duplicateIndicesRaw: duplicateIndices,
+            enableAuthUpdate: config.enableAuthUpdate,
+            expiredIndicesRaw: expiredIndices,
+            failureCount,
+            forceCodeExecution: config.forceCodeExecution,
+            forceThinking: config.forceThinking,
+            forceUrlContext: config.forceUrlContext,
+            forceWebSearch: config.forceWebSearch,
+            immediateSwitchStatusCodes:
+                config.immediateSwitchStatusCodes.length > 0
+                    ? `[${config.immediateSwitchStatusCodes.join(", ")}]`
+                    : "Disabled",
+            initialIndicesRaw: initialIndices,
+            invalidIndicesRaw: invalidIndices,
+            isSystemBusy: requestHandler.isSystemBusy,
+            logMaxCount: limit,
+            maxContexts: config.maxContexts,
+            maxRetries: config.maxRetries,
+            rotationIndicesRaw: rotationIndices,
+            safetySettingsThreshold: config.safetySettingsThreshold,
+            streamingMode: config.streamingMode,
+            usageCount,
+        };
+
+        if (isConcurrentMode) {
+            statusObj.isConcurrentMode = true;
+        }
+
         return {
             logCount: displayLogs.length,
             logs: displayLogs.join("\n"),
-            status: {
-                accountDetails,
-                activeContextsCount: browserManager.contexts.size,
-                apiKeySource: config.apiKeySource,
-                browserConnected: !!this.serverSystem.connectionRegistry.getConnectionByAuth(currentAuthIndex, false),
-                checkUpdate: config.checkUpdate,
-                currentAccountName,
-                currentAuthIndex,
-                debugMode: LoggingService.isDebugEnabled(),
-                duplicateIndicesRaw: duplicateIndices,
-                enableAuthUpdate: config.enableAuthUpdate,
-                expiredIndicesRaw: expiredIndices,
-                failureCount,
-                forceCodeExecution: config.forceCodeExecution,
-                forceThinking: config.forceThinking,
-                forceUrlContext: config.forceUrlContext,
-                forceWebSearch: config.forceWebSearch,
-                immediateSwitchStatusCodes:
-                    config.immediateSwitchStatusCodes.length > 0
-                        ? `[${config.immediateSwitchStatusCodes.join(", ")}]`
-                        : "Disabled",
-                initialIndicesRaw: initialIndices,
-                invalidIndicesRaw: invalidIndices,
-                isSystemBusy: requestHandler.isSystemBusy,
-                logMaxCount: limit,
-                maxContexts: config.maxContexts,
-                maxRetries: config.maxRetries,
-                rotationIndicesRaw: rotationIndices,
-                safetySettingsThreshold: config.safetySettingsThreshold,
-                streamingMode: config.streamingMode,
-                usageCount,
-            },
+            status: statusObj,
         };
     }
 }
