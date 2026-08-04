@@ -3759,6 +3759,7 @@ const state = reactive({
     forceUrlContextEnabled: false,
     forceWebSearchEnabled: false,
     hasUpdate: false,
+    isConcurrentMode: false,
     isSwitchingAccount: false,
     isSystemBusy: false,
     isUpdating: false,
@@ -4491,6 +4492,7 @@ const updateStatus = data => {
     state.forceUrlContextEnabled = isEnabled(data.status.forceUrlContext);
     state.debugModeEnabled = isEnabled(data.status.debugMode);
     state.currentAuthIndex = data.status.currentAuthIndex;
+    state.isConcurrentMode = isEnabled(data.status.isConcurrentMode);
     state.accountDetails = data.status.accountDetails || [];
     state.activeContextsCount = data.status.activeContextsCount || 0;
     state.maxContexts = data.status.maxContexts ?? 1;
