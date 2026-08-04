@@ -11,6 +11,7 @@ camoufox/
 
 # Temporary files
 tmp/
+tmp_test_data/
 
 # Config files
 configs/
