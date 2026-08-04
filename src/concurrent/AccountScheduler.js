@@ -11,6 +11,7 @@ class AccountScheduler {
      * @param {Object} [browserManager] - BrowserManager instance
      * @param {Object} [modelUsageTracker] - ModelUsageTracker instance
      * @param {Array} [modelList=[]] - List of configured models and their limits
+     * @param {Object} [config={}] - Configuration options including failureThreshold and exhaustedModelsThreshold
      */
     constructor(
         authSource,
@@ -18,7 +19,8 @@ class AccountScheduler {
         logger = console,
         browserManager = null,
         modelUsageTracker = null,
-        modelList = []
+        modelList = [],
+        config = {}
     ) {
         this.authSource = authSource;
         this.connectionRegistry = connectionRegistry;
@@ -26,6 +28,7 @@ class AccountScheduler {
         this.browserManager = browserManager;
         this.modelUsageTracker = modelUsageTracker;
         this.modelList = modelList;
+        this.config = config;
         this.currentIndex = 0;
         this.accountStatusMap = new Map();
         this.inFlightMap = new Map();
@@ -81,6 +84,7 @@ class AccountScheduler {
 
             const indices = this._getAccountIndices();
             for (const idx of indices) {
+                if (this.getAccountStatus(idx) === "RETIRED") continue;
                 if (this._hasConnection(idx) && this.getAccountStatus(idx) === "INACTIVE") {
                     if (this.logger && typeof this.logger.info === "function") {
                         this.logger.info(
@@ -145,6 +149,7 @@ class AccountScheduler {
      */
     recordFailure(authIndex, statusCode) {
         if (authIndex === undefined || authIndex < 0) return;
+        if (this.getAccountStatus(authIndex) === "RETIRED") return;
         const currentFailures = (this.failureCountMap.get(authIndex) || 0) + 1;
         this.failureCountMap.set(authIndex, currentFailures);
 
@@ -245,6 +250,92 @@ class AccountScheduler {
     }
 
     /**
+     * Check if account should be retired based on model daily limits or failure threshold
+     * @param {number} authIndex
+     * @returns {Promise<boolean>}
+     */
+    async checkAndRetireAccount(authIndex) {
+        if (authIndex === undefined || authIndex < 0) return false;
+        if (this.getAccountStatus(authIndex) === "RETIRED") return false;
+
+        let exhaustedCount = 0;
+        const modelList = Array.isArray(this.modelList) && this.modelList.length > 0 ? this.modelList : [{ name: "models/gemini-2.5-flash" }];
+        for (const modelConfig of modelList) {
+            if (!modelConfig || !modelConfig.name) continue;
+            const cleanName = modelConfig.name.replace("models/", "");
+            const limit = this.getModelDailyLimit(cleanName);
+            const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(authIndex, cleanName) : 0;
+            if (usage >= limit) {
+                exhaustedCount++;
+            }
+        }
+
+        const maxExhausted = this.config?.exhaustedModelsThreshold || 1;
+        const failureThreshold = this.config?.failureThreshold || 3;
+        const consecutiveFailures = this.failureCountMap.get(authIndex) || 0;
+
+        let shouldRetire = false;
+        let reason = "";
+
+        if (exhaustedCount >= maxExhausted) {
+            shouldRetire = true;
+            reason = `reached daily usage limit on ${exhaustedCount} model(s) (threshold: ${maxExhausted})`;
+        } else if (consecutiveFailures >= failureThreshold) {
+            shouldRetire = true;
+            reason = `reached ${consecutiveFailures} consecutive failures (threshold: ${failureThreshold})`;
+        }
+
+        if (shouldRetire) {
+            await this.retireAndReplaceAccount(authIndex, reason);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Retire an account, close its browser context, and activate a replacement account
+     * @param {number} authIndex
+     * @param {string} reason
+     * @returns {Promise<void>}
+     */
+    async retireAndReplaceAccount(authIndex, reason) {
+        if (this.logger && typeof this.logger.warn === "function") {
+            this.logger.warn(`[AccountScheduler] Retiring account #${authIndex}: ${reason}`);
+        }
+
+        this.setAccountStatus(authIndex, "RETIRED");
+        if (this.browserManager && typeof this.browserManager.closeContext === "function") {
+            try {
+                await this.browserManager.closeContext(authIndex);
+            } catch (e) {
+                if (this.logger && typeof this.logger.warn === "function") {
+                    this.logger.warn(`[AccountScheduler] Error closing retired context #${authIndex}: ${e.message}`);
+                }
+            }
+        }
+
+        const available = this._getAccountIndices();
+        for (const nextIdx of available) {
+            const status = this.getAccountStatus(nextIdx);
+            if (status !== "RETIRED" && status !== "ACTIVATED" && status !== "ACTIVATING") {
+                const canCooldown =
+                    this.lastGlobalActivationAt === 0 ||
+                    Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
+
+                if (canCooldown) {
+                    if (this.logger && typeof this.logger.info === "function") {
+                        this.logger.info(
+                            `[AccountScheduler] Loading new replacement account #${nextIdx} after retiring #${authIndex}...`
+                        );
+                    }
+                    await this.activateAccount(nextIdx);
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
      * Select next available authIndex using Round-Robin scheduling and model usage tracking
      * @param {string} [modelName=null] - Optional model name for least-used scheduling
      * @returns {Promise<number>} The selected authIndex
@@ -264,6 +355,7 @@ class AccountScheduler {
             const currentIdx = this.browserManager._currentAuthIndex;
             if (
                 currentIdx >= 0 &&
+                this.getAccountStatus(currentIdx) !== "RETIRED" &&
                 this._hasConnection(currentIdx) &&
                 this.getAccountStatus(currentIdx) === "INACTIVE"
             ) {
@@ -284,6 +376,9 @@ class AccountScheduler {
 
         for (let i = 0; i < total; i++) {
             const candidateIdx = indices[(this.currentIndex + i) % total];
+            if (this.getAccountStatus(candidateIdx) === "RETIRED") {
+                continue;
+            }
             if (this._hasConnection(candidateIdx)) {
                 if (this.isAccountSuspended(candidateIdx)) {
                     if (this.logger && typeof this.logger.debug === "function") {
@@ -454,6 +549,7 @@ class AccountScheduler {
      * @param {number} authIndex
      */
     markAccountActivated(authIndex) {
+        if (this.getAccountStatus(authIndex) === "RETIRED") return;
         this.setAccountStatus(authIndex, "ACTIVATED");
     }
 
@@ -462,6 +558,7 @@ class AccountScheduler {
      * @param {number} authIndex
      */
     markAccountInactive(authIndex) {
+        if (this.getAccountStatus(authIndex) === "RETIRED") return;
         this.setAccountStatus(authIndex, "INACTIVE");
     }
 
@@ -471,6 +568,7 @@ class AccountScheduler {
      * @returns {Promise<boolean>}
      */
     async activateAccount(authIndex) {
+        if (this.getAccountStatus(authIndex) === "RETIRED") return false;
         if (!this.browserManager) {
             if (this.logger && typeof this.logger.warn === "function") {
                 this.logger.warn(

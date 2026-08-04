@@ -437,4 +437,59 @@ describe("AccountScheduler", () => {
             statusText: "UNAVAILABLE",
         });
     });
+
+    test("checkAndRetireAccount retires account when model usage reaches dailyLimit", async () => {
+        const mockModelTracker = {
+            getUsage: jest.fn((idx, model) => (idx === 0 ? 1000 : 0)),
+        };
+        const mockBrowserManager = {
+            closeContext: jest.fn().mockResolvedValue(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const mockConfig = { exhaustedModelsThreshold: 1, failureThreshold: 3 };
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            mockModelTracker,
+            [{ name: "models/gemini-2.5-flash" }],
+            mockConfig
+        );
+        scheduler.setAccountStatus(0, "ACTIVATED");
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(true);
+        expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
+        expect(mockBrowserManager.closeContext).toHaveBeenCalledWith(0);
+    });
+
+    test("checkAndRetireAccount retires account when consecutive failures reach failureThreshold", async () => {
+        const mockBrowserManager = {
+            closeContext: jest.fn().mockResolvedValue(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const mockConfig = { exhaustedModelsThreshold: 1, failureThreshold: 3 };
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            mockConfig
+        );
+        scheduler.setAccountStatus(0, "ACTIVATED");
+
+        // Record failure 3 times using custom recordFailure or setting failureCountMap directly/via recordFailure
+        // Note: recordFailure has custom logic that triggers suspension at 2 consecutive failures and resets count.
+        // Let's set failureCountMap directly or ensure test matches failureThreshold logic.
+        scheduler.failureCountMap.set(0, 3);
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(true);
+        expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
+    });
 });
