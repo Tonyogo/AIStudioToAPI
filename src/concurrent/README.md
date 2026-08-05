@@ -1,7 +1,7 @@
 # 交接文档：轻量级多账号并发转发子系统 (src/concurrent)
 
-**更新日期:** 2026-08-04  
-**状态:** 已升级完成并已通过测试 (52/52 单元与集成测试全部通过，ESLint 0 Error)
+**更新日期:** 2026-08-05  
+**状态:** 已升级完成并已通过测试 (54/54 单元与集成测试全部通过，ESLint 0 Error)
 
 ---
 
@@ -12,10 +12,10 @@
 ### 核心功能
 
 - **多账号并发透传：** 允许多个客户端的流式 (Streaming) 或非流式 (Non-Streaming) 请求并行在不同的 Google 账号下执行，不存在全局阻塞。
-- **项目首发账号自动感知与 Baseline=2 保障：** 自动同步项目默认启动的账号（`currentAuthIndex`）为 `ACTIVATED`，并自动维护至少 2 个激活账号做并发底座。
+- **项目首发账号自动感知与 Baseline=MAX_CONTEXTS 保障：** 自动同步项目默认启动的账号（`currentAuthIndex`）为 `ACTIVATED`，并自动维护 `MAX_CONTEXTS`（默认 1）个激活账号做并发底座。
 - **并发请求打散（Scatter Load Balancing）：** 优先挑选在途请求数 `inFlight == 0` 的空闲账号分发请求，把并发均匀平摊到不同账号上。
 - **最少用量优先（Least-Used Load Balancing）：** 根据每日按模型统计的用量，优先将请求调度给当前模型使用量最少的账号，实现均衡消耗。
-- **30s 全局激活冷却与主动扩容（Scale-Out）：** 两次账号激活之间严格保持 >= 30s 冷却，防止连续频繁切换；当所有已激活账号都在处理请求时，主动触发新账号激活扩容。
+- **30s 全局激活冷却：** 两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。
 - **账号下线退休与备用账号无缝替换 (Retirement & Replacement)：** 
   - 单模型默认每日上限 **1000 次** (`dailyLimit`)；
   - 当账号在 `exhaustedModelsThreshold` 个模型（默认 1 个）上达到限额，或连续失败达到 `failureThreshold`（默认 3 次，或单次 429）时，触发下线退休 (`RETIRED`)；
@@ -115,26 +115,22 @@ src/
      * inactiveCandidates: 在线未激活账号 (INACTIVE)
        │
        ▼
-4. 默认双账号底座维护 (Baseline = 2 Check)
-   - 若 activated 账号总数 < 2 且冷却满 30s 且有 inactiveCandidates:
-   - 触发激活第 2 个在线账号，加入 activatedFree 队列
+4. 双账号底座维护 (Baseline = MAX_CONTEXTS Check)
+   - 若 activated 账号总数 < maxContexts 且冷却满 30s 且有 inactiveCandidates:
+   - 触发激活新在线账号，加入 activatedFree 队列
        │
        ▼
 5. 阶段优先级调度选择（同阶段内按【用量 usage 升序优先 + Round-Robin 次之】排序）
    ├───► 阶段 1: 若 activatedFree 非空:
    │            按模型用量 (usage) 升序选出空闲账号 ──────────────────► [分发请求]
    │
-   ├───► 阶段 2: 主动并发扩容 (Scale-Out):
-   │            若已激活账号都在处理请求 (inFlight > 0) 且有 inactiveCandidates 且冷却满 30s:
-   │            主动激活第 3 个(或更多)账号 ─────────────────────────► [分发请求]
-   │
-   ├───► 阶段 3: 复用轻度繁忙账号:
+   ├───► 阶段 2: 复用轻度繁忙账号:
    │            分发给 activatedBusy (inFlight === 1) 中 usage 最小的账号 ───────► [分发请求]
    │
-   ├───► 阶段 4: 被动同步/降级激活:
-   │            若无可用 ACTIVATED 账号，同步激活 inactiveCandidates 中最少用量账号 ─► [分发请求]
+   ├───► 阶段 3: 被动同步/降级激活:
+   │            若无可用 ACTIVATED 账号且 activated 账号数 < maxContexts，同步激活 inactiveCandidates 中最少用量账号 ─► [分发请求]
    │
-   └───► 阶段 5: 极值判断与报错:
+   └───► 阶段 4: 极值判断与报错:
                 ├── 若在线账号均因用量超限 (usage >= dailyLimit):
                 │   └─► 抛出 HTTP 429 Error ("All accounts reached daily limit...")
                 ├── 若在线账号均满载 (inFlight >= 2):
