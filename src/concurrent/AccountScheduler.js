@@ -39,6 +39,7 @@ class AccountScheduler {
         this.idleTimeoutMs = 300000;
         this.lastGlobalActivationAt = 0;
         this.activationCooldownMs = 30000;
+        this.isActivatingAny = false;
         this.currentCycleKey = this.getBeijingCycleKey();
     }
 
@@ -628,6 +629,15 @@ class AccountScheduler {
             return false;
         }
 
+        if (this.isActivatingAny) {
+            if (this.logger && typeof this.logger.debug === "function") {
+                this.logger.debug(
+                    `[AccountScheduler] Skipping activation for account #${authIndex}: another account activation is currently in progress`
+                );
+            }
+            return false;
+        }
+
         const elapsed = Date.now() - this.lastGlobalActivationAt;
         if (this.lastGlobalActivationAt > 0 && elapsed < this.activationCooldownMs) {
             const remaining = Math.ceil((this.activationCooldownMs - elapsed) / 1000);
@@ -639,10 +649,11 @@ class AccountScheduler {
             return false;
         }
 
+        this.isActivatingAny = true;
+        this.lastGlobalActivationAt = Date.now();
         this.setAccountStatus(authIndex, "ACTIVATING");
         try {
             await this.browserManager.launchOrSwitchContext(authIndex);
-            this.lastGlobalActivationAt = Date.now();
             this.setAccountStatus(authIndex, "ACTIVATED");
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(`[AccountScheduler] Account #${authIndex} successfully activated via BrowserManager`);
@@ -654,6 +665,8 @@ class AccountScheduler {
                 this.logger.error(`[AccountScheduler] Failed to activate account #${authIndex}: ${error.message}`);
             }
             return false;
+        } finally {
+            this.isActivatingAny = false;
         }
     }
 }

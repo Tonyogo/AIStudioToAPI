@@ -260,6 +260,34 @@ describe("AccountScheduler", () => {
         );
     });
 
+    test("activateAccount prevents concurrent simultaneous activations using isActivatingAny lock", async () => {
+        let resolveActivation;
+        const slowActivationPromise = new Promise(resolve => {
+            resolveActivation = resolve;
+        });
+
+        const mockBrowserManager = {
+            launchOrSwitchContext: jest.fn().mockImplementation(() => slowActivationPromise),
+        };
+
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+
+        // First activation starts
+        const activation1 = scheduler.activateAccount(0);
+
+        // Second activation attempted concurrently before first completes
+        const activation2Result = await scheduler.activateAccount(1);
+
+        // Second activation should immediately be skipped (returns false)
+        expect(activation2Result).toBe(false);
+        expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledTimes(1);
+
+        // Resolve first activation
+        resolveActivation();
+        const activation1Result = await activation1;
+        expect(activation1Result).toBe(true);
+    });
+
     test("recordUsage delegates to modelUsageTracker", () => {
         const mockModelTracker = {
             recordUsage: jest.fn(),
