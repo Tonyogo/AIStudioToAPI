@@ -189,6 +189,36 @@ describe("ConcurrentRequestHandler", () => {
         expect(mockScheduler.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
     });
 
+    test("handleGeminiRequest parses model suffixes and injects thinkingLevel into req.body", async () => {
+        mockConnectionRegistry.sendRequest = jest.fn((authIndex, payload, cb) => {
+            cb({ candidates: [] }, true, false, { status: 200 });
+        });
+
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [{ parts: [{ text: "hi" }] }] },
+            method: "POST",
+            path: "/v1beta/models/gemini-3-flash-preview-minimal:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            setHeader: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-3-flash-preview");
+        expect(mockConnectionRegistry.sendRequest).toHaveBeenCalled();
+        const sendPayload = mockConnectionRegistry.sendRequest.mock.calls[0][1];
+        const parsedBody = JSON.parse(sendPayload.body);
+        expect(parsedBody.generationConfig.thinkingConfig.thinkingLevel).toBe("MINIMAL");
+    });
+
     describe("_sendRequestImpl integration", () => {
         test("binds _sendRequestImpl when connectionRegistry does not have sendRequest", () => {
             const minimalRegistry = {

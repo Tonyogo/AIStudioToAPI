@@ -211,7 +211,26 @@ class ConcurrentRequestHandler {
      * @param {Object} res - Express response object
      */
     async handleGeminiRequest(req, res) {
-        const cleanModelName = this._extractCleanModelName(req.path);
+        const FormatConverter = require("../core/FormatConverter");
+        const match = typeof req.path === "string" ? req.path.match(/\/models\/([^:/?]+)(?::|$)/) : null;
+        const rawModel = match ? match[1] : req.path;
+        const { cleanModelName: toolStripped } = FormatConverter.parseModelBuiltInToolSuffixes(rawModel);
+        const { cleanModelName: streamStripped } = FormatConverter.parseModelStreamingModeSuffix(toolStripped);
+        const { cleanModelName, thinkingLevel: modelThinkingLevel } =
+            FormatConverter.parseModelThinkingLevel(streamStripped);
+
+        if (req.method === "POST" && req.body && typeof req.body === "object") {
+            if (modelThinkingLevel) {
+                if (!req.body.generationConfig) {
+                    req.body.generationConfig = {};
+                }
+                if (!req.body.generationConfig.thinkingConfig) {
+                    req.body.generationConfig.thinkingConfig = {};
+                }
+                req.body.generationConfig.thinkingConfig.thinkingLevel = modelThinkingLevel;
+            }
+        }
+
         const maxAttempts = 2;
         let attempt = 0;
         let lastError = null;
