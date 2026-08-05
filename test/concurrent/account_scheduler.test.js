@@ -34,13 +34,21 @@ describe("AccountScheduler", () => {
         expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
     });
 
-    test("getNextAuthIndex proactively activates INACTIVE account when existing ACTIVATED accounts have inFlight > 0 and 30s cooldown is met", async () => {
+    test("getNextAuthIndex reuses lightly busy account when maxContexts limit is reached and does not proactively scale-out", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockBrowserManager = {
             _sendActiveTrigger: jest.fn(),
             launchOrSwitchContext: jest.fn().mockResolvedValue(),
         };
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            { maxContexts: 1 }
+        );
 
         // Account 0 is ACTIVATED and handling 1 request (inFlight = 1)
         scheduler.setAccountStatus(0, "ACTIVATED");
@@ -52,10 +60,10 @@ describe("AccountScheduler", () => {
         // Fast-forward cooldown so 30s has elapsed
         scheduler.lastGlobalActivationAt = Date.now() - 31000;
 
-        // Call getNextAuthIndex: should NOT re-use Account 0 (inFlight=1), but proactively activate Account 1
+        // Call getNextAuthIndex: should reuse Account 0 (inFlight=1) since maxContexts = 1 is reached
         const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
-        expect(selected).toBe(1);
-        expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
+        expect(selected).toBe(0);
+        expect(scheduler.getAccountStatus(1)).toBe("INACTIVE");
     });
 
     test("getNextAuthIndex automatically marks browserManager.currentAuthIndex as ACTIVATED", async () => {
@@ -75,14 +83,22 @@ describe("AccountScheduler", () => {
         expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
     });
 
-    test("getNextAuthIndex maintains baseline = 2 ACTIVATED accounts when 30s cooldown is met", async () => {
+    test("getNextAuthIndex maintains baseline ACTIVATED accounts up to maxContexts when 30s cooldown is met", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockBrowserManager = {
             _currentAuthIndex: 0,
             _sendActiveTrigger: jest.fn(),
             launchOrSwitchContext: jest.fn().mockResolvedValue(),
         };
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            { maxContexts: 2 }
+        );
 
         // Account 0 is ACTIVATED
         scheduler.setAccountStatus(0, "ACTIVATED");
@@ -91,7 +107,7 @@ describe("AccountScheduler", () => {
         // Fast-forward cooldown
         scheduler.lastGlobalActivationAt = Date.now() - 31000;
 
-        // Call getNextAuthIndex: only 1 ACTIVATED account exists (< 2). It should trigger baseline activation for Account 1!
+        // Call getNextAuthIndex: only 1 ACTIVATED account exists (< maxContexts=2). It should trigger baseline activation for Account 1!
         const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
         expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(1);
         expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");

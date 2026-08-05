@@ -92,6 +92,18 @@ class AccountScheduler {
     }
 
     /**
+     * Get maximum contexts limit from config (0 means unlimited)
+     * @returns {number}
+     */
+    getMaxContexts() {
+        const mc = this.config?.maxContexts;
+        if (typeof mc === "number" && mc >= 0) {
+            return mc === 0 ? Infinity : mc;
+        }
+        return 1;
+    }
+
+    /**
      * Get the configured daily limit for a specific model
      * @param {string} modelName - Model name
      * @returns {number} Daily limit or Infinity
@@ -493,14 +505,15 @@ class AccountScheduler {
         const totalActivated = activatedFree.length + activatedBusy.length;
         const canCooldown =
             this.lastGlobalActivationAt === 0 || Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
+        const maxContexts = this.getMaxContexts();
 
-        // Baseline = 2 Check: If activated count < 2 and inactive candidates exist and 30s cooldown met, trigger background baseline activation
-        if (totalActivated < 2 && inactiveCandidates.length > 0 && canCooldown) {
+        // Baseline Check: If activated count < maxContexts and inactive candidates exist and 30s cooldown met, trigger background baseline activation
+        if (totalActivated < maxContexts && inactiveCandidates.length > 0 && canCooldown) {
             inactiveCandidates.sort(usageSort);
             const baselineCandidate = inactiveCandidates.shift();
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
-                    `[AccountScheduler] Activated accounts count (${totalActivated}) < 2, activating authIndex #${baselineCandidate.idx} for baseline...`
+                    `[AccountScheduler] Activated accounts count (${totalActivated}) < maxContexts (${maxContexts}), activating authIndex #${baselineCandidate.idx} for baseline...`
                 );
             }
             const activated = await this.activateAccount(baselineCandidate.idx);
@@ -524,29 +537,7 @@ class AccountScheduler {
             return selectedIdx;
         }
 
-        // Phase 2: Proactive Scale-Out: If all ACTIVATED accounts have inFlight > 0 and INACTIVE accounts exist, try activating one if 30s cooldown met
-        if (inactiveCandidates.length > 0 && canCooldown) {
-            inactiveCandidates.sort(usageSort);
-            for (const candidate of inactiveCandidates) {
-                if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(
-                        `[AccountScheduler] Proactively activating INACTIVE authIndex #${candidate.idx} to spread concurrent load...`
-                    );
-                }
-                const activated = await this.activateAccount(candidate.idx);
-                if (activated) {
-                    this.currentIndex = (this.currentIndex + candidate.order + 1) % total;
-                    if (this.logger && typeof this.logger.info === "function") {
-                        this.logger.info(
-                            `[AccountScheduler] Selected authIndex #${candidate.idx} for model="${modelName}" (Phase 2: Proactive Activated, inFlight=0, usage=${candidate.usage}/${limit})`
-                        );
-                    }
-                    return candidate.idx;
-                }
-            }
-        }
-
-        // Phase 3: Reuse a lightly-busy ACTIVATED account (inFlight === 1)
+        // Phase 2: Reuse a lightly-busy ACTIVATED account (inFlight === 1)
         if (activatedBusy.length > 0) {
             activatedBusy.sort(usageSort);
             const selectedIdx = activatedBusy[0].idx;
@@ -555,14 +546,14 @@ class AccountScheduler {
 
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
-                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 3: Lightly Busy, inFlight=1, usage=${activatedBusy[0].usage}/${limit})`
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 2: Lightly Busy, inFlight=1, usage=${activatedBusy[0].usage}/${limit})`
                 );
             }
             return selectedIdx;
         }
 
-        // Phase 4: Forced fallback activation (when no ACTIVATED accounts exist or all are capped at inFlight >= 2)
-        if (inactiveCandidates.length > 0) {
+        // Phase 3: Forced fallback activation (when no ACTIVATED accounts exist or activated count < maxContexts)
+        if (inactiveCandidates.length > 0 && totalActivated < maxContexts) {
             inactiveCandidates.sort(usageSort);
             for (const candidate of inactiveCandidates) {
                 if (this.logger && typeof this.logger.info === "function") {
@@ -573,7 +564,7 @@ class AccountScheduler {
                     this.currentIndex = (this.currentIndex + candidate.order + 1) % total;
                     if (this.logger && typeof this.logger.info === "function") {
                         this.logger.info(
-                            `[AccountScheduler] Selected authIndex #${candidate.idx} for model="${modelName}" (Phase 4: Fallback Activated, inFlight=0, usage=${candidate.usage}/${limit})`
+                            `[AccountScheduler] Selected authIndex #${candidate.idx} for model="${modelName}" (Phase 3: Fallback Activated, inFlight=0, usage=${candidate.usage}/${limit})`
                         );
                     }
                     return candidate.idx;
