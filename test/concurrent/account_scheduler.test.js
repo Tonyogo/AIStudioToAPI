@@ -564,4 +564,35 @@ describe("AccountScheduler", () => {
         expect(scheduler.suspendedUntilMap.get(1)).toBeUndefined();
         expect(scheduler.currentCycleKey).toBe("2026-08-05_15:00");
     });
+
+    test("getAccountStatus and getNextAuthIndex expire ACTIVATED account back to INACTIVE after 2 minutes if inFlight is 0", async () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+
+        // Activate account 0
+        scheduler.setAccountStatus(0, "ACTIVATED");
+
+        // Fast-forward lastActivatedAt by 125 seconds (exceeding 120s limit)
+        const entry = scheduler.accountStatusMap.get(0);
+        entry.lastActivatedAt = Date.now() - 125000;
+        scheduler.accountStatusMap.set(0, entry);
+
+        // Calling getAccountStatus should trigger auto-expiration since inFlight is 0
+        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+    });
+
+    test("getAccountStatus and getNextAuthIndex do NOT expire ACTIVATED account if it has in-flight requests", async () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+
+        // Activate account 0 and set inFlight = 1
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.acquireInFlight(0);
+
+        // Fast-forward lastActivatedAt by 125 seconds (exceeding 120s limit)
+        const entry = scheduler.accountStatusMap.get(0);
+        entry.lastActivatedAt = Date.now() - 125000;
+        scheduler.accountStatusMap.set(0, entry);
+
+        // Calling getAccountStatus should NOT expire it because in-flight count is > 0
+        expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+    });
 });

@@ -37,6 +37,7 @@ class AccountScheduler {
         this.maxInFlightPerAccount = 2;
         this.lastSystemActivityAt = 0;
         this.idleTimeoutMs = 300000;
+        this.activatedLifespanMs = 120000;
         this.lastGlobalActivationAt = 0;
         this.activationCooldownMs = 30000;
         this.isActivatingAny = false;
@@ -172,12 +173,36 @@ class AccountScheduler {
     }
 
     /**
+     * Automatically refresh all account statuses, expiring ACTIVATED accounts whose lifespan exceeded 2 mins
+     */
+    _refreshAccountStatuses() {
+        this._checkAndResetCycle();
+        const now = Date.now();
+        for (const [authIndex, entry] of this.accountStatusMap.entries()) {
+            if (entry && entry.status === "ACTIVATED") {
+                const elapsed = now - (entry.lastActivatedAt || 0);
+                if (elapsed >= this.activatedLifespanMs) {
+                    const inFlight = this.getInFlightCount(authIndex);
+                    if (inFlight === 0) {
+                        if (this.logger && typeof this.logger.info === "function") {
+                            this.logger.info(
+                                `[AccountScheduler] AuthIndex #${authIndex} activation expired back to INACTIVE (lifespan: ${Math.round(elapsed / 1000)}s)`
+                            );
+                        }
+                        this.setAccountStatus(authIndex, "INACTIVE");
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Get account status for given auth index
      * @param {number} authIndex
      * @returns {string}
      */
     getAccountStatus(authIndex) {
-        this._checkAndResetCycle();
+        this._refreshAccountStatuses();
         const entry = this.accountStatusMap.get(authIndex);
         return entry ? entry.status : "INACTIVE";
     }
@@ -413,7 +438,7 @@ class AccountScheduler {
      * @throws {Error} If no connected authIndex is available
      */
     async getNextAuthIndex(modelName = null) {
-        this._checkAndResetCycle();
+        this._refreshAccountStatuses();
         this.lastSystemActivityAt = Date.now();
         const indices = this._getAccountIndices();
         if (indices.length === 0) {
