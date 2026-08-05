@@ -202,7 +202,7 @@ class AccountScheduler {
      * @returns {string}
      */
     getAccountStatus(authIndex) {
-        this._refreshAccountStatuses();
+        this._checkAndResetCycle();
         const entry = this.accountStatusMap.get(authIndex);
         return entry ? entry.status : "INACTIVE";
     }

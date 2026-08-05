@@ -565,8 +565,12 @@ describe("AccountScheduler", () => {
         expect(scheduler.currentCycleKey).toBe("2026-08-05_15:00");
     });
 
-    test("getAccountStatus and getNextAuthIndex expire ACTIVATED account back to INACTIVE after 2 minutes if inFlight is 0", async () => {
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+    test("getNextAuthIndex expires ACTIVATED account back to INACTIVE after 2 minutes if inFlight is 0", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockBrowserManager = {
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
         // Activate account 0
         scheduler.setAccountStatus(0, "ACTIVATED");
@@ -576,8 +580,10 @@ describe("AccountScheduler", () => {
         entry.lastActivatedAt = Date.now() - 125000;
         scheduler.accountStatusMap.set(0, entry);
 
-        // Calling getAccountStatus should trigger auto-expiration since inFlight is 0
-        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+        // Calling getNextAuthIndex triggers _refreshAccountStatuses which expires account 0 to INACTIVE,
+        // and then activates it via fallback
+        await scheduler.getNextAuthIndex("gemini-2.5-flash");
+        expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(0);
     });
 
     test("getAccountStatus and getNextAuthIndex do NOT expire ACTIVATED account if it has in-flight requests", async () => {
