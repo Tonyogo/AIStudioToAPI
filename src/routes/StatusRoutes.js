@@ -994,7 +994,9 @@ class StatusRoutes {
                 detail.concurrentStatus = scheduler ? scheduler.getAccountStatus(index) : "unknown";
                 detail.inFlight = scheduler ? scheduler.getInFlightCount(index) : 0;
                 detail.isSuspended = scheduler ? scheduler.isAccountSuspended(index) : false;
-                detail.usage = modelUsageTracker ? modelUsageTracker.getAccountUsageDetails(index, config.modelList) : null;
+                detail.usage = modelUsageTracker
+                    ? modelUsageTracker.getAccountUsageDetails(index, config.modelList)
+                    : null;
             }
 
             return detail;
