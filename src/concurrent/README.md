@@ -15,7 +15,8 @@
 - **项目首发账号自动感知与 Baseline=MAX_CONTEXTS 保障：** 自动同步项目默认启动的账号（`currentAuthIndex`）为 `ACTIVATED`，并自动维护 `MAX_CONTEXTS`（默认 1）个激活账号做并发底座。
 - **并发请求打散（Scatter Load Balancing）：** 优先挑选在途请求数 `inFlight == 0` 的空闲账号分发请求，把并发均匀平摊到不同账号上。
 - **最少用量优先（Least-Used Load Balancing）：** 根据每日按模型统计的用量，优先将请求调度给当前模型使用量最少的账号，实现均衡消耗。
-- **30s 全局激活冷却：** 两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。
+- **30s 全局激活冷却与单次激活互斥锁 (Activation Lock & 30s Cooldown)：** 引入全局 `isActivatingAny` 互斥锁，严格防止并发请求同时触发多个账号并行激活；两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。
+- **2 分钟激活寿命自动到期 (Activation Auto-Expiration)：** 账号激活后默认具备 2 分钟寿命上限。每次在调度请求 (`getNextAuthIndex`) 入口处触发状态刷新，若已激活账号空闲 (`inFlight === 0`) 且激活时长超过 2 分钟，自动复位过期为 `INACTIVE`。
 - **账号下线退休与备用账号无缝替换 (Retirement & Replacement)：** 
   - 单模型默认每日上限 **1000 次** (`dailyLimit`)；
   - 当账号在 `exhaustedModelsThreshold` 个模型（默认 1 个）上达到限额，或连续失败达到 `failureThreshold`（默认 3 次，或单次 429）时，触发下线退休 (`RETIRED`)；
@@ -100,6 +101,7 @@ src/
        │
        ▼
 1. 北京 15:00 周期检查 (_checkAndResetCycle)
+   & 激活 2 分钟寿命到期自动检测 (_refreshAccountStatuses)
    & 刷新系统活跃时间 (lastSystemActivityAt = Date.now())
    & 自动同步 browserManager.currentAuthIndex 状态为 ACTIVATED
        │
