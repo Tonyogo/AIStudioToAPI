@@ -394,7 +394,7 @@ class AccountScheduler {
     }
 
     /**
-     * Retire an account, close its browser context, and activate a replacement account
+     * Retire an account, close its browser context, and trigger context pool rebalance
      * @param {number} authIndex
      * @param {string} reason
      * @returns {Promise<void>}
@@ -405,40 +405,27 @@ class AccountScheduler {
         }
 
         this.setAccountStatus(authIndex, "RETIRED");
-        if (this.browserManager && typeof this.browserManager.closeContext === "function") {
-            try {
-                await this.browserManager.closeContext(authIndex);
-            } catch (e) {
-                if (this.logger && typeof this.logger.warn === "function") {
-                    this.logger.warn(`[AccountScheduler] Error closing retired context #${authIndex}: ${e.message}`);
-                }
-            }
-        }
-
-        const tryActivateNext = async () => {
-            const available = this._getAccountIndices();
-            for (const nextIdx of available) {
-                const status = this.getAccountStatus(nextIdx);
-                if (status !== "RETIRED" && status !== "ACTIVATED" && status !== "ACTIVATING") {
-                    if (this.logger && typeof this.logger.info === "function") {
-                        this.logger.info(
-                            `[AccountScheduler] Loading new replacement account #${nextIdx} after retiring #${authIndex}...`
+        if (this.browserManager) {
+            if (typeof this.browserManager.closeContext === "function") {
+                try {
+                    await this.browserManager.closeContext(authIndex);
+                } catch (e) {
+                    if (this.logger && typeof this.logger.warn === "function") {
+                        this.logger.warn(
+                            `[AccountScheduler] Error closing retired context #${authIndex}: ${e.message}`
                         );
                     }
-                    const activated = await this.activateAccount(nextIdx, true);
-                    if (activated) {
-                        return true;
-                    }
                 }
             }
-            return false;
-        };
-
-        const success = await tryActivateNext();
-        if (!success) {
-            setTimeout(() => {
-                tryActivateNext().catch(() => {});
-            }, 2000);
+            if (typeof this.browserManager.rebalanceContextPool === "function") {
+                this.browserManager.rebalanceContextPool().catch(e => {
+                    if (this.logger && typeof this.logger.warn === "function") {
+                        this.logger.warn(
+                            `[AccountScheduler] Error rebalancing context pool after retiring #${authIndex}: ${e.message}`
+                        );
+                    }
+                });
+            }
         }
     }
 
@@ -635,10 +622,9 @@ class AccountScheduler {
     /**
      * Activate a specific account by authIndex using BrowserManager native switch
      * @param {number} authIndex
-     * @param {boolean} [forceCooldown=false] - Whether to bypass global 30s activation cooldown
      * @returns {Promise<boolean>}
      */
-    async activateAccount(authIndex, forceCooldown = false) {
+    async activateAccount(authIndex) {
         if (this.getAccountStatus(authIndex) === "RETIRED") return false;
         if (!this.browserManager) {
             if (this.logger && typeof this.logger.warn === "function") {
@@ -659,7 +645,7 @@ class AccountScheduler {
         }
 
         const elapsed = Date.now() - this.lastGlobalActivationAt;
-        if (!forceCooldown && this.lastGlobalActivationAt > 0 && elapsed < this.activationCooldownMs) {
+        if (this.lastGlobalActivationAt > 0 && elapsed < this.activationCooldownMs) {
             const remaining = Math.ceil((this.activationCooldownMs - elapsed) / 1000);
             if (this.logger && typeof this.logger.debug === "function") {
                 this.logger.debug(

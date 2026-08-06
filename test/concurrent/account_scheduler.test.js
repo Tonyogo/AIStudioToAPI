@@ -360,27 +360,22 @@ describe("AccountScheduler", () => {
         expect(selected).toBe(1);
     });
 
-    test("retireAndReplaceAccount bypasses 30s activation cooldown to launch replacement account", async () => {
+    test("retireAndReplaceAccount marks account RETIRED, calls closeContext, and triggers rebalanceContextPool", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockBrowserManager = {
             closeContext: jest.fn().mockResolvedValue(),
-            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+            rebalanceContextPool: jest.fn().mockResolvedValue(),
         };
 
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
-        // Simulate activation cooldown currently active (e.g. 5 seconds ago)
-        scheduler.lastGlobalActivationAt = Date.now() - 5000;
-
         scheduler.setAccountStatus(0, "ACTIVATED");
-        scheduler.setAccountStatus(1, "INACTIVE");
 
         await scheduler.retireAndReplaceAccount(0, "test retirement");
 
         expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
         expect(mockBrowserManager.closeContext).toHaveBeenCalledWith(0);
-        expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(1);
-        expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
+        expect(mockBrowserManager.rebalanceContextPool).toHaveBeenCalled();
     });
 
     test("activateAccount skips activation if 30s global cooldown has not elapsed", async () => {
