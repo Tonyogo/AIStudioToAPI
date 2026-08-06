@@ -18,11 +18,11 @@
 - **30s 全局激活冷却与单次激活互斥锁 (Activation Lock & 30s Cooldown)：** 引入全局 `isActivatingAny` 互斥锁，严格防止并发请求同时触发多个账号并行激活；两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。
 - **20秒隔离挂起时长（可配置）：** 遇到 HTTP 429 限流或连续 2 次 5xx 错误时，账号自动进入隔离期 (`suspendedUntilMap`)，默认 20 秒，可以通过环境变量 `CONCURRENT_SUSPENSION_DURATION_MS` 自定义。
 - **2 分钟激活寿命自动到期 (Activation Auto-Expiration)：** 账号激活后默认具备 2 分钟寿命上限。每次在调度请求 (`getNextAuthIndex`) 入口处触发状态刷新，若已激活账号空闲 (`inFlight === 0`) 且激活时长超过 2 分钟，自动复位过期为 `INACTIVE`。
-- **账号下线退休与备用账号无缝替换 (Retirement & Replacement)：** 
-  - 单模型默认每日上限 **1000 次** (`dailyLimit`)，仅用作触发下线退休与上线备用账号的依据，**不阻断线上调度**；
-  - 当账号在 `exhaustedModelsThreshold` 个模型（默认 1 个）上达到限额，或连续失败达到 `failureThreshold`（默认 3 次，或单次 429）时，触发下线退休 (`RETIRED`)；
-  - 自动调用 `browserManager.closeContext(authIndex)` 销毁 Context 释放约 **700MB 内存**；
-  - 自动绕过 30s 激活冷却，紧急拉起未上线的备用账号上线无缝替换；若遇到互斥锁，会自动进行 2s 延时重试保障 100% 拉起。
+- **账号下线退休与动态池平滑退载 (Retirement & Dynamic Rebalance)：** 
+  - 单模型默认每日上限 **1000 次** (`dailyLimit`)，仅用作判定下线降级与替换依据，**不阻断线上调度**；
+  - 当账号在 `exhaustedModelsThreshold` 个模型（默认 1 个）上达到限额，或连续失败达到 `failureThreshold`（默认 3 次，或单次 429）时，触发标记为降级退休 (`RETIRED`)；
+  - 自动触发并发池动态再平衡 (`rebalanceConcurrentPool`)，按【健康账号 (Usage 升序) > 退休账号 (Usage 升序)】构建优先级队列；
+  - **状态自动复位与平滑退载**：若降级选入 `MAX_CONTEXTS` 保底目标集，被选中的 `RETIRED` 账号在拉起前自动恢复为 `INACTIVE` 并清空失败计数；落在保底集外的 Context 由 BrowserManager 在空闲时优雅关闭释放约 **700MB 内存**。
 - **北京时间 15:00 自动重置与跨周期复苏：** 每日北京时间 15:00:00 (UTC+8) 自动归零模型用量，并同步将 `RETIRED` 状态账号复位为 `INACTIVE` 重启可用。
 - **全链路可观测性 (UsageStatsService) & 图像 Part 转 Markdown：** 完整上报请求与尝试节点数据给 UI 监控面板，并支持将 Gemini 生成的 Base64 图片自动转换为 Markdown Inline Data URL 展现。
 
@@ -69,9 +69,10 @@ src/
   - **首发账号同步：** 自动同步 `browserManager.currentAuthIndex` 为 `ACTIVATED`，绝不对默认启动账号重复执行激活。
   - **30s 激活冷却：** 维护 `lastGlobalActivationAt`，任意账号两次激活之间严格间隔 >= 30 秒。
   - **隔离挂起 (20秒)：** 遇到 HTTP 429 限流或连续 2 次 5xx 错误时，账号自动进入 20秒 隔离期 (`suspendedUntilMap`)。
-  - **退休与无缝替换 (`checkAndRetireAccount` & `retireAndReplaceAccount`)：**
+  - **退休与动态池再平衡 (`checkAndRetireAccount` & `retireAndReplaceAccount` & `rebalanceConcurrentPool`)：**
     - 检查在 N 个模型上达到每日配额（默认 1000 次），或连续失败达到 `failureThreshold`（默认 3 次）。
-    - 触发下线后标记为 `RETIRED`，关闭 Context 释放 700MB 内存，并自动从备用池寻找未激活账号启动激活。
+    - 触发下线后标记为 `RETIRED`，并触发动态池再平衡 `rebalanceConcurrentPool()`；
+    - 动态构建优先级队列，将 `RETIRED` 账号排在队尾。被保底选中的 `RETIRED` 账号自动恢复状态为 `INACTIVE` 并清空失败计数，超出容量的退休 Context 由 BrowserManager 在空闲时优雅关闭释放 700MB 内存。
   - **周期复苏 (`_checkAndResetCycle`)：** 在每日北京 15:00 周期跨越时，自动将所有 `RETIRED` 状态账号复位为 `INACTIVE` 并清空失败计数与挂起映射。
 - **完整调度流程 (`getNextAuthIndex(modelName)`)：**
   详见本文档 [第 3 节：完整调度流程](#3-完整调度流程详解)。
@@ -172,7 +173,7 @@ src/
 
 ## 5. 测试与验证
 
-本子系统配备了完整的自动化单元与集成测试（共 61 个测试用例全部通过，ESLint 检查 0 错误）：
+本子系统配备了完整的自动化单元与集成测试（共 63 个测试用例全部通过，ESLint 检查 0 错误）：
 
 - **测试文件列表：**
   - `test/concurrent/model_usage_tracker.test.js`：验证北京时间 15:00 周期计算、计数累加与磁盘持久化。
