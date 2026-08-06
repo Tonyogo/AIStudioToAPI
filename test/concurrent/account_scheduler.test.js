@@ -548,7 +548,7 @@ describe("AccountScheduler", () => {
         scheduler.accountStatusMap.set(1, { lastActivatedAt: Date.now(), status: "ACTIVATED" });
         scheduler.failureCountMap.set(0, 3);
         scheduler.failureCountMap.set(1, 1);
-        scheduler.suspendedUntilMap.set(1, Date.now() + 60000);
+        scheduler.suspendedUntilMap.set(1, Date.now() + 20000);
 
         // Force getBeijingCycleKey to return a new cycle key on next call
         jest.spyOn(scheduler, "getBeijingCycleKey").mockReturnValue("2026-08-05_15:00");

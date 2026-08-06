@@ -24,6 +24,7 @@ class ConfigLoader {
             apiKeySource: "Not set",
             browserExecutablePath: null,
             checkUpdate: true,
+            concurrentSuspensionDurationMs: 20000,
             enableAuthUpdate: true,
             enableUsageStats: true,
             exhaustedModelsThreshold: 1,
@@ -62,6 +63,12 @@ class ConfigLoader {
             config.exhaustedModelsThreshold = Number.isFinite(parsed)
                 ? Math.max(1, parsed)
                 : config.exhaustedModelsThreshold;
+        }
+        if (process.env.CONCURRENT_SUSPENSION_DURATION_MS) {
+            const parsed = parseInt(process.env.CONCURRENT_SUSPENSION_DURATION_MS, 10);
+            config.concurrentSuspensionDurationMs = Number.isFinite(parsed)
+                ? Math.max(0, parsed)
+                : config.concurrentSuspensionDurationMs;
         }
         if (process.env.SWITCH_ON_USES) {
             const parsed = parseInt(process.env.SWITCH_ON_USES, 10);
@@ -227,6 +234,7 @@ class ConfigLoader {
             }`
         );
         this.logger.info(`  Exhausted Models Threshold: ${config.exhaustedModelsThreshold}`);
+        this.logger.info(`  Concurrent Suspension Duration: ${config.concurrentSuspensionDurationMs}ms`);
         this.logger.info(
             `  Immediate Switch Status Codes: ${
                 config.immediateSwitchStatusCodes.length > 0 ? config.immediateSwitchStatusCodes.join(", ") : "Disabled"

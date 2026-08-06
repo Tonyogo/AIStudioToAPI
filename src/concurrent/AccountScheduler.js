@@ -41,6 +41,10 @@ class AccountScheduler {
         this.lastGlobalActivationAt = 0;
         this.activationCooldownMs = 30000;
         this.isActivatingAny = false;
+        this.suspensionDurationMs =
+            typeof config?.concurrentSuspensionDurationMs === "number" && config.concurrentSuspensionDurationMs >= 0
+                ? config.concurrentSuspensionDurationMs
+                : 20000;
         this.currentCycleKey = this.getBeijingCycleKey();
     }
 
@@ -244,19 +248,20 @@ class AccountScheduler {
         const currentFailures = (this.failureCountMap.get(authIndex) || 0) + 1;
         this.failureCountMap.set(authIndex, currentFailures);
 
+        const secondsStr = `${Math.round(this.suspensionDurationMs / 1000)} seconds`;
         if (statusCode === 429) {
-            this.suspendedUntilMap.set(authIndex, Date.now() + 60000);
+            this.suspendedUntilMap.set(authIndex, Date.now() + this.suspensionDurationMs);
             if (this.logger && typeof this.logger.warn === "function") {
                 this.logger.warn(
-                    `[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to HTTP 429 rate limit`
+                    `[AccountScheduler] AuthIndex #${authIndex} suspended for ${secondsStr} due to HTTP 429 rate limit`
                 );
             }
         } else if (currentFailures >= 2) {
-            this.suspendedUntilMap.set(authIndex, Date.now() + 60000);
+            this.suspendedUntilMap.set(authIndex, Date.now() + this.suspensionDurationMs);
             this.failureCountMap.set(authIndex, 0);
             if (this.logger && typeof this.logger.warn === "function") {
                 this.logger.warn(
-                    `[AccountScheduler] AuthIndex #${authIndex} suspended for 1 minute due to 2 consecutive failures`
+                    `[AccountScheduler] AuthIndex #${authIndex} suspended for ${secondsStr} due to 2 consecutive failures`
                 );
             }
         }
