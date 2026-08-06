@@ -394,39 +394,108 @@ class AccountScheduler {
     }
 
     /**
-     * Retire an account, close its browser context, and trigger context pool rebalance
+     * Rebalance concurrent context pool based on dynamic priorities and state restoration
+     */
+    async rebalanceConcurrentPool() {
+        if (!this.browserManager) return;
+
+        const maxContexts = this.getMaxContexts();
+        const isUnlimited = maxContexts === Infinity || maxContexts === 0;
+
+        const indices = this._getAccountIndices();
+
+        // 1. Filter out expired auth sources
+        const validIndices = indices.filter(idx => {
+            const isExpired =
+                this.authSource && typeof this.authSource.isExpired === "function"
+                    ? this.authSource.isExpired(idx)
+                    : false;
+            return !isExpired;
+        });
+
+        const healthy = [];
+        const retired = [];
+
+        for (const idx of validIndices) {
+            const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(idx) : 0;
+            const status = this.getAccountStatus(idx);
+            if (status === "RETIRED") {
+                retired.push({ idx, usage });
+            } else {
+                healthy.push({ idx, usage });
+            }
+        }
+
+        healthy.sort((a, b) => a.usage - b.usage);
+        retired.sort((a, b) => a.usage - b.usage);
+
+        // Dynamic priority queue: healthy first (least-used), RETIRED last (least-used)
+        const priorityQueue = [...healthy.map(h => h.idx), ...retired.map(r => r.idx)];
+
+        const targetIndices = isUnlimited ? priorityQueue : priorityQueue.slice(0, maxContexts);
+        const targets = new Set(targetIndices);
+
+        // Restore state for target candidates if currently RETIRED
+        for (const targetIdx of targetIndices) {
+            if (this.getAccountStatus(targetIdx) === "RETIRED") {
+                if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(
+                        `[AccountScheduler] Re-activating retired account #${targetIdx} back to INACTIVE as target candidate`
+                    );
+                }
+                this.setAccountStatus(targetIdx, "INACTIVE");
+                this.failureCountMap.set(targetIdx, 0);
+            }
+        }
+
+        // Close excess contexts not in targets
+        if (this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function") {
+            for (const activeIdx of this.browserManager.contexts.keys()) {
+                if (!targets.has(activeIdx)) {
+                    if (typeof this.browserManager._closeContextForPoolIfPossible === "function") {
+                        this.browserManager._closeContextForPoolIfPossible(activeIdx, "rebalance_retired");
+                    }
+                }
+            }
+        }
+
+        // Candidates: target indices not yet initialized in contexts Map
+        const activeContexts =
+            this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function"
+                ? new Set(this.browserManager.contexts.keys())
+                : new Set();
+        const candidates = targetIndices.filter(idx => !activeContexts.has(idx));
+
+        if (candidates.length > 0) {
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(
+                    `[AccountScheduler] Rebalancing concurrent pool: targets=[${[...targets]}], preloading candidates=[${candidates}]`
+                );
+            }
+            if (typeof this.browserManager._preloadBackgroundContexts === "function") {
+                this.browserManager._preloadBackgroundContexts(candidates, isUnlimited ? 0 : maxContexts);
+            }
+        }
+    }
+
+    /**
+     * Deprioritize an account to RETIRED status and trigger dynamic concurrent pool rebalance
      * @param {number} authIndex
      * @param {string} reason
      * @returns {Promise<void>}
      */
     async retireAndReplaceAccount(authIndex, reason) {
         if (this.logger && typeof this.logger.warn === "function") {
-            this.logger.warn(`[AccountScheduler] Retiring account #${authIndex}: ${reason}`);
+            this.logger.warn(`[AccountScheduler] Deprioritizing account #${authIndex} as RETIRED: ${reason}`);
         }
 
         this.setAccountStatus(authIndex, "RETIRED");
-        if (this.browserManager) {
-            if (typeof this.browserManager.closeContext === "function") {
-                try {
-                    await this.browserManager.closeContext(authIndex);
-                } catch (e) {
-                    if (this.logger && typeof this.logger.warn === "function") {
-                        this.logger.warn(
-                            `[AccountScheduler] Error closing retired context #${authIndex}: ${e.message}`
-                        );
-                    }
-                }
+
+        this.rebalanceConcurrentPool().catch(err => {
+            if (this.logger && typeof this.logger.error === "function") {
+                this.logger.error(`[AccountScheduler] Background rebalance failed after retirement: ${err.message}`);
             }
-            if (typeof this.browserManager.rebalanceContextPool === "function") {
-                this.browserManager.rebalanceContextPool().catch(e => {
-                    if (this.logger && typeof this.logger.warn === "function") {
-                        this.logger.warn(
-                            `[AccountScheduler] Error rebalancing context pool after retiring #${authIndex}: ${e.message}`
-                        );
-                    }
-                });
-            }
-        }
+        });
     }
 
     /**

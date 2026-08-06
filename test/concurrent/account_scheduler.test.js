@@ -360,22 +360,79 @@ describe("AccountScheduler", () => {
         expect(selected).toBe(1);
     });
 
-    test("retireAndReplaceAccount marks account RETIRED, calls closeContext, and triggers rebalanceContextPool", async () => {
-        mockConnectionRegistry.hasConnection.mockReturnValue(true);
-        const mockBrowserManager = {
-            closeContext: jest.fn().mockResolvedValue(),
-            rebalanceContextPool: jest.fn().mockResolvedValue(),
-        };
-
+    test("retireAndReplaceAccount marks account RETIRED and triggers rebalanceConcurrentPool", async () => {
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        jest.spyOn(scheduler, "rebalanceConcurrentPool").mockResolvedValue();
 
         scheduler.setAccountStatus(0, "ACTIVATED");
 
         await scheduler.retireAndReplaceAccount(0, "test retirement");
 
         expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
-        expect(mockBrowserManager.closeContext).toHaveBeenCalledWith(0);
-        expect(mockBrowserManager.rebalanceContextPool).toHaveBeenCalled();
+        expect(scheduler.rebalanceConcurrentPool).toHaveBeenCalled();
+    });
+
+    test("rebalanceConcurrentPool deprioritizes RETIRED accounts and restores state for target RETIRED candidates", async () => {
+        const mockBrowserManager = {
+            _closeContextForPoolIfPossible: jest.fn(),
+            _preloadBackgroundContexts: jest.fn(),
+            contexts: new Map([
+                [0, { page: {} }],
+                [1, { page: {} }],
+            ]),
+        };
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            { maxContexts: 2 }
+        );
+
+        // Account 0 is RETIRED, Account 1 & 2 are INACTIVE
+        scheduler.setAccountStatus(0, "RETIRED");
+        scheduler.failureCountMap.set(0, 3);
+        scheduler.setAccountStatus(1, "INACTIVE");
+        scheduler.setAccountStatus(2, "INACTIVE");
+
+        await scheduler.rebalanceConcurrentPool();
+
+        // Target pool should pick 1 & 2 (healthy) first, leaving 0 (RETIRED) out
+        // Context 0 should be closed via _closeContextForPoolIfPossible
+        expect(mockBrowserManager._closeContextForPoolIfPossible).toHaveBeenCalledWith(0, "rebalance_retired");
+        // Candidate 2 should be preloaded
+        expect(mockBrowserManager._preloadBackgroundContexts).toHaveBeenCalledWith([2], 2);
+    });
+
+    test("rebalanceConcurrentPool restores RETIRED account to INACTIVE when target pool requires it", async () => {
+        const mockBrowserManager = {
+            _closeContextForPoolIfPossible: jest.fn(),
+            _preloadBackgroundContexts: jest.fn(),
+            contexts: new Map(),
+        };
+
+        const scheduler = new AccountScheduler(
+            { availableIndices: [0] },
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            { maxContexts: 1 }
+        );
+
+        scheduler.setAccountStatus(0, "RETIRED");
+        scheduler.failureCountMap.set(0, 3);
+
+        await scheduler.rebalanceConcurrentPool();
+
+        // Account 0 is the only account available, so it is picked as target and restored to INACTIVE
+        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+        expect(scheduler.failureCountMap.get(0)).toBe(0);
+        expect(mockBrowserManager._preloadBackgroundContexts).toHaveBeenCalledWith([0], 1);
     });
 
     test("activateAccount skips activation if 30s global cooldown has not elapsed", async () => {
@@ -499,7 +556,6 @@ describe("AccountScheduler", () => {
         const retired = await scheduler.checkAndRetireAccount(0);
         expect(retired).toBe(true);
         expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
-        expect(mockBrowserManager.closeContext).toHaveBeenCalledWith(0);
     });
 
     test("checkAndRetireAccount retires account when consecutive failures reach failureThreshold", async () => {
