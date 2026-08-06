@@ -335,13 +335,13 @@ describe("AccountScheduler", () => {
         expect(scheduler.getModelDailyLimit("unknown-model")).toBe(1000);
     });
 
-    test("getNextAuthIndex skips accounts that reached dailyLimit", async () => {
+    test("getNextAuthIndex selects least used account even when dailyLimit is reached", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockModelList = [{ dailyLimit: 5, name: "models/gemini-2.5-pro" }];
         const mockModelTracker = {
             getUsage: jest.fn(idx => {
-                if (idx === 0) return 5; // Account 0 reached limit
-                return 2; // Account 1 has 2 uses
+                if (idx === 0) return 10;
+                return 5;
             }),
         };
 
@@ -360,29 +360,27 @@ describe("AccountScheduler", () => {
         expect(selected).toBe(1);
     });
 
-    test("getNextAuthIndex throws 429 when all online accounts reach dailyLimit", async () => {
+    test("retireAndReplaceAccount bypasses 30s activation cooldown to launch replacement account", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
-        const mockModelList = [{ dailyLimit: 5, name: "models/gemini-2.5-pro" }];
-        const mockModelTracker = {
-            getUsage: jest.fn(() => 5), // All accounts reached limit
+        const mockBrowserManager = {
+            closeContext: jest.fn().mockResolvedValue(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
         };
 
-        const scheduler = new AccountScheduler(
-            mockAuthSource,
-            mockConnectionRegistry,
-            mockLogger,
-            null,
-            mockModelTracker,
-            mockModelList
-        );
-        scheduler.setAccountStatus(0, "ACTIVATED");
-        scheduler.setAccountStatus(1, "ACTIVATED");
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
 
-        await expect(scheduler.getNextAuthIndex("gemini-2.5-pro")).rejects.toMatchObject({
-            message: expect.stringContaining("All accounts reached daily limit"),
-            statusCode: 429,
-            statusText: "RESOURCE_EXHAUSTED",
-        });
+        // Simulate activation cooldown currently active (e.g. 5 seconds ago)
+        scheduler.lastGlobalActivationAt = Date.now() - 5000;
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "INACTIVE");
+
+        await scheduler.retireAndReplaceAccount(0, "test retirement");
+
+        expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
+        expect(mockBrowserManager.closeContext).toHaveBeenCalledWith(0);
+        expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(1);
+        expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
     });
 
     test("activateAccount skips activation if 30s global cooldown has not elapsed", async () => {

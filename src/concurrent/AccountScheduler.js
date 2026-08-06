@@ -415,24 +415,30 @@ class AccountScheduler {
             }
         }
 
-        const available = this._getAccountIndices();
-        for (const nextIdx of available) {
-            const status = this.getAccountStatus(nextIdx);
-            if (status !== "RETIRED" && status !== "ACTIVATED" && status !== "ACTIVATING") {
-                const canCooldown =
-                    this.lastGlobalActivationAt === 0 ||
-                    Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
-
-                if (canCooldown) {
+        const tryActivateNext = async () => {
+            const available = this._getAccountIndices();
+            for (const nextIdx of available) {
+                const status = this.getAccountStatus(nextIdx);
+                if (status !== "RETIRED" && status !== "ACTIVATED" && status !== "ACTIVATING") {
                     if (this.logger && typeof this.logger.info === "function") {
                         this.logger.info(
                             `[AccountScheduler] Loading new replacement account #${nextIdx} after retiring #${authIndex}...`
                         );
                     }
-                    await this.activateAccount(nextIdx);
-                    break;
+                    const activated = await this.activateAccount(nextIdx, true);
+                    if (activated) {
+                        return true;
+                    }
                 }
             }
+            return false;
+        };
+
+        const success = await tryActivateNext();
+        if (!success) {
+            setTimeout(() => {
+                tryActivateNext().catch(() => {});
+            }, 2000);
         }
     }
 
@@ -469,7 +475,6 @@ class AccountScheduler {
         const total = indices.length;
 
         let onlineAccountCount = 0;
-        let cappedOnlineAccountCount = 0;
         let busyOnlineAccountCount = 0;
 
         const activatedFree = []; // inFlight === 0
@@ -492,15 +497,6 @@ class AccountScheduler {
                 }
                 onlineAccountCount++;
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
-                if (usage >= limit) {
-                    cappedOnlineAccountCount++;
-                    if (this.logger && typeof this.logger.debug === "function") {
-                        this.logger.debug(
-                            `[AccountScheduler] AuthIndex #${candidateIdx} skipped: daily limit reached (${usage}/${limit}) for model="${modelName}"`
-                        );
-                    }
-                    continue;
-                }
                 const inFlight = this.getInFlightCount(candidateIdx);
                 if (inFlight >= this.maxInFlightPerAccount) {
                     busyOnlineAccountCount++;
@@ -604,14 +600,7 @@ class AccountScheduler {
         }
 
         // Error classification
-        if (onlineAccountCount > 0 && cappedOnlineAccountCount >= onlineAccountCount) {
-            const error = new Error(`All accounts reached daily limit of ${limit} requests for model "${modelName}"`);
-            error.statusCode = 429;
-            error.statusText = "RESOURCE_EXHAUSTED";
-            throw error;
-        }
-
-        if (onlineAccountCount > 0 && busyOnlineAccountCount + cappedOnlineAccountCount >= onlineAccountCount) {
+        if (onlineAccountCount > 0 && busyOnlineAccountCount >= onlineAccountCount) {
             const error = new Error(
                 `All available accounts are busy at maximum concurrency limit (${this.maxInFlightPerAccount}/${this.maxInFlightPerAccount})`
             );
@@ -646,9 +635,10 @@ class AccountScheduler {
     /**
      * Activate a specific account by authIndex using BrowserManager native switch
      * @param {number} authIndex
+     * @param {boolean} [forceCooldown=false] - Whether to bypass global 30s activation cooldown
      * @returns {Promise<boolean>}
      */
-    async activateAccount(authIndex) {
+    async activateAccount(authIndex, forceCooldown = false) {
         if (this.getAccountStatus(authIndex) === "RETIRED") return false;
         if (!this.browserManager) {
             if (this.logger && typeof this.logger.warn === "function") {
@@ -669,7 +659,7 @@ class AccountScheduler {
         }
 
         const elapsed = Date.now() - this.lastGlobalActivationAt;
-        if (this.lastGlobalActivationAt > 0 && elapsed < this.activationCooldownMs) {
+        if (!forceCooldown && this.lastGlobalActivationAt > 0 && elapsed < this.activationCooldownMs) {
             const remaining = Math.ceil((this.activationCooldownMs - elapsed) / 1000);
             if (this.logger && typeof this.logger.debug === "function") {
                 this.logger.debug(
