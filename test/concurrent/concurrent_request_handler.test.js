@@ -426,36 +426,15 @@ describe("ConcurrentRequestHandler", () => {
         expect(minimalRegistry.removeMessageQueue).toHaveBeenCalledWith(expect.any(String), "client_disconnect");
     });
 
-    test("handleGeminiRequest seamlessly retries on a different account when attempt 1 fails before headersSent", async () => {
-        const mockWS1 = { send: jest.fn() };
-        const mockQueue1 = {
-            dequeue: jest.fn().mockResolvedValueOnce({ event_type: "error", message: "Account 0 failed", status: 500 }),
-        };
-        const mockWS2 = { send: jest.fn() };
-        const mockQueue2 = {
-            dequeue: jest
-                .fn()
-                .mockResolvedValueOnce({ data: '{"ok":true}', event_type: "chunk" })
-                .mockResolvedValueOnce({ type: "STREAM_END" }),
-        };
+    test("handleGeminiRequest does not retry across accounts on error and returns error directly", async () => {
+        mockConnectionRegistry.sendRequest = jest.fn((authIndex, payload, cb) => {
+            cb("Backend error", true, true, { status: 500 });
+        });
 
-        const minimalRegistry = {
-            createMessageQueue: jest.fn().mockReturnValueOnce(mockQueue1).mockReturnValueOnce(mockQueue2),
-            getConnectionByAuth: jest.fn().mockReturnValueOnce(mockWS1).mockReturnValueOnce(mockWS2),
-            removeMessageQueue: jest.fn(),
-            sendRequest: null,
-        };
-
-        mockScheduler.getNextAuthIndex = jest.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1);
-        mockScheduler.acquireInFlight = jest.fn();
-        mockScheduler.releaseInFlight = jest.fn();
-        mockScheduler.recordFailure = jest.fn();
-        mockScheduler.recordSuccess = jest.fn();
-
-        const handler = new ConcurrentRequestHandler(minimalRegistry, mockScheduler, mockLogger);
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
 
         const req = {
-            body: { contents: [] },
+            body: { contents: [{ parts: [{ text: "hi" }] }] },
             method: "POST",
             path: "/v1beta/models/gemini-2.5-flash:generateContent",
             query: {},
@@ -464,16 +443,22 @@ describe("ConcurrentRequestHandler", () => {
         const res = {
             headersSent: false,
             json: jest.fn(),
+            setHeader: jest.fn(),
             status: jest.fn().mockReturnThis(),
         };
 
         await handler.handleGeminiRequest(req, res);
 
-        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledTimes(2);
-        expect(mockScheduler.recordFailure).toHaveBeenCalledWith(0, 500);
-        expect(mockScheduler.recordSuccess).toHaveBeenCalledWith(1);
-        expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.json).toHaveBeenCalledWith({ ok: true });
+        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledTimes(1);
+        expect(mockConnectionRegistry.sendRequest).toHaveBeenCalledTimes(1);
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({
+            error: {
+                code: 500,
+                message: "Backend error",
+                status: "INTERNAL",
+            },
+        });
     });
 
     test("handleGeminiRequest tracks request lifecycle in usageStatsService", async () => {

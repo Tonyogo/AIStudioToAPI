@@ -210,11 +210,11 @@ class ConcurrentRequestHandler {
     }
 
     /**
-     * Process native Gemini API request
+     * Build normalized proxy request payload for native Gemini API requests
      * @param {Object} req - Express request object
-     * @param {Object} res - Express response object
+     * @returns {Object} Payload metadata and normalized request body
      */
-    async handleGeminiRequest(req, res) {
+    _buildProxyRequestPayload(req) {
         const FormatConverter = require("../core/FormatConverter");
         const config = this.scheduler?.config || {};
         const fullPath = req.path;
@@ -231,7 +231,6 @@ class ConcurrentRequestHandler {
         let modelForceCodeExecution = false;
         let modelForceWebSearch = false;
 
-        // Extract rawModel from path
         const match = typeof cleanPath === "string" ? cleanPath.match(/\/models\/([^:/?]+)(?::|$)/) : null;
         const rawModel = match ? match[1] : cleanPath;
 
@@ -258,7 +257,6 @@ class ConcurrentRequestHandler {
             }
         }
 
-        // Force thinking for native Google requests
         if (config.forceThinking && req.method === "POST" && bodyObj && bodyObj.contents) {
             if (!bodyObj.generationConfig) {
                 bodyObj.generationConfig = {};
@@ -279,7 +277,6 @@ class ConcurrentRequestHandler {
             }
         }
 
-        // Apply thinkingLevel from model name suffix (highest priority, direct override)
         if (modelThinkingLevel && req.method === "POST" && bodyObj && bodyObj.contents) {
             if (!bodyObj.generationConfig) {
                 bodyObj.generationConfig = {};
@@ -295,7 +292,6 @@ class ConcurrentRequestHandler {
             }
         }
 
-        // Pre-process native Google requests (thoughtSignature and sanitizeGeminiTools)
         if (req.method === "POST" && bodyObj) {
             if (bodyObj.contents) {
                 this.formatConverter.ensureThoughtSignature(bodyObj);
@@ -305,7 +301,6 @@ class ConcurrentRequestHandler {
             }
         }
 
-        // Rewrite embedContent to batchEmbedContents
         const embedContentMatch = cleanPath.match(/^\/(?:v1beta|v1)\/models\/([^:]+):embedContent$/);
         if (req.method === "POST" && embedContentMatch) {
             const modelName = embedContentMatch[1];
@@ -325,7 +320,6 @@ class ConcurrentRequestHandler {
             }
         }
 
-        // Force built-in tools for native Google requests
         if (
             (config.forceWebSearch ||
                 modelForceWebSearch ||
@@ -342,42 +336,27 @@ class ConcurrentRequestHandler {
 
             const toolsToAdd = [];
 
-            // Handle Google Search
             if (config.forceWebSearch || modelForceWebSearch) {
                 const hasSearch = FormatConverter.hasGeminiGoogleSearchTool(bodyObj.tools);
                 if (!hasSearch) {
                     bodyObj.tools.push({ googleSearch: {} });
                     toolsToAdd.push("googleSearch");
-                } else if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(
-                        `[Proxy] ✅ Client-provided web search detected, skipping force injection. (Google Native)`
-                    );
                 }
             }
 
-            // Handle URL Context
             if (config.forceUrlContext) {
                 const hasUrlContext = FormatConverter.hasGeminiUrlContextTool(bodyObj.tools);
                 if (!hasUrlContext) {
                     bodyObj.tools.push({ urlContext: {} });
                     toolsToAdd.push("urlContext");
-                } else if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(
-                        `[Proxy] ✅ Client-provided URL context detected, skipping force injection. (Google Native)`
-                    );
                 }
             }
 
-            // Handle Code Execution
             if (config.forceCodeExecution || modelForceCodeExecution) {
                 const hasCodeExecution = FormatConverter.hasGeminiCodeExecutionTool(bodyObj.tools);
                 if (!hasCodeExecution) {
                     bodyObj.tools.push({ codeExecution: {} });
                     toolsToAdd.push("codeExecution");
-                } else if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(
-                        `[Proxy] ✅ Client-provided code execution detected, skipping force injection. (Google Native)`
-                    );
                 }
             }
 
@@ -390,252 +369,252 @@ class ConcurrentRequestHandler {
 
         this.formatConverter.ensureServerSideToolInvocations(bodyObj, "[Proxy]");
 
-        // Apply safety settings for native Google requests
         if (req.method === "POST" && bodyObj && bodyObj.contents && !bodyObj.safetySettings) {
             bodyObj.safetySettings = this.formatConverter.getDefaultSafetySettings();
         }
 
-        const maxAttempts = 2;
-        let attempt = 0;
-        let lastError = null;
-        let successfulAuthIndex = null;
-        let lastAttemptAuthIndex = null;
-
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
         const isStream = cleanPath.includes("streamGenerateContent") || req.query.alt === "sse";
+
+        return {
+            cleanModelName,
+            cleanPath,
+            isStream,
+            modelStreamingMode,
+            requestBodyObj,
+            responseTransform,
+        };
+    }
+
+    /**
+     * Send response chunk to client with transform and image processing
+     */
+    _sendResponseChunk(res, chunk, isFinished, responseTransform, isStream, meta) {
+        if (responseTransform === "batchEmbedToEmbedContent" && chunk && typeof chunk === "object") {
+            if (Array.isArray(chunk.embeddings) && chunk.embeddings.length > 0) {
+                chunk = chunk.embeddings[0];
+            }
+        }
+
+        if (isStream) {
+            if (!res.headersSent) {
+                res.setHeader("Content-Type", "text/event-stream");
+                res.setHeader("Cache-Control", "no-cache");
+                res.setHeader("Connection", "keep-alive");
+                res.flushHeaders?.();
+            }
+            if (chunk) {
+                const dataStr = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
+                res.write(dataStr);
+            }
+            if (isFinished) {
+                res.end();
+            }
+        } else {
+            if (isFinished && !res.headersSent) {
+                const responseStatus = meta.status || 200;
+                if (meta.headers) {
+                    for (const [headerName, headerVal] of Object.entries(meta.headers)) {
+                        if (
+                            headerName.toLowerCase() !== "transfer-encoding" &&
+                            headerName.toLowerCase() !== "content-encoding"
+                        ) {
+                            res.setHeader(headerName, headerVal);
+                        }
+                    }
+                }
+                const processedChunk = this._processImageInResponse(chunk);
+                res.status(responseStatus).json(processedChunk);
+            }
+        }
+    }
+
+    /**
+     * Process native Gemini API request
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     */
+    async handleGeminiRequest(req, res) {
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        const payload = this._buildProxyRequestPayload(req);
+        const config = this.scheduler?.config || {};
 
         this.usageStatsService?.startRequest(requestId, {
             apiFormat: "gemini",
             clientIp: req.ip || (req.headers && req.headers["x-forwarded-for"]) || null,
             initialAccountName: null,
             initialAuthIndex: null,
-            isStreaming: isStream,
+            isStreaming: payload.isStream,
             method: req.method,
-            model: cleanModelName,
+            model: payload.cleanModelName,
             path: req.path,
             requestCategory: "generation",
-            streamMode: isStream ? "real" : null,
+            streamMode: payload.isStream ? "real" : null,
         });
 
-        while (attempt < maxAttempts) {
-            attempt++;
-            let authIndex;
-            try {
-                authIndex = await this.scheduler.getNextAuthIndex(cleanModelName);
-                lastAttemptAuthIndex = authIndex;
-                if (typeof this.scheduler.acquireInFlight === "function") {
-                    this.scheduler.acquireInFlight(authIndex);
-                }
-            } catch (err) {
-                lastError = err;
-                break;
+        let authIndex;
+        try {
+            authIndex = await this.scheduler.getNextAuthIndex(payload.cleanModelName);
+            if (typeof this.scheduler.acquireInFlight === "function") {
+                this.scheduler.acquireInFlight(authIndex);
             }
-
-            const accountName = this._getAccountName(authIndex);
-            if (attempt === 1 && typeof this.usageStatsService?.updateRequest === "function") {
-                this.usageStatsService.updateRequest(requestId, {
-                    initialAccountName: accountName,
-                    initialAuthIndex: authIndex,
-                });
-            }
-
-            this.usageStatsService?.recordAttempt(requestId, authIndex, accountName);
-
-            const requestAttemptId = `${requestId}_attempt_${attempt}_${Math.random().toString(36).substring(2, 8)}`;
-            let isRequestCompleted = false;
-
-            if (typeof res.on === "function") {
-                res.on("close", () => {
-                    if (!isRequestCompleted && !res.writableEnded) {
-                        const connection = this.connectionRegistry.getConnectionByAuth(authIndex);
-                        if (connection) {
-                            connection.send(
-                                JSON.stringify({
-                                    event_type: "cancel_request",
-                                    request_attempt_id: requestAttemptId,
-                                    request_id: requestId,
-                                })
-                            );
-                        }
-                        this.connectionRegistry.removeMessageQueue(requestId, "client_disconnect");
-                    }
-                });
-            }
-
-            try {
-                const requestBodyStr =
-                    req.method !== "GET" && requestBodyObj ? JSON.stringify(requestBodyObj) : undefined;
-
-                const requestPayload = {
-                    action: "generateContent",
-                    body: requestBodyStr,
-                    headers: req.headers,
-                    isStream,
-                    method: req.method,
-                    path: cleanPath,
-                    query: req.query,
-                    requestAttemptId,
-                    requestId,
-                    responseTransform,
-                    streamingMode: isStream ? modelStreamingMode || config.streamingMode || "real" : "fake",
-                };
-
-                if (typeof this.scheduler.recordUsage === "function" && cleanModelName) {
-                    this.scheduler.recordUsage(authIndex, cleanModelName);
-                }
-
-                let attemptError = null;
-
-                await this.connectionRegistry.sendRequest(
-                    authIndex,
-                    requestPayload,
-                    (chunk, isFinished, isError, meta = {}) => {
-                        // Convert batchEmbedContents response back to embedContent style
-                        if (
-                            requestPayload.responseTransform === "batchEmbedToEmbedContent" &&
-                            chunk &&
-                            typeof chunk === "object"
-                        ) {
-                            if (Array.isArray(chunk.embeddings) && chunk.embeddings.length > 0) {
-                                chunk = chunk.embeddings[0];
-                            }
-                        }
-
-                        if (isFinished || isError) {
-                            isRequestCompleted = true;
-                        }
-                        if (isError) {
-                            const responseStatus = meta.status || 500;
-                            const statusText =
-                                responseStatus === 429
-                                    ? "RESOURCE_EXHAUSTED"
-                                    : responseStatus === 400
-                                      ? "INVALID_ARGUMENT"
-                                      : responseStatus === 503
-                                        ? "UNAVAILABLE"
-                                        : "INTERNAL";
-
-                            attemptError = {
-                                message: chunk || "Internal Error",
-                                statusCode: responseStatus,
-                                statusText,
-                            };
-
-                            if (!res.headersSent) {
-                                if (attempt >= maxAttempts || attemptError.statusCode === 429) {
-                                    res.status(responseStatus).json({
-                                        error: {
-                                            code: responseStatus,
-                                            message: chunk || "Internal Error",
-                                            status: statusText,
-                                        },
-                                    });
-                                }
-                            } else if (isStream) {
-                                res.write(
-                                    `data: ${JSON.stringify({
-                                        error: {
-                                            code: responseStatus,
-                                            message: chunk || "Internal Error",
-                                            status: statusText,
-                                        },
-                                    })}\n\n`
-                                );
-                                res.end();
-                            }
-                            return;
-                        }
-
-                        if (isStream) {
-                            if (!res.headersSent) {
-                                res.setHeader("Content-Type", "text/event-stream");
-                                res.setHeader("Cache-Control", "no-cache");
-                                res.setHeader("Connection", "keep-alive");
-                                res.flushHeaders?.();
-                            }
-                            if (chunk) {
-                                const dataStr = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
-                                res.write(dataStr);
-                            }
-                            if (isFinished) {
-                                res.end();
-                            }
-                        } else {
-                            if (isFinished && !res.headersSent) {
-                                const responseStatus = meta.status || 200;
-                                if (meta.headers) {
-                                    for (const [headerName, headerVal] of Object.entries(meta.headers)) {
-                                        if (
-                                            headerName.toLowerCase() !== "transfer-encoding" &&
-                                            headerName.toLowerCase() !== "content-encoding"
-                                        ) {
-                                            res.setHeader(headerName, headerVal);
-                                        }
-                                    }
-                                }
-                                const processedChunk = this._processImageInResponse(chunk);
-                                res.status(responseStatus).json(processedChunk);
-                            }
-                        }
-                    }
-                );
-
-                isRequestCompleted = true;
-
-                if (attemptError) {
-                    if (typeof this.scheduler.recordFailure === "function") {
-                        this.scheduler.recordFailure(authIndex, attemptError.statusCode);
-                    }
-                    lastError = attemptError;
-                    if (res.headersSent || attemptError.statusCode === 429) {
-                        break;
-                    }
-                } else {
-                    if (typeof this.scheduler.recordSuccess === "function") {
-                        this.scheduler.recordSuccess(authIndex);
-                    }
-                    successfulAuthIndex = authIndex;
-                    lastError = null;
-                    break;
-                }
-            } catch (error) {
-                isRequestCompleted = true;
-                if (typeof this.scheduler.recordFailure === "function") {
-                    this.scheduler.recordFailure(authIndex, 500);
-                }
-                lastError = { message: error.message, statusCode: 500, statusText: "INTERNAL" };
-                if (res.headersSent) {
-                    break;
-                }
-            } finally {
-                if (typeof this.scheduler.releaseInFlight === "function") {
-                    this.scheduler.releaseInFlight(authIndex);
-                }
-                if (typeof this.scheduler.checkAndRetireAccount === "function" && authIndex !== undefined) {
-                    this.scheduler.checkAndRetireAccount(authIndex).catch(() => {});
-                }
-            }
-        }
-
-        if (lastError && !res.headersSent) {
-            const statusCode = lastError.statusCode || 503;
-            const statusText = lastError.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
-            res.status(statusCode).json({
-                error: { code: statusCode, message: lastError.message, status: statusText },
+        } catch (err) {
+            const statusCode = err.statusCode || 503;
+            const statusText = err.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
+            this.usageStatsService?.finishRequest(requestId, {
+                errorMessage: err.message,
+                finalAccountName: null,
+                finalAuthIndex: null,
+                outcome: "error",
+                statusCode,
+            });
+            return res.status(statusCode).json({
+                error: { code: statusCode, message: err.message, status: statusText },
             });
         }
 
-        const finalAuthIndex =
-            successfulAuthIndex !== null ? successfulAuthIndex : lastError ? lastAttemptAuthIndex : null;
-        const finalAccountName = finalAuthIndex !== null ? this._getAccountName(finalAuthIndex) : null;
+        const accountName = this._getAccountName(authIndex);
+        if (typeof this.usageStatsService?.updateRequest === "function") {
+            this.usageStatsService.updateRequest(requestId, {
+                initialAccountName: accountName,
+                initialAuthIndex: authIndex,
+            });
+        }
+        this.usageStatsService?.recordAttempt(requestId, authIndex, accountName);
 
-        this.usageStatsService?.finishRequest(requestId, {
-            errorMessage: lastError ? lastError.message : null,
-            finalAccountName,
-            finalAuthIndex,
-            outcome: lastError ? "error" : "success",
-            statusCode: lastError ? lastError.statusCode || 500 : 200,
-        });
+        const requestAttemptId = `${requestId}_attempt_1_${Math.random().toString(36).substring(2, 8)}`;
+        let isRequestCompleted = false;
+
+        if (typeof res.on === "function") {
+            res.on("close", () => {
+                if (!isRequestCompleted && !res.writableEnded) {
+                    const connection = this.connectionRegistry.getConnectionByAuth(authIndex);
+                    if (connection) {
+                        connection.send(
+                            JSON.stringify({
+                                event_type: "cancel_request",
+                                request_attempt_id: requestAttemptId,
+                                request_id: requestId,
+                            })
+                        );
+                    }
+                    this.connectionRegistry.removeMessageQueue(requestId, "client_disconnect");
+                }
+            });
+        }
+
+        let requestError = null;
+
+        try {
+            const requestBodyStr =
+                req.method !== "GET" && payload.requestBodyObj ? JSON.stringify(payload.requestBodyObj) : undefined;
+
+            const requestPayload = {
+                action: "generateContent",
+                body: requestBodyStr,
+                headers: req.headers,
+                isStream: payload.isStream,
+                method: req.method,
+                path: payload.cleanPath,
+                query: req.query,
+                requestAttemptId,
+                requestId,
+                responseTransform: payload.responseTransform,
+                streamingMode: payload.isStream ? payload.modelStreamingMode || config.streamingMode || "real" : "fake",
+            };
+
+            if (typeof this.scheduler.recordUsage === "function" && payload.cleanModelName) {
+                this.scheduler.recordUsage(authIndex, payload.cleanModelName);
+            }
+
+            await this.connectionRegistry.sendRequest(
+                authIndex,
+                requestPayload,
+                (chunk, isFinished, isError, meta = {}) => {
+                    if (isFinished || isError) {
+                        isRequestCompleted = true;
+                    }
+                    if (isError) {
+                        const responseStatus = meta.status || 500;
+                        const statusText =
+                            responseStatus === 429
+                                ? "RESOURCE_EXHAUSTED"
+                                : responseStatus === 400
+                                  ? "INVALID_ARGUMENT"
+                                  : responseStatus === 503
+                                    ? "UNAVAILABLE"
+                                    : "INTERNAL";
+
+                        requestError = {
+                            message: chunk || "Internal Error",
+                            statusCode: responseStatus,
+                            statusText,
+                        };
+
+                        if (!res.headersSent) {
+                            res.status(responseStatus).json({
+                                error: {
+                                    code: responseStatus,
+                                    message: chunk || "Internal Error",
+                                    status: statusText,
+                                },
+                            });
+                        } else if (payload.isStream) {
+                            res.write(
+                                `data: ${JSON.stringify({
+                                    error: {
+                                        code: responseStatus,
+                                        message: chunk || "Internal Error",
+                                        status: statusText,
+                                    },
+                                })}\n\n`
+                            );
+                            res.end();
+                        }
+                        return;
+                    }
+
+                    this._sendResponseChunk(res, chunk, isFinished, payload.responseTransform, payload.isStream, meta);
+                }
+            );
+
+            isRequestCompleted = true;
+
+            if (requestError) {
+                if (typeof this.scheduler.recordFailure === "function") {
+                    this.scheduler.recordFailure(authIndex, requestError.statusCode);
+                }
+            } else {
+                if (typeof this.scheduler.recordSuccess === "function") {
+                    this.scheduler.recordSuccess(authIndex);
+                }
+            }
+        } catch (error) {
+            isRequestCompleted = true;
+            if (typeof this.scheduler.recordFailure === "function") {
+                this.scheduler.recordFailure(authIndex, 500);
+            }
+            requestError = { message: error.message, statusCode: 500, statusText: "INTERNAL" };
+            if (!res.headersSent) {
+                res.status(500).json({
+                    error: { code: 500, message: error.message, status: "INTERNAL" },
+                });
+            }
+        } finally {
+            if (typeof this.scheduler.releaseInFlight === "function") {
+                this.scheduler.releaseInFlight(authIndex);
+            }
+            if (typeof this.scheduler.checkAndRetireAccount === "function" && authIndex !== undefined) {
+                this.scheduler.checkAndRetireAccount(authIndex).catch(() => {});
+            }
+
+            this.usageStatsService?.finishRequest(requestId, {
+                errorMessage: requestError ? requestError.message : null,
+                finalAccountName: accountName,
+                finalAuthIndex: authIndex,
+                outcome: requestError ? "error" : "success",
+                statusCode: requestError ? requestError.statusCode || 500 : 200,
+            });
+        }
     }
 }
 
