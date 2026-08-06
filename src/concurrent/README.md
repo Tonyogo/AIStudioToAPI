@@ -19,10 +19,10 @@
 - **20秒隔离挂起时长（可配置）：** 遇到 HTTP 429 限流或连续 2 次 5xx 错误时，账号自动进入隔离期 (`suspendedUntilMap`)，默认 20 秒，可以通过环境变量 `CONCURRENT_SUSPENSION_DURATION_MS` 自定义。
 - **2 分钟激活寿命自动到期 (Activation Auto-Expiration)：** 账号激活后默认具备 2 分钟寿命上限。每次在调度请求 (`getNextAuthIndex`) 入口处触发状态刷新，若已激活账号空闲 (`inFlight === 0`) 且激活时长超过 2 分钟，自动复位过期为 `INACTIVE`。
 - **账号下线退休与备用账号无缝替换 (Retirement & Replacement)：** 
-  - 单模型默认每日上限 **1000 次** (`dailyLimit`)；
+  - 单模型默认每日上限 **1000 次** (`dailyLimit`)，仅用作触发下线退休与上线备用账号的依据，**不阻断线上调度**；
   - 当账号在 `exhaustedModelsThreshold` 个模型（默认 1 个）上达到限额，或连续失败达到 `failureThreshold`（默认 3 次，或单次 429）时，触发下线退休 (`RETIRED`)；
   - 自动调用 `browserManager.closeContext(authIndex)` 销毁 Context 释放约 **700MB 内存**；
-  - 自动从未上线的备用账号池中激活新账号上线替换。
+  - 自动绕过 30s 激活冷却，紧急拉起未上线的备用账号上线无缝替换；若遇到互斥锁，会自动进行 2s 延时重试保障 100% 拉起。
 - **北京时间 15:00 自动重置与跨周期复苏：** 每日北京时间 15:00:00 (UTC+8) 自动归零模型用量，并同步将 `RETIRED` 状态账号复位为 `INACTIVE` 重启可用。
 - **全链路可观测性 (UsageStatsService) & 图像 Part 转 Markdown：** 完整上报请求与尝试节点数据给 UI 监控面板，并支持将 Gemini 生成的 Base64 图片自动转换为 Markdown Inline Data URL 展现。
 
@@ -111,7 +111,7 @@ src/
        │
        ▼
 3. 扫描在线 WebSocket 账号
-   - 过滤已 RETIRED / 处于 20秒挂起期 (isAccountSuspended) / 用量 >= dailyLimit / inFlight >= 2 的账号
+   - 过滤已 RETIRED / 处于 20秒挂起期 (isAccountSuspended) / inFlight >= 2 的账号（额度用尽不跳过，仍作为候选参与用量升序分发，请求完成后由 checkAndRetireAccount 触发下线与替换）
    - 分类收集候选集:
      * activatedFree:     已激活且绝对空闲 (inFlight === 0)
      * activatedBusy:     已激活但正在处理 1 个请求 (inFlight === 1)
@@ -134,8 +134,6 @@ src/
    │            若无可用 ACTIVATED 账号且 activated 账号数 < maxContexts，同步激活 inactiveCandidates 中最少用量账号 ─► [分发请求]
    │
    └───► 阶段 4: 极值判断与报错:
-                ├── 若在线账号均因用量超限 (usage >= dailyLimit):
-                │   └─► 抛出 HTTP 429 Error ("All accounts reached daily limit...")
                 ├── 若在线账号均满载 (inFlight >= 2):
                 │   └─► 抛出 HTTP 503 Error ("All available accounts are busy at maximum concurrency limit")
                 └── 无在线 WebSocket:
@@ -174,7 +172,7 @@ src/
 
 ## 5. 测试与验证
 
-本子系统配备了完整的自动化单元与集成测试（共 52 个测试用例全部通过，ESLint 检查 0 错误）：
+本子系统配备了完整的自动化单元与集成测试（共 61 个测试用例全部通过，ESLint 检查 0 错误）：
 
 - **测试文件列表：**
   - `test/concurrent/model_usage_tracker.test.js`：验证北京时间 15:00 周期计算、计数累加与磁盘持久化。
