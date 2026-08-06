@@ -189,7 +189,7 @@ describe("ConcurrentRequestHandler", () => {
         expect(mockScheduler.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
     });
 
-    test("handleGeminiRequest parses model suffixes and injects thinkingLevel into req.body", async () => {
+    test("handleGeminiRequest parses model suffixes and injects thinkingLevel into req.body and cleans path", async () => {
         mockConnectionRegistry.sendRequest = jest.fn((authIndex, payload, cb) => {
             cb({ candidates: [] }, true, false, { status: 200 });
         });
@@ -197,7 +197,7 @@ describe("ConcurrentRequestHandler", () => {
         const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
 
         const req = {
-            body: { contents: [{ parts: [{ text: "hi" }] }] },
+            body: { contents: [{ parts: [{ functionCall: { name: "test" }, text: "hi" }] }] },
             method: "POST",
             path: "/v1beta/models/gemini-3-flash-preview-minimal:generateContent",
             query: {},
@@ -215,8 +215,18 @@ describe("ConcurrentRequestHandler", () => {
         expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-3-flash-preview");
         expect(mockConnectionRegistry.sendRequest).toHaveBeenCalled();
         const sendPayload = mockConnectionRegistry.sendRequest.mock.calls[0][1];
+
+        // Assert that the cleanPath is stripped of thinkingLevel suffix
+        expect(sendPayload.path).toBe("/v1beta/models/gemini-3-flash-preview:generateContent");
+
         const parsedBody = JSON.parse(sendPayload.body);
         expect(parsedBody.generationConfig.thinkingConfig.thinkingLevel).toBe("MINIMAL");
+
+        // Assert that the thoughtSignature was properly ensured on functionCall
+        expect(parsedBody.contents[0].parts[0].thoughtSignature).toBeDefined();
+
+        // Assert default safety settings are set
+        expect(parsedBody.safetySettings).toBeDefined();
     });
 
     describe("_sendRequestImpl integration", () => {
@@ -619,5 +629,118 @@ describe("ConcurrentRequestHandler", () => {
                 },
             ],
         });
+    });
+
+    test("handleGeminiRequest rewrites embedContent to batchEmbedContents and converts back in callback", async () => {
+        const rawBatchEmbedResponse = {
+            embeddings: [
+                {
+                    values: [0.1, 0.2, 0.3],
+                },
+            ],
+        };
+
+        mockConnectionRegistry.sendRequest = jest.fn((authIndex, payload, cb) => {
+            cb(rawBatchEmbedResponse, true, false, { status: 200 });
+        });
+
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, mockScheduler, mockLogger);
+
+        const req = {
+            body: { content: { parts: [{ text: "embed me" }] } },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:embedContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash");
+        expect(mockConnectionRegistry.sendRequest).toHaveBeenCalled();
+        const sendPayload = mockConnectionRegistry.sendRequest.mock.calls[0][1];
+
+        expect(sendPayload.path).toBe("/v1beta/models/gemini-2.5-flash:batchEmbedContents");
+        expect(sendPayload.responseTransform).toBe("batchEmbedToEmbedContent");
+
+        const parsedBody = JSON.parse(sendPayload.body);
+        expect(parsedBody.requests[0].model).toBe("models/gemini-2.5-flash");
+
+        expect(res.json).toHaveBeenCalledWith({
+            values: [0.1, 0.2, 0.3],
+        });
+    });
+
+    test("handleGeminiRequest enforces forceThinking when configured", async () => {
+        mockConnectionRegistry.sendRequest = jest.fn((authIndex, payload, cb) => {
+            cb({ candidates: [] }, true, false, { status: 200 });
+        });
+
+        const localScheduler = {
+            ...mockScheduler,
+            config: { forceThinking: true },
+        };
+
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, localScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [{ parts: [{ text: "hi" }] }] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        const sendPayload = mockConnectionRegistry.sendRequest.mock.calls[0][1];
+        const parsedBody = JSON.parse(sendPayload.body);
+        expect(parsedBody.generationConfig.thinkingConfig.includeThoughts).toBe(true);
+    });
+
+    test("handleGeminiRequest forces built-in tools when configured or suffix specified", async () => {
+        mockConnectionRegistry.sendRequest = jest.fn((authIndex, payload, cb) => {
+            cb({ candidates: [] }, true, false, { status: 200 });
+        });
+
+        const localScheduler = {
+            ...mockScheduler,
+            config: { forceWebSearch: true },
+        };
+
+        const handler = new ConcurrentRequestHandler(mockConnectionRegistry, localScheduler, mockLogger);
+
+        const req = {
+            body: { contents: [{ parts: [{ text: "hi" }] }] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash-code:generateContent", // Suffix -code and forceWebSearch config
+            query: {},
+        };
+
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        const sendPayload = mockConnectionRegistry.sendRequest.mock.calls[0][1];
+        const parsedBody = JSON.parse(sendPayload.body);
+
+        // Should have both googleSearch and codeExecution tools
+        const tools = parsedBody.tools;
+        expect(tools).toContainEqual({ googleSearch: {} });
+        expect(tools).toContainEqual({ codeExecution: {} });
     });
 });

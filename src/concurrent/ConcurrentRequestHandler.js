@@ -17,6 +17,10 @@ class ConcurrentRequestHandler {
         this.modelList = modelList;
         this.usageStatsService = usageStatsService;
 
+        const FormatConverter = require("../core/FormatConverter");
+        const config = this.scheduler?.config || {};
+        this.formatConverter = new FormatConverter(this.logger, { config });
+
         if (this.connectionRegistry && typeof this.connectionRegistry.sendRequest !== "function") {
             this.connectionRegistry.sendRequest = this._sendRequestImpl.bind(this);
         }
@@ -58,7 +62,7 @@ class ConcurrentRequestHandler {
                 request_attempt_id: requestAttemptId,
                 request_attempt_number: 1,
                 request_id: requestId,
-                streaming_mode: requestPayload.isStream ? "real" : "fake",
+                streaming_mode: requestPayload.isStream ? requestPayload.streamingMode || "real" : "fake",
             };
 
             connection.send(JSON.stringify(payload));
@@ -212,23 +216,183 @@ class ConcurrentRequestHandler {
      */
     async handleGeminiRequest(req, res) {
         const FormatConverter = require("../core/FormatConverter");
-        const match = typeof req.path === "string" ? req.path.match(/\/models\/([^:/?]+)(?::|$)/) : null;
-        const rawModel = match ? match[1] : req.path;
-        const { cleanModelName: toolStripped } = FormatConverter.parseModelBuiltInToolSuffixes(rawModel);
-        const { cleanModelName: streamStripped } = FormatConverter.parseModelStreamingModeSuffix(toolStripped);
-        const { cleanModelName, thinkingLevel: modelThinkingLevel } =
+        const config = this.scheduler?.config || {};
+        const fullPath = req.path;
+        let cleanPath = fullPath.replace(/^\/proxy/, "");
+        const bodyObj = req.body;
+        let requestBodyObj = bodyObj;
+        let responseTransform = null;
+
+        const modelPathMatch = cleanPath.match(
+            /^(\/(?:v1beta|v1)\/models\/)([^:]+)(:(generateContent|streamGenerateContent).*)$/
+        );
+        let modelThinkingLevel = null;
+        let modelStreamingMode = null;
+        let modelForceCodeExecution = false;
+        let modelForceWebSearch = false;
+
+        // Extract rawModel from path
+        const match = typeof cleanPath === "string" ? cleanPath.match(/\/models\/([^:/?]+)(?::|$)/) : null;
+        const rawModel = match ? match[1] : cleanPath;
+
+        const {
+            cleanModelName: toolStripped,
+            forceCodeExecution: parsedForceCodeExecution,
+            forceWebSearch: parsedForceWebSearch,
+        } = FormatConverter.parseModelBuiltInToolSuffixes(rawModel);
+        const { cleanModelName: streamStripped, streamingMode: parsedStreamingMode } =
+            FormatConverter.parseModelStreamingModeSuffix(toolStripped);
+        const { cleanModelName, thinkingLevel: parsedThinkingLevel } =
             FormatConverter.parseModelThinkingLevel(streamStripped);
 
-        if (req.method === "POST" && req.body && typeof req.body === "object") {
-            if (modelThinkingLevel) {
-                if (!req.body.generationConfig) {
-                    req.body.generationConfig = {};
-                }
-                if (!req.body.generationConfig.thinkingConfig) {
-                    req.body.generationConfig.thinkingConfig = {};
-                }
-                req.body.generationConfig.thinkingConfig.thinkingLevel = modelThinkingLevel;
+        modelForceCodeExecution = parsedForceCodeExecution;
+        modelForceWebSearch = parsedForceWebSearch;
+        modelStreamingMode = parsedStreamingMode;
+        modelThinkingLevel = parsedThinkingLevel;
+
+        if (modelPathMatch) {
+            const pathPrefix = modelPathMatch[1];
+            const pathSuffix = modelPathMatch[3];
+            if (cleanModelName !== modelPathMatch[2]) {
+                cleanPath = `${pathPrefix}${cleanModelName}${pathSuffix}`;
             }
+        }
+
+        // Force thinking for native Google requests
+        if (config.forceThinking && req.method === "POST" && bodyObj && bodyObj.contents) {
+            if (!bodyObj.generationConfig) {
+                bodyObj.generationConfig = {};
+            }
+            if (
+                !bodyObj.generationConfig.thinkingConfig ||
+                bodyObj.generationConfig.thinkingConfig.includeThoughts === undefined
+            ) {
+                if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(
+                        `[Proxy] ⚠️ Force thinking enabled, setting includeThoughts=true. (Google Native)`
+                    );
+                }
+                bodyObj.generationConfig.thinkingConfig = {
+                    ...(bodyObj.generationConfig.thinkingConfig || {}),
+                    includeThoughts: true,
+                };
+            }
+        }
+
+        // Apply thinkingLevel from model name suffix (highest priority, direct override)
+        if (modelThinkingLevel && req.method === "POST" && bodyObj && bodyObj.contents) {
+            if (!bodyObj.generationConfig) {
+                bodyObj.generationConfig = {};
+            }
+            if (!bodyObj.generationConfig.thinkingConfig) {
+                bodyObj.generationConfig.thinkingConfig = {};
+            }
+            bodyObj.generationConfig.thinkingConfig.thinkingLevel = modelThinkingLevel;
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(
+                    `[Proxy] Applied thinkingLevel from model name suffix: ${modelThinkingLevel} (Google Native)`
+                );
+            }
+        }
+
+        // Pre-process native Google requests (thoughtSignature and sanitizeGeminiTools)
+        if (req.method === "POST" && bodyObj) {
+            if (bodyObj.contents) {
+                this.formatConverter.ensureThoughtSignature(bodyObj);
+            }
+            if (bodyObj.tools) {
+                this.formatConverter.sanitizeGeminiTools(bodyObj);
+            }
+        }
+
+        // Rewrite embedContent to batchEmbedContents
+        const embedContentMatch = cleanPath.match(/^\/(?:v1beta|v1)\/models\/([^:]+):embedContent$/);
+        if (req.method === "POST" && embedContentMatch) {
+            const modelName = embedContentMatch[1];
+            const version = cleanPath.startsWith("/v1/") ? "/v1" : "/v1beta";
+            cleanPath = `${version}/models/${modelName}:batchEmbedContents`;
+            requestBodyObj = {
+                requests: [
+                    {
+                        ...bodyObj,
+                        model: `models/${modelName}`,
+                    },
+                ],
+            };
+            responseTransform = "batchEmbedToEmbedContent";
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info(`[Proxy] Rewriting embedContent to batchEmbedContents for model "${modelName}".`);
+            }
+        }
+
+        // Force built-in tools for native Google requests
+        if (
+            (config.forceWebSearch ||
+                modelForceWebSearch ||
+                config.forceUrlContext ||
+                config.forceCodeExecution ||
+                modelForceCodeExecution) &&
+            req.method === "POST" &&
+            bodyObj &&
+            bodyObj.contents
+        ) {
+            if (!bodyObj.tools) {
+                bodyObj.tools = [];
+            }
+
+            const toolsToAdd = [];
+
+            // Handle Google Search
+            if (config.forceWebSearch || modelForceWebSearch) {
+                const hasSearch = FormatConverter.hasGeminiGoogleSearchTool(bodyObj.tools);
+                if (!hasSearch) {
+                    bodyObj.tools.push({ googleSearch: {} });
+                    toolsToAdd.push("googleSearch");
+                } else if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(
+                        `[Proxy] ✅ Client-provided web search detected, skipping force injection. (Google Native)`
+                    );
+                }
+            }
+
+            // Handle URL Context
+            if (config.forceUrlContext) {
+                const hasUrlContext = FormatConverter.hasGeminiUrlContextTool(bodyObj.tools);
+                if (!hasUrlContext) {
+                    bodyObj.tools.push({ urlContext: {} });
+                    toolsToAdd.push("urlContext");
+                } else if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(
+                        `[Proxy] ✅ Client-provided URL context detected, skipping force injection. (Google Native)`
+                    );
+                }
+            }
+
+            // Handle Code Execution
+            if (config.forceCodeExecution || modelForceCodeExecution) {
+                const hasCodeExecution = FormatConverter.hasGeminiCodeExecutionTool(bodyObj.tools);
+                if (!hasCodeExecution) {
+                    bodyObj.tools.push({ codeExecution: {} });
+                    toolsToAdd.push("codeExecution");
+                } else if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(
+                        `[Proxy] ✅ Client-provided code execution detected, skipping force injection. (Google Native)`
+                    );
+                }
+            }
+
+            if (toolsToAdd.length > 0 && this.logger && typeof this.logger.info === "function") {
+                this.logger.info(
+                    `[Proxy] ⚠️ Forcing tools enabled, injecting: [${toolsToAdd.join(", ")}] (Google Native)`
+                );
+            }
+        }
+
+        this.formatConverter.ensureServerSideToolInvocations(bodyObj, "[Proxy]");
+
+        // Apply safety settings for native Google requests
+        if (req.method === "POST" && bodyObj && bodyObj.contents && !bodyObj.safetySettings) {
+            bodyObj.safetySettings = this.formatConverter.getDefaultSafetySettings();
         }
 
         const maxAttempts = 2;
@@ -238,7 +402,7 @@ class ConcurrentRequestHandler {
         let lastAttemptAuthIndex = null;
 
         const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        const isStream = req.path.includes("streamGenerateContent") || req.query.alt === "sse";
+        const isStream = cleanPath.includes("streamGenerateContent") || req.query.alt === "sse";
 
         this.usageStatsService?.startRequest(requestId, {
             apiFormat: "gemini",
@@ -299,7 +463,8 @@ class ConcurrentRequestHandler {
             }
 
             try {
-                const requestBodyStr = req.method !== "GET" ? JSON.stringify(req.body) : undefined;
+                const requestBodyStr =
+                    req.method !== "GET" && requestBodyObj ? JSON.stringify(requestBodyObj) : undefined;
 
                 const requestPayload = {
                     action: "generateContent",
@@ -307,10 +472,12 @@ class ConcurrentRequestHandler {
                     headers: req.headers,
                     isStream,
                     method: req.method,
-                    path: req.path,
+                    path: cleanPath,
                     query: req.query,
                     requestAttemptId,
                     requestId,
+                    responseTransform,
+                    streamingMode: isStream ? modelStreamingMode || config.streamingMode || "real" : "fake",
                 };
 
                 if (typeof this.scheduler.recordUsage === "function" && cleanModelName) {
@@ -323,6 +490,17 @@ class ConcurrentRequestHandler {
                     authIndex,
                     requestPayload,
                     (chunk, isFinished, isError, meta = {}) => {
+                        // Convert batchEmbedContents response back to embedContent style
+                        if (
+                            requestPayload.responseTransform === "batchEmbedToEmbedContent" &&
+                            chunk &&
+                            typeof chunk === "object"
+                        ) {
+                            if (Array.isArray(chunk.embeddings) && chunk.embeddings.length > 0) {
+                                chunk = chunk.embeddings[0];
+                            }
+                        }
+
                         if (isFinished || isError) {
                             isRequestCompleted = true;
                         }
