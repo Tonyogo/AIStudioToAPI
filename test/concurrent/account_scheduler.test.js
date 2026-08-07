@@ -136,11 +136,15 @@ describe("AccountScheduler", () => {
         // Fast-forward cooldown
         scheduler.lastGlobalActivationAt = Date.now() - 31000;
 
+        jest.spyOn(Math, "random").mockReturnValue(0);
+
         // Call getNextAuthIndex: only 1 ACTIVATED account exists (< maxContexts=2). It should trigger baseline activation for Account 1!
         const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
         expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(1);
         expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED");
         expect(selected).toBe(0); // Free activated account 0 selected for this request
+
+        Math.random.mockRestore();
     });
 
     test("round-robin selects active connections sequentially", async () => {
@@ -152,10 +156,14 @@ describe("AccountScheduler", () => {
         scheduler.setAccountStatus(1, "ACTIVATED");
         scheduler.setAccountStatus(2, "ACTIVATED");
 
+        jest.spyOn(Math, "random").mockReturnValue(0);
+
         expect(await scheduler.getNextAuthIndex()).toBe(0);
         expect(await scheduler.getNextAuthIndex()).toBe(1);
         expect(await scheduler.getNextAuthIndex()).toBe(2);
         expect(await scheduler.getNextAuthIndex()).toBe(0);
+
+        Math.random.mockRestore();
     });
 
     test("skips disconnected auth indices during round-robin", async () => {
@@ -239,9 +247,13 @@ describe("AccountScheduler", () => {
         scheduler.setAccountStatus(0, "INACTIVE");
         scheduler.setAccountStatus(1, "INACTIVE");
 
+        jest.spyOn(Math, "random").mockReturnValue(0);
+
         const index = await scheduler.getNextAuthIndex();
         expect(index).toBe(0);
         expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+
+        Math.random.mockRestore();
     });
 
     test("isSystemActive returns false when idle for longer than idleTimeoutMs", () => {
@@ -280,6 +292,8 @@ describe("AccountScheduler", () => {
         scheduler.setAccountStatus(1, "ACTIVATED");
         scheduler.setAccountStatus(2, "ACTIVATED");
 
+        jest.spyOn(Math, "random").mockReturnValue(0.4);
+
         const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
         expect(selected).toBe(1);
         expect(mockLogger.info).toHaveBeenCalledWith(
@@ -287,6 +301,8 @@ describe("AccountScheduler", () => {
                 '[AccountScheduler] Selected authIndex #1 for model="gemini-2.5-pro" (Phase 1: Free Activated, inFlight=0, usage=1/'
             )
         );
+
+        Math.random.mockRestore();
     });
 
     test("activateAccount prevents concurrent simultaneous activations using isActivatingAny lock", async () => {
@@ -385,8 +401,12 @@ describe("AccountScheduler", () => {
         scheduler.setAccountStatus(0, "ACTIVATED");
         scheduler.setAccountStatus(1, "ACTIVATED");
 
+        jest.spyOn(Math, "random").mockReturnValue(0.6);
+
         const selected = await scheduler.getNextAuthIndex("gemini-2.5-pro");
         expect(selected).toBe(1);
+
+        Math.random.mockRestore();
     });
 
     test("retireAndReplaceAccount marks account RETIRED and triggers rebalanceConcurrentPool", async () => {
@@ -658,10 +678,14 @@ describe("AccountScheduler", () => {
         entry.lastActivatedAt = Date.now() - 125000;
         scheduler.accountStatusMap.set(0, entry);
 
+        jest.spyOn(Math, "random").mockReturnValue(0);
+
         // Calling getNextAuthIndex triggers _refreshAccountStatuses which expires account 0 to INACTIVE,
         // and then activates it via baseline check
         await scheduler.getNextAuthIndex("gemini-2.5-flash");
         expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(0);
+
+        Math.random.mockRestore();
     });
 
     test("getAccountStatus and getNextAuthIndex do NOT expire ACTIVATED account if it has in-flight requests", async () => {
@@ -678,5 +702,39 @@ describe("AccountScheduler", () => {
 
         // Calling getAccountStatus should NOT expire it because in-flight count is > 0
         expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+    });
+
+    test("getNextAuthIndex distributes requests weighted by remaining capacity (statistical distribution test)", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockModelUsageTracker = {
+            getUsage: jest.fn(authIndex => (authIndex === 0 ? 100 : 900)),
+        };
+        const scheduler = new AccountScheduler(
+            { availableIndices: [0, 1] },
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            mockModelUsageTracker,
+            [{ dailyLimit: 1000, name: "models/gemini-2.5-pro" }],
+            { maxContexts: 2 }
+        );
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+
+        const counts = { 0: 0, 1: 0 };
+        const iterations = 1000;
+
+        for (let i = 0; i < iterations; i++) {
+            const selectedIdx = await scheduler.getNextAuthIndex("gemini-2.5-pro");
+            counts[selectedIdx]++;
+        }
+
+        // Account 0 (usage=100, weight=900) should get ~90% of requests (830-950 out of 1000)
+        // Account 1 (usage=900, weight=100) should get ~10% of requests (50-170 out of 1000)
+        expect(counts[0]).toBeGreaterThan(830);
+        expect(counts[0]).toBeLessThan(950);
+        expect(counts[1]).toBeGreaterThan(50);
+        expect(counts[1]).toBeLessThan(170);
     });
 });

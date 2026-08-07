@@ -535,14 +535,6 @@ class AccountScheduler {
             }
         }
 
-        // Sort function: primary by usage ascending, secondary by Round-Robin order
-        const usageSort = (a, b) => {
-            if (a.usage !== b.usage) {
-                return a.usage - b.usage;
-            }
-            return a.order - b.order;
-        };
-
         const totalActivated = activatedFree.length + activatedBusy.length;
         const canCooldown =
             this.lastGlobalActivationAt === 0 || Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
@@ -550,8 +542,11 @@ class AccountScheduler {
 
         // Baseline Check: If activated count < maxContexts and inactive candidates exist and 30s cooldown met, trigger background baseline activation
         if (totalActivated < maxContexts && inactiveCandidates.length > 0 && canCooldown) {
-            inactiveCandidates.sort(usageSort);
-            const baselineCandidate = inactiveCandidates.shift();
+            const baselineCandidate = this.selectWeightedCandidate(inactiveCandidates, limit);
+            const baselineIndex = inactiveCandidates.indexOf(baselineCandidate);
+            if (baselineIndex > -1) {
+                inactiveCandidates.splice(baselineIndex, 1);
+            }
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
                     `[AccountScheduler] Activated accounts count (${totalActivated}) < maxContexts (${maxContexts}), activating authIndex #${baselineCandidate.idx} for baseline...`
@@ -565,14 +560,15 @@ class AccountScheduler {
 
         // Phase 1: Use an absolutely free ACTIVATED account (inFlight === 0)
         if (activatedFree.length > 0) {
-            activatedFree.sort(usageSort);
-            const selectedIdx = activatedFree[0].idx;
-            const selectedOrder = activatedFree[0].order;
+            const selectedCandidate = this.selectWeightedCandidate(activatedFree, limit);
+            const selectedIdx = selectedCandidate.idx;
+            const selectedOrder = selectedCandidate.order;
+            const weight = Math.max(1, limit - selectedCandidate.usage);
             this.currentIndex = (this.currentIndex + selectedOrder + 1) % total;
 
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
-                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 1: Free Activated, inFlight=0, usage=${activatedFree[0].usage}/${limit})`
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 1: Free Activated, inFlight=0, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
                 );
             }
             return selectedIdx;
@@ -580,14 +576,15 @@ class AccountScheduler {
 
         // Phase 2: Reuse a lightly-busy ACTIVATED account (inFlight === 1)
         if (activatedBusy.length > 0) {
-            activatedBusy.sort(usageSort);
-            const selectedIdx = activatedBusy[0].idx;
-            const selectedOrder = activatedBusy[0].order;
+            const selectedCandidate = this.selectWeightedCandidate(activatedBusy, limit);
+            const selectedIdx = selectedCandidate.idx;
+            const selectedOrder = selectedCandidate.order;
+            const weight = Math.max(1, limit - selectedCandidate.usage);
             this.currentIndex = (this.currentIndex + selectedOrder + 1) % total;
 
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
-                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 2: Lightly Busy, inFlight=1, usage=${activatedBusy[0].usage}/${limit})`
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 2: Lightly Busy, inFlight=1, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
                 );
             }
             return selectedIdx;
