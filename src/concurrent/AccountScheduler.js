@@ -137,46 +137,6 @@ class AccountScheduler {
     }
 
     /**
-     * Start background activation loop
-     * @param {number} [intervalMs=30000]
-     */
-    startActivationLoop(intervalMs = 30000) {
-        if (this._activationTimer) return;
-        this._activationTimer = setInterval(async () => {
-            if (!this.isSystemActive()) {
-                if (this.logger && typeof this.logger.debug === "function") {
-                    this.logger.debug("[AccountScheduler] System is idle, skipping background account activation");
-                }
-                return;
-            }
-
-            const indices = this._getAccountIndices();
-            for (const idx of indices) {
-                if (this.getAccountStatus(idx) === "RETIRED") continue;
-                if (this._hasConnection(idx) && this.getAccountStatus(idx) === "INACTIVE") {
-                    if (this.logger && typeof this.logger.info === "function") {
-                        this.logger.info(
-                            `[AccountScheduler] Lazy loading activation loop activating authIndex #${idx}...`
-                        );
-                    }
-                    await this.activateAccount(idx);
-                    await new Promise(r => setTimeout(r, 2000));
-                }
-            }
-        }, intervalMs);
-    }
-
-    /**
-     * Stop background activation loop
-     */
-    stopActivationLoop() {
-        if (this._activationTimer) {
-            clearInterval(this._activationTimer);
-            this._activationTimer = null;
-        }
-    }
-
-    /**
      * Automatically refresh all account statuses, expiring ACTIVATED accounts whose lifespan exceeded 2 mins
      */
     _refreshAccountStatuses() {
@@ -633,26 +593,6 @@ class AccountScheduler {
                 );
             }
             return selectedIdx;
-        }
-
-        // Phase 3: Forced fallback activation (when no ACTIVATED accounts exist or activated count < maxContexts)
-        if (inactiveCandidates.length > 0 && totalActivated < maxContexts) {
-            inactiveCandidates.sort(usageSort);
-            for (const candidate of inactiveCandidates) {
-                if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(`[AccountScheduler] Synchronously activating authIndex #${candidate.idx}...`);
-                }
-                const activated = await this.activateAccount(candidate.idx);
-                if (activated) {
-                    this.currentIndex = (this.currentIndex + candidate.order + 1) % total;
-                    if (this.logger && typeof this.logger.info === "function") {
-                        this.logger.info(
-                            `[AccountScheduler] Selected authIndex #${candidate.idx} for model="${modelName}" (Phase 3: Fallback Activated, inFlight=0, usage=${candidate.usage}/${limit})`
-                        );
-                    }
-                    return candidate.idx;
-                }
-            }
         }
 
         // Error classification

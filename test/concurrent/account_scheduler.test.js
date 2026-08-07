@@ -199,7 +199,7 @@ describe("AccountScheduler", () => {
         expect(index).toBe(1);
     });
 
-    test("getNextAuthIndex falls back to synchronous activation if no ACTIVATED account exists", async () => {
+    test("getNextAuthIndex triggers baseline activation when no ACTIVATED account exists and cooldown is met", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockBrowserManager = {
             _sendActiveTrigger: jest.fn(),
@@ -630,7 +630,7 @@ describe("AccountScheduler", () => {
         scheduler.accountStatusMap.set(0, entry);
 
         // Calling getNextAuthIndex triggers _refreshAccountStatuses which expires account 0 to INACTIVE,
-        // and then activates it via fallback
+        // and then activates it via baseline check
         await scheduler.getNextAuthIndex("gemini-2.5-flash");
         expect(mockBrowserManager.launchOrSwitchContext).toHaveBeenCalledWith(0);
     });
