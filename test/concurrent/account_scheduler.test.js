@@ -737,4 +737,75 @@ describe("AccountScheduler", () => {
         expect(counts[1]).toBeGreaterThan(50);
         expect(counts[1]).toBeLessThan(170);
     });
+
+    test("checkAndRetireAccount immediately retires account when receiving HTTP 429 status code", async () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        jest.spyOn(scheduler, "retireAndReplaceAccount").mockResolvedValue();
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.recordFailure(0, 429);
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(true);
+        expect(scheduler.retireAndReplaceAccount).toHaveBeenCalledWith(0, "received immediate switch status code 429");
+    });
+
+    test("checkAndRetireAccount immediately retires account when receiving HTTP 503 status code", async () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        jest.spyOn(scheduler, "retireAndReplaceAccount").mockResolvedValue();
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.recordFailure(0, 503);
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(true);
+        expect(scheduler.retireAndReplaceAccount).toHaveBeenCalledWith(0, "received immediate switch status code 503");
+    });
+
+    test("checkAndRetireAccount does NOT immediately retire account on 500 error if failure threshold is not reached", async () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        jest.spyOn(scheduler, "retireAndReplaceAccount").mockResolvedValue();
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.recordFailure(0, 500);
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(false);
+        expect(scheduler.retireAndReplaceAccount).not.toHaveBeenCalled();
+    });
+
+    test("checkAndRetireAccount respects custom immediateSwitchStatusCodes config", async () => {
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            { immediateSwitchStatusCodes: [403] }
+        );
+        jest.spyOn(scheduler, "retireAndReplaceAccount").mockResolvedValue();
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.recordFailure(0, 403);
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(true);
+        expect(scheduler.retireAndReplaceAccount).toHaveBeenCalledWith(0, "received immediate switch status code 403");
+    });
+
+    test("recordSuccess clears lastStatusCodeMap and resets failure state", async () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        jest.spyOn(scheduler, "retireAndReplaceAccount").mockResolvedValue();
+
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.recordFailure(0, 500);
+        expect(scheduler.lastStatusCodeMap.get(0)).toBe(500);
+
+        scheduler.recordSuccess(0);
+        expect(scheduler.lastStatusCodeMap.get(0)).toBeUndefined();
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(false);
+    });
 });
