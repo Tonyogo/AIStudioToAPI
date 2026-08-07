@@ -29,8 +29,8 @@ src/
 └── concurrent/
     └── strategies/
         ├── index.js          # Factory registry & entry point
-        ├── weighted.js       # Remaining capacity weighted selection (default)
-        ├── round-robin.js    # Pure sequential round-robin selection
+        ├── round-robin.js    # Pure sequential round-robin selection (default)
+        ├── weighted.js       # Remaining capacity weighted selection
         └── least-used.js     # Strictly least-used selection (ascending usage)
 ```
 
@@ -74,8 +74,8 @@ function selectCandidate(strategyName, candidates, context = {}) {
     if (!candidates || candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
 
-    const strategyKey = typeof strategyName === "string" ? strategyName.toLowerCase() : "weighted";
-    const strategyFn = STRATEGIES[strategyKey] || STRATEGIES["weighted"];
+    const strategyKey = typeof strategyName === "string" ? strategyName.toLowerCase() : "round-robin";
+    const strategyFn = STRATEGIES[strategyKey] || STRATEGIES["round-robin"];
     return strategyFn(candidates, context);
 }
 
@@ -92,7 +92,7 @@ Add method `getSchedulingStrategy(modelName)` to `AccountScheduler.js`:
 ```javascript
 /**
  * Resolve scheduling strategy name for a given model
- * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "weighted"
+ * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "round-robin"
  * @param {string} modelName
  * @returns {string} Strategy name ("weighted" | "round-robin" | "least-used")
  */
@@ -113,7 +113,7 @@ getSchedulingStrategy(modelName) {
         return globalStrategy.trim().toLowerCase();
     }
 
-    return "weighted";
+    return "round-robin";
 }
 ```
 

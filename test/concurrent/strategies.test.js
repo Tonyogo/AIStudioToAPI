@@ -62,10 +62,8 @@ describe("Scheduling Strategies", () => {
             expect(selectCandidate("least-used", unordered)).toBe(candidateA);
         });
 
-        test("falls back to weighted strategy for unknown strategy name", () => {
-            jest.spyOn(Math, "random").mockReturnValue(0);
-            expect(selectCandidate("unknown_strategy", [candidateA, candidateB], { limit: 1000 })).toBe(candidateA);
-            Math.random.mockRestore();
+        test("falls back to round-robin strategy for unknown strategy name", () => {
+            expect(selectCandidate("unknown_strategy", [candidateB, candidateC, candidateA])).toBe(candidateA);
         });
     });
 });

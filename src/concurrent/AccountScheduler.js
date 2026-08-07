@@ -119,7 +119,7 @@ class AccountScheduler {
 
     /**
      * Resolve scheduling strategy name for a given model
-     * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "weighted"
+     * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "round-robin"
      * @param {string} modelName
      * @returns {string} Strategy name ("weighted" | "round-robin" | "least-used")
      */
@@ -140,7 +140,7 @@ class AccountScheduler {
             return globalStrategy.trim().toLowerCase();
         }
 
-        return "weighted";
+        return "round-robin";
     }
 
     /**
@@ -668,8 +668,7 @@ class AccountScheduler {
      * @returns {Object|null} Selected candidate
      */
     selectWeightedCandidate(candidates, limit, modelName = null) {
-        const strategyName = this.getSchedulingStrategy(modelName);
-        return selectCandidate(strategyName, candidates, { limit, modelName });
+        return selectCandidate("weighted", candidates, { limit, modelName });
     }
 
     /**

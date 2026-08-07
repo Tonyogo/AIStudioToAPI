@@ -286,7 +286,9 @@ describe("AccountScheduler", () => {
             mockConnectionRegistry,
             mockLogger,
             null,
-            mockModelTracker
+            mockModelTracker,
+            [],
+            { concurrentSchedulingStrategy: "weighted" }
         );
         scheduler.setAccountStatus(0, "ACTIVATED");
         scheduler.setAccountStatus(1, "ACTIVATED");
@@ -396,7 +398,8 @@ describe("AccountScheduler", () => {
             mockLogger,
             null,
             mockModelTracker,
-            mockModelList
+            mockModelList,
+            { concurrentSchedulingStrategy: "weighted" }
         );
         scheduler.setAccountStatus(0, "ACTIVATED");
         scheduler.setAccountStatus(1, "ACTIVATED");
@@ -716,7 +719,7 @@ describe("AccountScheduler", () => {
             mockBrowserManager,
             mockModelUsageTracker,
             [{ dailyLimit: 1000, name: "models/gemini-2.5-pro" }],
-            { maxContexts: 2 }
+            { concurrentSchedulingStrategy: "weighted", maxContexts: 2 }
         );
 
         scheduler.setAccountStatus(0, "ACTIVATED");
@@ -830,9 +833,9 @@ describe("AccountScheduler", () => {
         // 2. Model without override falls back to global config -> "least-used"
         expect(scheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("least-used");
 
-        // 3. Without global config or model override -> defaults to "weighted"
+        // 3. Without global config or model override -> defaults to "round-robin"
         const defaultScheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-        expect(defaultScheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("weighted");
+        expect(defaultScheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("round-robin");
     });
 
     test("getNextAuthIndex uses model-specific round-robin strategy correctly", async () => {
