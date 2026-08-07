@@ -15,14 +15,14 @@
 - **项目首发账号自动感知与 Baseline=MAX_CONTEXTS 保障：** 自动同步项目默认启动的账号（`currentAuthIndex`）为 `ACTIVATED`，并自动维护 `MAX_CONTEXTS`（默认 1）个激活账号做并发底座。
 - **并发请求打散（Scatter Load Balancing）：** 优先挑选在途请求数 `inFlight == 0` 的空闲账号分发请求，把并发均匀平摊到不同账号上。
 - **最少用量优先（Least-Used Load Balancing）：** 根据每日按模型统计的用量，优先将请求调度给当前模型使用量最少的账号，实现均衡消耗。
-- **30s 全局激活冷却与单次激活互斥锁 (Activation Lock & 30s Cooldown)：** 引入全局 `isActivatingAny` 互斥锁，严格防止并发请求同时触发多个账号并行激活；两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。
+- **30s 全局激活冷却与单次激活互斥锁 (Activation Lock & 30s Cooldown)：** 引入全局 `isActivatingAny` 互斥锁，严格防止并发请求同时触发多个账号并行激活；两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。冷却校验同样适用于 Baseline 激活。
 - **20秒隔离挂起时长（可配置）：** 遇到 HTTP 429 限流或连续 2 次 5xx 错误时，账号自动进入隔离期 (`suspendedUntilMap`)，默认 20 秒，可以通过环境变量 `CONCURRENT_SUSPENSION_DURATION_MS` 自定义。
 - **2 分钟激活寿命自动到期 (Activation Auto-Expiration)：** 账号激活后默认具备 2 分钟寿命上限。每次在调度请求 (`getNextAuthIndex`) 入口处触发状态刷新，若已激活账号空闲 (`inFlight === 0`) 且激活时长超过 2 分钟，自动复位过期为 `INACTIVE`。
-- **账号下线退休与动态池平滑退载 (Retirement & Dynamic Rebalance)：** 
+- **动态池平滑退载与状态自动复位 (Dynamic Rebalance & State Restoration)：** 
   - 单模型默认每日上限 **1000 次** (`dailyLimit`)，仅用作判定下线降级与替换依据，**不阻断线上调度**；
   - 当账号在 `exhaustedModelsThreshold` 个模型（默认 1 个）上达到限额，或连续失败达到 `failureThreshold`（默认 3 次，或单次 429）时，触发标记为降级退休 (`RETIRED`)；
   - 自动触发并发池动态再平衡 (`rebalanceConcurrentPool`)，按【健康账号 (Usage 升序) > 退休账号 (Usage 升序)】构建优先级队列；
-  - **状态自动复位与平滑退载**：若降级选入 `MAX_CONTEXTS` 保底目标集，被选中的 `RETIRED` 账号在拉起前自动恢复为 `INACTIVE` 并清空失败计数；落在保底集外的 Context 由 BrowserManager 在空闲时优雅关闭释放约 **700MB 内存**。
+  - 若降级选入 `MAX_CONTEXTS` 保底目标集，被选中的 `RETIRED` 账号在拉起前自动恢复为 `INACTIVE` 并清空失败计数；落在保底集外的 Context 由 BrowserManager 在空闲时优雅关闭释放约 **700MB 内存**。
 - **北京时间 15:00 自动重置与跨周期复苏：** 每日北京时间 15:00:00 (UTC+8) 自动归零模型用量，并同步将 `RETIRED` 状态账号复位为 `INACTIVE` 重启可用。
 - **全链路可观测性 (UsageStatsService) & 图像 Part 转 Markdown：** 完整上报请求与尝试节点数据给 UI 监控面板，并支持将 Gemini 生成的 Base64 图片自动转换为 Markdown Inline Data URL 展现。
 
@@ -121,22 +121,19 @@ src/
        ▼
 4. 双账号底座维护 (Baseline = MAX_CONTEXTS Check)
    - 若 activated 账号总数 < maxContexts 且冷却满 30s 且有 inactiveCandidates:
-   - 触发激活新在线账号，加入 activatedFree 队列
+   - 触发激活最少用量的在线账号，加入 activatedFree 队列
        │
        ▼
-5. 阶段优先级调度选择（同阶段内按【用量 usage 升序优先 + Round-Robin 次之】排序）
+5. 两阶段精简调度分发 (Phase 1 & Phase 2)
    ├───► 阶段 1: 若 activatedFree 非空:
    │            按模型用量 (usage) 升序选出空闲账号 ──────────────────► [分发请求]
    │
    ├───► 阶段 2: 复用轻度繁忙账号:
    │            分发给 activatedBusy (inFlight === 1) 中 usage 最小的账号 ───────► [分发请求]
    │
-   ├───► 阶段 3: 被动同步/降级激活:
-   │            若无可用 ACTIVATED 账号且 activated 账号数 < maxContexts，同步激活 inactiveCandidates 中最少用量账号 ─► [分发请求]
-   │
-   └───► 阶段 4: 极值判断与报错:
+   └───► 极值判断与报错:
                 ├── 若在线账号均满载 (inFlight >= 2):
-                │   └─► 抛出 HTTP 503 Error ("All available accounts are busy at maximum concurrency limit")
+                │   └─► 抛出 HTTP 503 Error ("All available accounts are busy")
                 └── 无在线 WebSocket:
                     └─► 抛出 HTTP 503 Error ("No active context connection available")
 ```
