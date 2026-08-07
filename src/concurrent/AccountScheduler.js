@@ -45,6 +45,11 @@ class AccountScheduler {
             typeof config?.concurrentSuspensionDurationMs === "number" && config.concurrentSuspensionDurationMs >= 0
                 ? config.concurrentSuspensionDurationMs
                 : 20000;
+        this.immediateSwitchStatusCodes =
+            Array.isArray(config?.immediateSwitchStatusCodes) && config.immediateSwitchStatusCodes.length > 0
+                ? config.immediateSwitchStatusCodes
+                : [429, 503];
+        this.lastStatusCodeMap = new Map();
         this.currentCycleKey = this.getBeijingCycleKey();
     }
 
@@ -94,6 +99,7 @@ class AccountScheduler {
             }
             this.failureCountMap.clear();
             this.suspendedUntilMap.clear();
+            this.lastStatusCodeMap.clear();
         }
     }
 
@@ -205,6 +211,9 @@ class AccountScheduler {
         this._checkAndResetCycle();
         if (authIndex === undefined || authIndex < 0) return;
         if (this.getAccountStatus(authIndex) === "RETIRED") return;
+        if (typeof statusCode === "number") {
+            this.lastStatusCodeMap.set(authIndex, statusCode);
+        }
         const currentFailures = (this.failureCountMap.get(authIndex) || 0) + 1;
         this.failureCountMap.set(authIndex, currentFailures);
 
@@ -235,6 +244,7 @@ class AccountScheduler {
         this._checkAndResetCycle();
         if (authIndex === undefined || authIndex < 0) return;
         this.failureCountMap.set(authIndex, 0);
+        this.lastStatusCodeMap.delete(authIndex);
     }
 
     /**
@@ -334,11 +344,18 @@ class AccountScheduler {
         const maxExhausted = this.config?.exhaustedModelsThreshold || 1;
         const failureThreshold = this.config?.failureThreshold || 3;
         const consecutiveFailures = this.failureCountMap.get(authIndex) || 0;
+        const lastStatusCode = this.lastStatusCodeMap.get(authIndex);
 
         let shouldRetire = false;
         let reason = "";
 
-        if (exhaustedCount >= maxExhausted) {
+        const isImmediateSwitch =
+            typeof lastStatusCode === "number" && this.immediateSwitchStatusCodes.includes(lastStatusCode);
+
+        if (isImmediateSwitch) {
+            shouldRetire = true;
+            reason = `received immediate switch status code ${lastStatusCode}`;
+        } else if (exhaustedCount >= maxExhausted) {
             shouldRetire = true;
             reason = `reached daily usage limit on ${exhaustedCount} model(s) (threshold: ${maxExhausted})`;
         } else if (consecutiveFailures >= failureThreshold) {
@@ -347,6 +364,7 @@ class AccountScheduler {
         }
 
         if (shouldRetire) {
+            this.lastStatusCodeMap.delete(authIndex);
             await this.retireAndReplaceAccount(authIndex, reason);
             return true;
         }
