@@ -23,6 +23,35 @@ describe("AccountScheduler", () => {
         mockBrowserManager = {};
     });
 
+    test("selectWeightedCandidate returns null for empty or invalid candidates", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        expect(scheduler.selectWeightedCandidate(null, 1000)).toBeNull();
+        expect(scheduler.selectWeightedCandidate([], 1000)).toBeNull();
+    });
+
+    test("selectWeightedCandidate returns the only candidate when candidates length is 1", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        const candidate = { idx: 0, inFlight: 0, order: 0, usage: 100 };
+        expect(scheduler.selectWeightedCandidate([candidate], 1000)).toBe(candidate);
+    });
+
+    test("selectWeightedCandidate selects candidates proportional to remaining capacity weight", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        const candidateA = { idx: 0, inFlight: 0, order: 0, usage: 100 }; // weight 900
+        const candidateB = { idx: 1, inFlight: 0, order: 1, usage: 900 }; // weight 100
+        const candidates = [candidateA, candidateB];
+
+        // Mock Math.random to return 0.1 (0.1 * 1000 = 100 -> within candidateA weight 900)
+        jest.spyOn(Math, "random").mockReturnValue(0.1);
+        expect(scheduler.selectWeightedCandidate(candidates, 1000)).toBe(candidateA);
+
+        // Mock Math.random to return 0.95 (0.95 * 1000 = 950 -> exceeds candidateA weight 900 -> candidateB)
+        Math.random.mockReturnValue(0.95);
+        expect(scheduler.selectWeightedCandidate(candidates, 1000)).toBe(candidateB);
+
+        Math.random.mockRestore();
+    });
+
     test("markAccountActivated and markAccountInactive update accountStatusMap correctly", () => {
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
         expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");

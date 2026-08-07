@@ -608,6 +608,29 @@ class AccountScheduler {
     }
 
     /**
+     * Select a candidate using Weighted Random Selection based on remaining capacity
+     * @param {Array<Object>} candidates - List of candidates { idx, inFlight, order, usage }
+     * @param {number} limit - Daily limit for current model
+     * @returns {Object|null} Selected candidate
+     */
+    selectWeightedCandidate(candidates, limit) {
+        if (!candidates || candidates.length === 0) return null;
+        if (candidates.length === 1) return candidates[0];
+
+        const weights = candidates.map(c => Math.max(1, limit - (c.usage || 0)));
+        const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+        let random = Math.random() * totalWeight;
+        for (let i = 0; i < candidates.length; i++) {
+            random -= weights[i];
+            if (random <= 0) {
+                return candidates[i];
+            }
+        }
+        return candidates[candidates.length - 1];
+    }
+
+    /**
      * Mark an account as ACTIVATED
      * @param {number} authIndex
      */
