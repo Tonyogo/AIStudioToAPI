@@ -298,7 +298,7 @@ describe("AccountScheduler", () => {
         expect(selected).toBe(1);
         expect(mockLogger.info).toHaveBeenCalledWith(
             expect.stringContaining(
-                '[AccountScheduler] Selected authIndex #1 for model="gemini-2.5-pro" (Phase 1: Free Activated, inFlight=0, usage=1/'
+                '[AccountScheduler] Selected authIndex #1 for model="gemini-2.5-pro" (Phase 1: Free Activated, strategy="weighted", inFlight=0, usage=1/'
             )
         );
 
@@ -807,5 +807,58 @@ describe("AccountScheduler", () => {
 
         const retired = await scheduler.checkAndRetireAccount(0);
         expect(retired).toBe(false);
+    });
+
+    test("getSchedulingStrategy resolves strategy in correct hierarchy order (model config > global config > default)", () => {
+        const mockModelList = [
+            { name: "models/gemini-2.5-pro", schedulingStrategy: "round-robin" },
+            { name: "models/gemini-2.5-flash" },
+        ];
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            mockModelList,
+            { concurrentSchedulingStrategy: "least-used" }
+        );
+
+        // 1. Model override in models.json -> "round-robin"
+        expect(scheduler.getSchedulingStrategy("gemini-2.5-pro")).toBe("round-robin");
+
+        // 2. Model without override falls back to global config -> "least-used"
+        expect(scheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("least-used");
+
+        // 3. Without global config or model override -> defaults to "weighted"
+        const defaultScheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        expect(defaultScheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("weighted");
+    });
+
+    test("getNextAuthIndex uses model-specific round-robin strategy correctly", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockModelTracker = {
+            getUsage: jest.fn(authIndex => (authIndex === 0 ? 900 : 100)), // Account 0 has higher usage
+        };
+        const mockModelList = [{ name: "models/gemini-2.5-pro", schedulingStrategy: "round-robin" }];
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            mockModelTracker,
+            mockModelList
+        );
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+        scheduler.setAccountStatus(2, "ACTIVATED");
+
+        // With round-robin strategy, candidates order ascending selection occurs sequentially (0 -> 1 -> 2 -> 0)
+        // regardless of Account 0 having higher usage
+        expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(0);
+        expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(1);
+        expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(2);
+        expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(0);
     });
 });

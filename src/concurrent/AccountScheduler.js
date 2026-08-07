@@ -3,6 +3,8 @@
  * Description: Round-Robin account scheduler for concurrent multi-account request routing
  */
 
+const { selectCandidate } = require("./strategies");
+
 class AccountScheduler {
     /**
      * @param {Object} authSource - AuthSource instance containing available accounts
@@ -113,6 +115,32 @@ class AccountScheduler {
             return mc === 0 ? Infinity : mc;
         }
         return 1;
+    }
+
+    /**
+     * Resolve scheduling strategy name for a given model
+     * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "weighted"
+     * @param {string} modelName
+     * @returns {string} Strategy name ("weighted" | "round-robin" | "least-used")
+     */
+    getSchedulingStrategy(modelName) {
+        if (modelName && Array.isArray(this.modelList)) {
+            const match = this.modelList.find(m => {
+                if (!m || !m.name) return false;
+                const cleanName = m.name.replace("models/", "");
+                return cleanName === modelName || m.name === modelName;
+            });
+            if (match && typeof match.schedulingStrategy === "string" && match.schedulingStrategy.trim() !== "") {
+                return match.schedulingStrategy.trim().toLowerCase();
+            }
+        }
+
+        const globalStrategy = this.config?.concurrentSchedulingStrategy || process.env.CONCURRENT_SCHEDULING_STRATEGY;
+        if (typeof globalStrategy === "string" && globalStrategy.trim() !== "") {
+            return globalStrategy.trim().toLowerCase();
+        }
+
+        return "weighted";
     }
 
     /**
@@ -565,10 +593,12 @@ class AccountScheduler {
         const canCooldown =
             this.lastGlobalActivationAt === 0 || Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
         const maxContexts = this.getMaxContexts();
+        const strategyName = this.getSchedulingStrategy(modelName);
+        const strategyContext = { limit, modelName };
 
         // Baseline Check: If activated count < maxContexts and inactive candidates exist and 30s cooldown met, trigger background baseline activation
         if (totalActivated < maxContexts && inactiveCandidates.length > 0 && canCooldown) {
-            const baselineCandidate = this.selectWeightedCandidate(inactiveCandidates, limit);
+            const baselineCandidate = selectCandidate(strategyName, inactiveCandidates, strategyContext);
             const baselineIndex = inactiveCandidates.indexOf(baselineCandidate);
             if (baselineIndex > -1) {
                 inactiveCandidates.splice(baselineIndex, 1);
@@ -586,7 +616,7 @@ class AccountScheduler {
 
         // Phase 1: Use an absolutely free ACTIVATED account (inFlight === 0)
         if (activatedFree.length > 0) {
-            const selectedCandidate = this.selectWeightedCandidate(activatedFree, limit);
+            const selectedCandidate = selectCandidate(strategyName, activatedFree, strategyContext);
             const selectedIdx = selectedCandidate.idx;
             const selectedOrder = selectedCandidate.order;
             const weight = Math.max(1, limit - selectedCandidate.usage);
@@ -594,7 +624,7 @@ class AccountScheduler {
 
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
-                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 1: Free Activated, inFlight=0, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 1: Free Activated, strategy="${strategyName}", inFlight=0, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
                 );
             }
             return selectedIdx;
@@ -602,7 +632,7 @@ class AccountScheduler {
 
         // Phase 2: Reuse a lightly-busy ACTIVATED account (inFlight === 1)
         if (activatedBusy.length > 0) {
-            const selectedCandidate = this.selectWeightedCandidate(activatedBusy, limit);
+            const selectedCandidate = selectCandidate(strategyName, activatedBusy, strategyContext);
             const selectedIdx = selectedCandidate.idx;
             const selectedOrder = selectedCandidate.order;
             const weight = Math.max(1, limit - selectedCandidate.usage);
@@ -610,7 +640,7 @@ class AccountScheduler {
 
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
-                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 2: Lightly Busy, inFlight=1, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
+                    `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 2: Lightly Busy, strategy="${strategyName}", inFlight=1, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
                 );
             }
             return selectedIdx;
@@ -631,26 +661,15 @@ class AccountScheduler {
     }
 
     /**
-     * Select a candidate using Weighted Random Selection based on remaining capacity
+     * Select a candidate using configured strategy
      * @param {Array<Object>} candidates - List of candidates { idx, inFlight, order, usage }
      * @param {number} limit - Daily limit for current model
+     * @param {string} [modelName=null] - Model name
      * @returns {Object|null} Selected candidate
      */
-    selectWeightedCandidate(candidates, limit) {
-        if (!candidates || candidates.length === 0) return null;
-        if (candidates.length === 1) return candidates[0];
-
-        const weights = candidates.map(c => Math.max(1, limit - (c.usage || 0)));
-        const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-
-        let random = Math.random() * totalWeight;
-        for (let i = 0; i < candidates.length; i++) {
-            random -= weights[i];
-            if (random <= 0) {
-                return candidates[i];
-            }
-        }
-        return candidates[candidates.length - 1];
+    selectWeightedCandidate(candidates, limit, modelName = null) {
+        const strategyName = this.getSchedulingStrategy(modelName);
+        return selectCandidate(strategyName, candidates, { limit, modelName });
     }
 
     /**
