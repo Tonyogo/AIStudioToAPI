@@ -357,6 +357,9 @@ class AccountScheduler {
      * Rebalance concurrent context pool based on dynamic priorities and state restoration
      */
     async rebalanceConcurrentPool() {
+        if (this.logger && typeof this.logger.info === "function") {
+            this.logger.info("[ConcurrentPool] Triggering concurrent context pool rebalance...");
+        }
         if (!this.browserManager) return;
 
         const maxContexts = this.getMaxContexts();
@@ -400,7 +403,7 @@ class AccountScheduler {
             if (this.getAccountStatus(targetIdx) === "RETIRED") {
                 if (this.logger && typeof this.logger.info === "function") {
                     this.logger.info(
-                        `[AccountScheduler] Re-activating retired account #${targetIdx} back to INACTIVE as target candidate`
+                        `[ConcurrentPool] Re-activating retired account #${targetIdx} back to INACTIVE as target candidate`
                     );
                 }
                 this.setAccountStatus(targetIdx, "INACTIVE");
@@ -412,6 +415,11 @@ class AccountScheduler {
         if (this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function") {
             for (const activeIdx of this.browserManager.contexts.keys()) {
                 if (!targets.has(activeIdx)) {
+                    if (this.logger && typeof this.logger.info === "function") {
+                        this.logger.info(
+                            `[ConcurrentPool] Closing excess active context #${activeIdx} (not in targets=[${[...targets]}])`
+                        );
+                    }
                     if (typeof this.browserManager._closeContextForPoolIfPossible === "function") {
                         this.browserManager._closeContextForPoolIfPossible(activeIdx, "rebalance_retired");
                     }
@@ -429,7 +437,7 @@ class AccountScheduler {
         if (candidates.length > 0) {
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(
-                    `[AccountScheduler] Rebalancing concurrent pool: targets=[${[...targets]}], preloading candidates=[${candidates}]`
+                    `[ConcurrentPool] Rebalancing concurrent pool: targets=[${[...targets]}], preloading candidates=[${candidates}]`
                 );
             }
             if (typeof this.browserManager._preloadBackgroundContexts === "function") {
