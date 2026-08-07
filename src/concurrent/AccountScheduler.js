@@ -491,7 +491,6 @@ class AccountScheduler {
         const total = indices.length;
 
         let onlineAccountCount = 0;
-        let busyOnlineAccountCount = 0;
 
         const activatedFree = []; // inFlight === 0
         const activatedBusy = []; // inFlight === 1
@@ -515,7 +514,6 @@ class AccountScheduler {
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
                 const inFlight = this.getInFlightCount(candidateIdx);
                 if (inFlight >= this.maxInFlightPerAccount) {
-                    busyOnlineAccountCount++;
                     if (this.logger && typeof this.logger.debug === "function") {
                         this.logger.debug(
                             `[AccountScheduler] AuthIndex #${candidateIdx} skipped: max in-flight limit reached (${inFlight}/${this.maxInFlightPerAccount})`
@@ -595,11 +593,9 @@ class AccountScheduler {
             return selectedIdx;
         }
 
-        // Error classification
-        if (onlineAccountCount > 0 && busyOnlineAccountCount >= onlineAccountCount) {
-            const error = new Error(
-                `All available accounts are busy at maximum concurrency limit (${this.maxInFlightPerAccount}/${this.maxInFlightPerAccount})`
-            );
+        // Error classification: If online connected accounts exist, any dispatch failure means all accounts are busy
+        if (onlineAccountCount > 0) {
+            const error = new Error("All available accounts are busy");
             error.statusCode = 503;
             error.statusText = "UNAVAILABLE";
             throw error;
@@ -607,6 +603,7 @@ class AccountScheduler {
 
         const error = new Error("No active context connection available");
         error.statusCode = 503;
+        error.statusText = "UNAVAILABLE";
         throw error;
     }
 

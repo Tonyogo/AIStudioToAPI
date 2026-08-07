@@ -526,7 +526,7 @@ describe("AccountScheduler", () => {
         scheduler.acquireInFlight(1); // Account 1 has 2 in-flight
 
         await expect(scheduler.getNextAuthIndex("gemini-2.5-flash")).rejects.toMatchObject({
-            message: expect.stringContaining("All available accounts are busy"),
+            message: "All available accounts are busy",
             statusCode: 503,
             statusText: "UNAVAILABLE",
         });
