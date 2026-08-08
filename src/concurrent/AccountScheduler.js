@@ -32,6 +32,7 @@ class AccountScheduler {
         this.modelList = modelList;
         this.config = config;
         this.currentIndex = 0;
+        this.activeQueue = null;
         this.accountStatusMap = new Map();
         this.inFlightMap = new Map();
         this.failureCountMap = new Map();
@@ -316,6 +317,31 @@ class AccountScheduler {
     }
 
     /**
+     * Synchronize and refresh the LRU active queue with current auth source indices
+     * @private
+     */
+    _refreshActiveQueue() {
+        const indices = this._getAccountIndices();
+        if (!this.activeQueue) {
+            this.activeQueue = [...indices];
+            return;
+        }
+
+        const currentSet = new Set(this.activeQueue);
+        const incomingSet = new Set(indices);
+
+        // Filter out removed accounts
+        this.activeQueue = this.activeQueue.filter(idx => incomingSet.has(idx));
+
+        // Append new accounts to the end
+        for (const idx of indices) {
+            if (!currentSet.has(idx)) {
+                this.activeQueue.push(idx);
+            }
+        }
+    }
+
+    /**
      * Check if connection registry has active connection for given auth index
      * @param {number} authIndex
      * @returns {boolean}
@@ -505,6 +531,14 @@ class AccountScheduler {
 
         this.setAccountStatus(authIndex, "RETIRED");
 
+        // Move retired index to end of activeQueue (LRU Update)
+        this._refreshActiveQueue();
+        const qIdx = this.activeQueue.indexOf(authIndex);
+        if (qIdx > -1) {
+            this.activeQueue.splice(qIdx, 1);
+        }
+        this.activeQueue.push(authIndex);
+
         this.rebalanceConcurrentPool().catch(err => {
             if (this.logger && typeof this.logger.error === "function") {
                 this.logger.error(`[AccountScheduler] Background rebalance failed after retirement: ${err.message}`);
@@ -627,6 +661,15 @@ class AccountScheduler {
                     `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 1: Free Activated, strategy="${strategyName}", inFlight=0, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
                 );
             }
+
+            // Move selected index to front of activeQueue (LRU Update)
+            this._refreshActiveQueue();
+            const qIdx = this.activeQueue.indexOf(selectedIdx);
+            if (qIdx > -1) {
+                this.activeQueue.splice(qIdx, 1);
+            }
+            this.activeQueue.unshift(selectedIdx);
+
             return selectedIdx;
         }
 
@@ -643,6 +686,15 @@ class AccountScheduler {
                     `[AccountScheduler] Selected authIndex #${selectedIdx} for model="${modelName}" (Phase 2: Lightly Busy, strategy="${strategyName}", inFlight=1, usage=${selectedCandidate.usage}/${limit}, weight=${weight})`
                 );
             }
+
+            // Move selected index to front of activeQueue (LRU Update)
+            this._refreshActiveQueue();
+            const qIdx = this.activeQueue.indexOf(selectedIdx);
+            if (qIdx > -1) {
+                this.activeQueue.splice(qIdx, 1);
+            }
+            this.activeQueue.unshift(selectedIdx);
+
             return selectedIdx;
         }
 

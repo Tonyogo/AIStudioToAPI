@@ -864,4 +864,83 @@ describe("AccountScheduler", () => {
         expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(2);
         expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(0);
     });
+
+    describe("Active Queue and LRU Updates (Task 1)", () => {
+        test("_refreshActiveQueue synchronizes activeQueue with current auth indices and retains existing LRU order", () => {
+            const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+
+            // 1. Initial refresh initializes queue
+            scheduler._refreshActiveQueue();
+            expect(scheduler.activeQueue).toEqual([0, 1, 2]);
+
+            // 2. Modify LRU order manually
+            scheduler.activeQueue = [1, 2, 0];
+
+            // 3. Refresh with same available indices should preserve LRU order
+            scheduler._refreshActiveQueue();
+            expect(scheduler.activeQueue).toEqual([1, 2, 0]);
+
+            // 4. Shrink/grow available indices: [0, 2, 3] (removes 1, adds 3)
+            mockAuthSource.availableIndices = [0, 2, 3];
+            scheduler._refreshActiveQueue();
+            // Should filter out 1, preserve remaining LRU [2, 0], and append 3 to the end
+            expect(scheduler.activeQueue).toEqual([2, 0, 3]);
+        });
+
+        test("getNextAuthIndex moves selected index to the front of activeQueue in Phase 1 and Phase 2", async () => {
+            mockConnectionRegistry.hasConnection.mockReturnValue(true);
+            const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+
+            // Phase 1 path (Free Activated, inFlight === 0)
+            scheduler.setAccountStatus(0, "ACTIVATED");
+            scheduler.setAccountStatus(1, "ACTIVATED");
+            scheduler.setAccountStatus(2, "ACTIVATED");
+
+            scheduler._refreshActiveQueue();
+            expect(scheduler.activeQueue).toEqual([0, 1, 2]);
+
+            // Select next (Round Robin selects candidate 0)
+            const firstSelected = await scheduler.getNextAuthIndex();
+            expect(firstSelected).toBe(0);
+            expect(scheduler.activeQueue).toEqual([0, 1, 2]); // 0 was already at front
+
+            // Advance currentIndex so index 1 is selected next
+            const secondSelected = await scheduler.getNextAuthIndex();
+            expect(secondSelected).toBe(1);
+            // 1 is moved to the front: [1, 0, 2]
+            expect(scheduler.activeQueue).toEqual([1, 0, 2]);
+
+            // Phase 2 path (Lightly busy, inFlight === 1)
+            // Make all activated busy so we trigger Phase 2 path
+            scheduler.acquireInFlight(0);
+            scheduler.acquireInFlight(1);
+            scheduler.acquireInFlight(2);
+
+            const thirdSelected = await scheduler.getNextAuthIndex();
+            expect(thirdSelected).toBe(2);
+            // 2 is moved to the front: [2, 1, 0]
+            expect(scheduler.activeQueue).toEqual([2, 1, 0]);
+        });
+
+        test("retireAndReplaceAccount moves retired index to the end of activeQueue", async () => {
+            const scheduler = new AccountScheduler(
+                mockAuthSource,
+                mockConnectionRegistry,
+                mockLogger,
+                mockBrowserManager
+            );
+            jest.spyOn(scheduler, "rebalanceConcurrentPool").mockResolvedValue();
+
+            scheduler._refreshActiveQueue();
+            expect(scheduler.activeQueue).toEqual([0, 1, 2]);
+
+            // Move 1 to the front of queue to set up state
+            scheduler.activeQueue = [1, 0, 2];
+
+            await scheduler.retireAndReplaceAccount(1, "test failure");
+            expect(scheduler.getAccountStatus(1)).toBe("RETIRED");
+            // 1 should be moved to the end of the activeQueue
+            expect(scheduler.activeQueue).toEqual([0, 2, 1]);
+        });
+    });
 });
