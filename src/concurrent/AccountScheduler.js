@@ -437,35 +437,28 @@ class AccountScheduler {
         const maxContexts = this.getMaxContexts();
         const isUnlimited = maxContexts === Infinity || maxContexts === 0;
 
-        const indices = this._getAccountIndices();
-
-        // 1. Filter out expired auth sources
-        const validIndices = indices.filter(idx => {
-            const isExpired =
-                this.authSource && typeof this.authSource.isExpired === "function"
-                    ? this.authSource.isExpired(idx)
-                    : false;
-            return !isExpired;
-        });
+        this._refreshActiveQueue();
 
         const healthy = [];
         const retired = [];
 
-        for (const idx of validIndices) {
-            const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(idx) : 0;
+        for (const idx of this.activeQueue) {
+            const isExpired =
+                this.authSource && typeof this.authSource.isExpired === "function"
+                    ? this.authSource.isExpired(idx)
+                    : false;
+            if (isExpired) continue;
+
             const status = this.getAccountStatus(idx);
             if (status === "RETIRED") {
-                retired.push({ idx, usage });
+                retired.push(idx);
             } else {
-                healthy.push({ idx, usage });
+                healthy.push(idx);
             }
         }
 
-        healthy.sort((a, b) => a.usage - b.usage);
-        retired.sort((a, b) => a.usage - b.usage);
-
-        // Dynamic priority queue: healthy first (least-used), RETIRED last (least-used)
-        const priorityQueue = [...healthy.map(h => h.idx), ...retired.map(r => r.idx)];
+        // Implicitly maintains LRU queue order: healthy first (recently used), RETIRED last (earliest retired first)
+        const priorityQueue = [...healthy, ...retired];
 
         const targetIndices = isUnlimited ? priorityQueue : priorityQueue.slice(0, maxContexts);
         const targets = new Set(targetIndices);
