@@ -38,8 +38,6 @@ class AccountScheduler {
         this.failureCountMap = new Map();
         this.suspendedUntilMap = new Map();
         this.maxInFlightPerAccount = 2;
-        this.lastSystemActivityAt = 0;
-        this.idleTimeoutMs = 300000;
         this.activatedLifespanMs = 120000;
         this.lastGlobalActivationAt = 0;
         this.activationCooldownMs = 30000;
@@ -161,14 +159,6 @@ class AccountScheduler {
             return match.dailyLimit;
         }
         return 1000;
-    }
-
-    /**
-     * Check if system is active (received request within idleTimeoutMs)
-     * @returns {boolean}
-     */
-    isSystemActive() {
-        return Date.now() - this.lastSystemActivityAt < this.idleTimeoutMs;
     }
 
     /**
@@ -547,7 +537,6 @@ class AccountScheduler {
      */
     async getNextAuthIndex(modelName = null) {
         this._refreshAccountStatuses();
-        this.lastSystemActivityAt = Date.now();
         const indices = this._getAccountIndices();
         if (indices.length === 0) {
             const err = new Error("No authentication accounts configured");

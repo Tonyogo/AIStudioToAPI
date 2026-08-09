@@ -256,18 +256,6 @@ describe("AccountScheduler", () => {
         Math.random.mockRestore();
     });
 
-    test("isSystemActive returns false when idle for longer than idleTimeoutMs", () => {
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-        scheduler.lastSystemActivityAt = Date.now() - 300001; // 5 min 1 ms ago
-        expect(scheduler.isSystemActive()).toBe(false);
-    });
-
-    test("isSystemActive returns true when recent activity exists", () => {
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-        scheduler.lastSystemActivityAt = Date.now() - 1000;
-        expect(scheduler.isSystemActive()).toBe(true);
-    });
-
     test("getNextAuthIndex selects least-used account for specified model and logs decision", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockModelTracker = {
