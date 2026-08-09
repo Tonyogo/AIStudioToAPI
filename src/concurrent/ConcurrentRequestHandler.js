@@ -156,23 +156,6 @@ class ConcurrentRequestHandler {
     }
 
     /**
-     * Extract clean model name from request path
-     * @param {string} pathStr
-     * @returns {string|null}
-     */
-    _extractCleanModelName(pathStr) {
-        if (typeof pathStr !== "string") return null;
-        const match = pathStr.match(/\/models\/([^:/?]+)(?::|$)/);
-        if (!match) return null;
-        const rawModel = match[1];
-        const FormatConverter = require("../core/FormatConverter");
-        const { cleanModelName: toolStripped } = FormatConverter.parseModelBuiltInToolSuffixes(rawModel);
-        const { cleanModelName: streamStripped } = FormatConverter.parseModelStreamingModeSuffix(toolStripped);
-        const { cleanModelName } = FormatConverter.parseModelThinkingLevel(streamStripped);
-        return cleanModelName;
-    }
-
-    /**
      * Get account name for a given authIndex
      * @param {number} authIndex
      * @returns {string|null}

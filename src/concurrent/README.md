@@ -81,8 +81,6 @@ src/
 
 - **职责：** 拦截请求，解析标准化模型名，透传真实状态码/Header，集成 UI 统计追踪，实现失败 cross-account 重试与图片 Base64 转换。
 - **关键设计细节：**
-  - **模型名标准化 (`_extractCleanModelName`)：**
-    利用 `FormatConverter` 工具函数剥离模型路径中的工具/思维/流模式后缀。
   - **多账号无感重试：**
     在响应头尚未发送 (`res.headersSent === false`) 且非 429 报错时，允许最多 2 次无感跨账号重试。
   - **监控集成 (`usageStatsService`)：**
