@@ -3,6 +3,8 @@
  * Description: Minimal and high-performance Gemini API request handler for concurrent execution
  */
 
+const FormatConverter = require("../core/FormatConverter");
+
 class ConcurrentRequestHandler {
     /**
      * @param {Object} connectionRegistry - ConnectionRegistry instance
@@ -17,7 +19,6 @@ class ConcurrentRequestHandler {
         this.modelList = modelList;
         this.usageStatsService = usageStatsService;
 
-        const FormatConverter = require("../core/FormatConverter");
         const config = this.scheduler?.config || {};
         this.formatConverter = new FormatConverter(this.logger, { config });
 
@@ -198,7 +199,6 @@ class ConcurrentRequestHandler {
      * @returns {Object} Payload metadata and normalized request body
      */
     _buildProxyRequestPayload(req) {
-        const FormatConverter = require("../core/FormatConverter");
         const config = this.scheduler?.config || {};
         const fullPath = req.path;
         let cleanPath = fullPath.replace(/^\/proxy/, "");
