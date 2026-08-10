@@ -297,6 +297,30 @@ class AccountScheduler {
     }
 
     /**
+     * Move authIndex to the front of activeQueue (LRU Most Recently Used)
+     * @private
+     * @param {number} authIndex
+     */
+    _moveToFront(authIndex) {
+        if (!Number.isInteger(authIndex) || authIndex < 0) return;
+        this._refreshActiveQueue();
+        this.activeQueue = this.activeQueue.filter(idx => idx !== authIndex);
+        this.activeQueue.unshift(authIndex);
+    }
+
+    /**
+     * Move authIndex to the back of activeQueue (LRU Least Recently Used / Retired)
+     * @private
+     * @param {number} authIndex
+     */
+    _moveToBack(authIndex) {
+        if (!Number.isInteger(authIndex) || authIndex < 0) return;
+        this._refreshActiveQueue();
+        this.activeQueue = this.activeQueue.filter(idx => idx !== authIndex);
+        this.activeQueue.push(authIndex);
+    }
+
+    /**
      * Synchronize and refresh the LRU active queue with current auth source indices
      * @private
      */
@@ -505,12 +529,7 @@ class AccountScheduler {
         this.setAccountStatus(authIndex, "RETIRED");
 
         // Move retired index to end of activeQueue (LRU Update)
-        this._refreshActiveQueue();
-        const qIdx = this.activeQueue.indexOf(authIndex);
-        if (qIdx > -1) {
-            this.activeQueue.splice(qIdx, 1);
-        }
-        this.activeQueue.push(authIndex);
+        this._moveToBack(authIndex);
 
         this.rebalanceConcurrentPool().catch(err => {
             if (this.logger && typeof this.logger.error === "function") {
@@ -635,12 +654,7 @@ class AccountScheduler {
             }
 
             // Move selected index to front of activeQueue (LRU Update)
-            this._refreshActiveQueue();
-            const qIdx = this.activeQueue.indexOf(selectedIdx);
-            if (qIdx > -1) {
-                this.activeQueue.splice(qIdx, 1);
-            }
-            this.activeQueue.unshift(selectedIdx);
+            this._moveToFront(selectedIdx);
 
             return selectedIdx;
         }
@@ -660,12 +674,7 @@ class AccountScheduler {
             }
 
             // Move selected index to front of activeQueue (LRU Update)
-            this._refreshActiveQueue();
-            const qIdx = this.activeQueue.indexOf(selectedIdx);
-            if (qIdx > -1) {
-                this.activeQueue.splice(qIdx, 1);
-            }
-            this.activeQueue.unshift(selectedIdx);
+            this._moveToFront(selectedIdx);
 
             return selectedIdx;
         }

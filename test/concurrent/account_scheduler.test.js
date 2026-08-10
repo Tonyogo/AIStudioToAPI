@@ -854,6 +854,21 @@ describe("AccountScheduler", () => {
     });
 
     describe("Active Queue and LRU Updates (Task 1)", () => {
+        test("AccountScheduler LRU activeQueue helper methods _moveToFront and _moveToBack", () => {
+            const mockAuthSource = { availableIndices: [0, 1, 2] };
+            const scheduler = new AccountScheduler(mockAuthSource, {});
+            scheduler._refreshActiveQueue(); // activeQueue = [0, 1, 2]
+
+            scheduler._moveToFront(2);
+            expect(scheduler.activeQueue).toEqual([2, 0, 1]);
+
+            scheduler._moveToFront(1);
+            expect(scheduler.activeQueue).toEqual([1, 2, 0]);
+
+            scheduler._moveToBack(1);
+            expect(scheduler.activeQueue).toEqual([2, 0, 1]);
+        });
+
         test("_refreshActiveQueue synchronizes activeQueue with current auth indices and retains existing LRU order", () => {
             const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
 
