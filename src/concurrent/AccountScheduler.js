@@ -4,6 +4,7 @@
  */
 
 const { selectCandidate } = require("./strategies");
+const ModelUsageTracker = require("./ModelUsageTracker");
 
 class AccountScheduler {
     /**
@@ -55,26 +56,15 @@ class AccountScheduler {
     }
 
     /**
-     * Calculate Beijing 15:00 cycle key (YYYY-MM-DD_15:00)
+     * Calculate Beijing 15:00 cycle key by delegating to ModelUsageTracker
      * @param {Date} [nowDate]
      * @returns {string}
      */
     getBeijingCycleKey(nowDate = new Date()) {
-        const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
-        const year = beijingTime.getUTCFullYear();
-        const day = beijingTime.getUTCDate();
-        const hours = beijingTime.getUTCHours();
-
-        const cycleDate = new Date(Date.UTC(year, beijingTime.getUTCMonth(), day));
-        if (hours < 15) {
-            cycleDate.setUTCDate(cycleDate.getUTCDate() - 1);
+        if (this.modelUsageTracker && typeof this.modelUsageTracker.getBeijingCycleKey === "function") {
+            return this.modelUsageTracker.getBeijingCycleKey(nowDate);
         }
-
-        const cYear = cycleDate.getUTCFullYear();
-        const cMonth = String(cycleDate.getUTCMonth() + 1).padStart(2, "0");
-        const cDay = String(cycleDate.getUTCDate()).padStart(2, "0");
-
-        return `${cYear}-${cMonth}-${cDay}_15:00`;
+        return ModelUsageTracker.getBeijingCycleKey(nowDate);
     }
 
     /**

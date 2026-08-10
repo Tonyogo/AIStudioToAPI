@@ -3,6 +3,20 @@ const fs = require("fs");
 const path = require("path");
 const ModelUsageTracker = require("../../src/concurrent/ModelUsageTracker");
 
+describe("ModelUsageTracker.getBeijingCycleKey static and instance delegation", () => {
+    test("static method returns correct cycle key before 15:00 Beijing time", () => {
+        // 2026-08-10 06:00:00 UTC = 2026-08-10 14:00:00 Beijing time (before 15:00) -> cycle key 2026-08-09_15:00
+        const date = new Date("2026-08-10T06:00:00Z");
+        expect(ModelUsageTracker.getBeijingCycleKey(date)).toBe("2026-08-09_15:00");
+    });
+
+    test("static method returns correct cycle key after 15:00 Beijing time", () => {
+        // 2026-08-10 08:00:00 UTC = 2026-08-10 16:00:00 Beijing time (after 15:00) -> cycle key 2026-08-10_15:00
+        const date = new Date("2026-08-10T08:00:00Z");
+        expect(ModelUsageTracker.getBeijingCycleKey(date)).toBe("2026-08-10_15:00");
+    });
+});
+
 describe("ModelUsageTracker", () => {
     const testDataDir = path.join(process.cwd(), "tmp_test_data");
     const testFilePath = path.join(testDataDir, "concurrent-model-usage.json");

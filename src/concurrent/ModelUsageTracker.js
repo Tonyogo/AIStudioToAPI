@@ -26,22 +26,21 @@ class ModelUsageTracker {
      * @param {Date} [nowDate]
      * @returns {string}
      */
+    static getBeijingCycleKey(nowDate = new Date()) {
+        const shifted = new Date(nowDate.getTime() + (8 - 15) * 3600 * 1000);
+        const y = shifted.getUTCFullYear();
+        const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(shifted.getUTCDate()).padStart(2, "0");
+        return `${y}-${m}-${d}_15:00`;
+    }
+
+    /**
+     * Instance wrapper for Beijing 15:00 cycle key
+     * @param {Date} [nowDate]
+     * @returns {string}
+     */
     getBeijingCycleKey(nowDate = new Date()) {
-        const beijingTime = new Date(nowDate.getTime() + 8 * 3600 * 1000);
-        const year = beijingTime.getUTCFullYear();
-        const day = beijingTime.getUTCDate();
-        const hours = beijingTime.getUTCHours();
-
-        const cycleDate = new Date(Date.UTC(year, beijingTime.getUTCMonth(), day));
-        if (hours < 15) {
-            cycleDate.setUTCDate(cycleDate.getUTCDate() - 1);
-        }
-
-        const cYear = cycleDate.getUTCFullYear();
-        const cMonth = String(cycleDate.getUTCMonth() + 1).padStart(2, "0");
-        const cDay = String(cycleDate.getUTCDate()).padStart(2, "0");
-
-        return `${cYear}-${cMonth}-${cDay}_15:00`;
+        return ModelUsageTracker.getBeijingCycleKey(nowDate);
     }
 
     /**
