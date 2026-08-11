@@ -248,6 +248,25 @@ class AuthRoutes {
             await this.createAuth._cleanupVncSession("client_beacon");
             res.sendStatus(204); // No content
         });
+
+        app.post("/api/auth/toggle-disabled", isAuthenticated, (req, res) => {
+            const { disabled, index } = req.body;
+            if (!Number.isInteger(index) || index < 0 || typeof disabled !== "boolean") {
+                return res.status(400).json({ error: "Invalid parameters. Required: index (number), disabled (boolean)." });
+            }
+
+            try {
+                const result = this.serverSystem.authSource.toggleDisabled(index, disabled);
+                if (process.env.ENABLE_CONCURRENT === "true" && this.serverSystem.concurrentSystem?.scheduler) {
+                    this.serverSystem.concurrentSystem.scheduler.rebalanceConcurrentPool().catch(err => {
+                        this.logger.error(`[Auth] Background rebalance error on disable toggle: ${err.message}`);
+                    });
+                }
+                res.json({ isDisabled: result.disabled, success: true });
+            } catch (error) {
+                res.status(500).json({ error: error.message });
+            }
+        });
     }
 
     /**

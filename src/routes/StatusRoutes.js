@@ -961,6 +961,24 @@ class StatusRoutes {
         });
     }
 
+    formatAccountsForStatus(authSource, currentAuthIndex) {
+        const {
+            initialIndices = [],
+            accountNameMap = new Map(),
+            disabledIndices = [],
+        } = authSource;
+
+        const accounts = initialIndices.map(index => ({
+            id: index,
+            email: accountNameMap.get(index) || null,
+            isCurrent: index === currentAuthIndex,
+            status: disabledIndices.includes(index) ? "disabled" : "active",
+            isDisabled: disabledIndices.includes(index),
+        }));
+
+        return { accounts, disabledIndices };
+    }
+
     _getStatusData() {
         const { config, requestHandler, authSource, browserManager, concurrentComponents } = this.serverSystem;
         const initialIndices = authSource.initialIndices || [];
