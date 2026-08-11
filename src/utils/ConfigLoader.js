@@ -24,7 +24,6 @@ class ConfigLoader {
             apiKeySource: "Not set",
             browserExecutablePath: null,
             checkUpdate: true,
-            concurrentSuspensionDurationMs: 20000,
             enableAuthUpdate: true,
             enableUsageStats: true,
             failureThreshold: 3,
@@ -56,12 +55,6 @@ class ConfigLoader {
         if (process.env.FAILURE_THRESHOLD) {
             const parsed = parseInt(process.env.FAILURE_THRESHOLD, 10);
             config.failureThreshold = Number.isFinite(parsed) ? Math.max(0, parsed) : config.failureThreshold;
-        }
-        if (process.env.CONCURRENT_SUSPENSION_DURATION_MS) {
-            const parsed = parseInt(process.env.CONCURRENT_SUSPENSION_DURATION_MS, 10);
-            config.concurrentSuspensionDurationMs = Number.isFinite(parsed)
-                ? Math.max(0, parsed)
-                : config.concurrentSuspensionDurationMs;
         }
         if (process.env.SWITCH_ON_USES) {
             const parsed = parseInt(process.env.SWITCH_ON_USES, 10);
@@ -226,7 +219,6 @@ class ConfigLoader {
                 config.failureThreshold > 0 ? `Switch after ${config.failureThreshold} failures` : "Disabled"
             }`
         );
-        this.logger.info(`  Concurrent Suspension Duration: ${config.concurrentSuspensionDurationMs}ms`);
         this.logger.info(
             `  Immediate Switch Status Codes: ${
                 config.immediateSwitchStatusCodes.length > 0 ? config.immediateSwitchStatusCodes.join(", ") : "Disabled"
