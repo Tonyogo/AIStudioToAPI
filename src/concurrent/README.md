@@ -128,11 +128,13 @@ src/
    ├───► 阶段 2: 复用轻度繁忙账号:
    │            分发给 activatedBusy (inFlight === 1) 中 usage 最小的账号 ───────► [分发请求]
    │
-   └───► 极值判断与报错:
-                ├── 若在线账号均满载 (inFlight >= 2):
-                │   └─► 抛出 HTTP 503 Error ("All available accounts are busy")
-                └── 无在线 WebSocket:
-                    └─► 抛出 HTTP 503 Error ("No active context connection available")
+   └───► 极值等待与超时重试 (Busy Wait & 3000ms Polling Retry):
+                ├── 若在线账号均满载 (inFlight >= 2) 或无在线 WebSocket:
+                │   └─► 不立即报错，进入异步挂起轮询等待状态
+                │   └─► 每隔 3000ms 重新执行调度轮询，直至成功获取可用账号
+                │   └─► 期间若客户端断开连接 (Client Close)，利用 AbortSignal 即时中断退出
+                │   └─► 若超过最大等待超时 (默认 60s / CONCURRENT_WAIT_TIMEOUT_MS):
+                │       └─► 抛出 HTTP 503 Error ("All available accounts are busy (waited Ns)")
 ```
 
 ---
@@ -157,17 +159,18 @@ src/
   - 若不设置 `dailyLimit`，系统默认每个账号每日该模型上限为 **1000** 次。
   - 重置时间固定为北京时间每天下午 15:00:00。
 
-### 4.2 退休下线环境变量 (`.env`)
+### 4.2 退休下线与等待超时环境变量 (`.env`)
 
-可通过环境变量或配置修改退休触发条件：
+可通过环境变量或配置修改退休触发条件与繁忙等待时间：
 - `FAILURE_THRESHOLD`：账号连续请求失败上限，默认值为 `3`。
 - `IMMEDIATE_SWITCH_STATUS_CODES`：触发立即退休的 HTTP 状态码列表，默认值为 `429,503`。
+- `CONCURRENT_WAIT_TIMEOUT_MS`：并发满载等待最大超时，默认值为 `60000`（60 秒），每次间隔 3000ms 重新轮询。
 
 ---
 
 ## 5. 测试与验证
 
-本子系统配备了完整的自动化单元与集成测试（共 90 个测试用例全部通过，ESLint 检查 0 错误）：
+本子系统配备了完整的自动化单元与集成测试（共 94 个测试用例全部通过，ESLint 检查 0 错误）：
 
 - **测试文件列表：**
   - `test/concurrent/model_usage_tracker.test.js`：验证北京时间 15:00 周期计算、计数累加与磁盘持久化。
