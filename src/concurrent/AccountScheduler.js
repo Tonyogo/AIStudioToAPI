@@ -719,6 +719,82 @@ class AccountScheduler {
             this.isActivatingAny = false;
         }
     }
+
+    /**
+     * Sleep helper supporting AbortSignal
+     * @private
+     */
+    _sleep(ms, signal) {
+        return new Promise((resolve, reject) => {
+            if (signal?.aborted) {
+                const err = new Error("Client request aborted during wait");
+                err.name = "AbortError";
+                return reject(err);
+            }
+
+            let timer = null;
+            let onAbort = null;
+
+            if (signal) {
+                onAbort = () => {
+                    if (timer) clearTimeout(timer);
+                    const err = new Error("Client request aborted during wait");
+                    err.name = "AbortError";
+                    reject(err);
+                };
+                signal.addEventListener("abort", onAbort, { once: true });
+            }
+
+            timer = setTimeout(() => {
+                if (signal && onAbort) {
+                    signal.removeEventListener("abort", onAbort);
+                }
+                resolve();
+            }, ms);
+        });
+    }
+
+    /**
+     * Acquire next available auth index with polling wait and timeout handling
+     * @param {string} modelName
+     * @param {Object} [options]
+     * @param {number} [options.timeoutMs]
+     * @param {AbortSignal} [options.signal]
+     * @returns {Promise<number>} Selected authIndex
+     */
+    async acquireNextAuthIndex(modelName, options = {}) {
+        const timeoutMs = options.timeoutMs || this.config?.concurrentWaitTimeoutMs || 60000;
+        const signal = options.signal || null;
+        const POLL_INTERVAL_MS = 3000;
+        const start = Date.now();
+
+        while (true) {
+            if (signal?.aborted) {
+                const err = new Error("Client request aborted during wait");
+                err.name = "AbortError";
+                throw err;
+            }
+
+            try {
+                const authIndex = await this.getNextAuthIndex(modelName);
+                this.acquireInFlight(authIndex);
+                return authIndex;
+            } catch (err) {
+                const elapsed = Date.now() - start;
+                const remaining = timeoutMs - elapsed;
+
+                if (remaining <= 0) {
+                    const timeoutErr = new Error(`All available accounts are busy (waited ${Math.round(elapsed / 1000)}s)`);
+                    timeoutErr.statusCode = 503;
+                    timeoutErr.statusText = "UNAVAILABLE";
+                    throw timeoutErr;
+                }
+
+                const sleepDuration = Math.min(POLL_INTERVAL_MS, remaining);
+                await this._sleep(sleepDuration, signal);
+            }
+        }
+    }
 }
 
 module.exports = AccountScheduler;

@@ -23,6 +23,73 @@ describe("AccountScheduler", () => {
         mockBrowserManager = {};
     });
 
+    describe("acquireNextAuthIndex", () => {
+        test("returns authIndex immediately when account is free", async () => {
+            mockConnectionRegistry.hasConnection.mockReturnValue(true);
+            const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+            scheduler.setAccountStatus(0, "ACTIVATED");
+
+            const authIndex = await scheduler.acquireNextAuthIndex("gemini-2.5-flash");
+            expect(authIndex).toBe(0);
+            expect(scheduler.getInFlightCount(0)).toBe(1);
+        });
+
+        test("polls and resolves when account becomes free within timeout", async () => {
+            mockConnectionRegistry.hasConnection.mockReturnValue(true);
+            mockAuthSource.availableIndices = [0];
+            const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+            scheduler.setAccountStatus(0, "ACTIVATED");
+
+            // Lock account 0 completely
+            scheduler.acquireInFlight(0);
+            scheduler.acquireInFlight(0);
+
+            // Release in-flight after 100ms
+            setTimeout(() => {
+                scheduler.releaseInFlight(0);
+                scheduler.releaseInFlight(0);
+            }, 100);
+
+            const authIndex = await scheduler.acquireNextAuthIndex("gemini-2.5-flash", { timeoutMs: 1000 });
+            expect(authIndex).toBe(0);
+        });
+
+        test("throws 503 error after timeout if all accounts remain busy", async () => {
+            mockConnectionRegistry.hasConnection.mockReturnValue(true);
+            mockAuthSource.availableIndices = [0];
+            const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+            scheduler.setAccountStatus(0, "ACTIVATED");
+
+            // Lock account 0 completely
+            scheduler.acquireInFlight(0);
+            scheduler.acquireInFlight(0);
+
+            await expect(
+                scheduler.acquireNextAuthIndex("gemini-2.5-flash", { timeoutMs: 100 })
+            ).rejects.toMatchObject({
+                message: expect.stringContaining("All available accounts are busy"),
+                statusCode: 503,
+            });
+        });
+
+        test("aborts immediately when signal is triggered during poll sleep", async () => {
+            mockConnectionRegistry.hasConnection.mockReturnValue(true);
+            mockAuthSource.availableIndices = [0];
+            const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+            scheduler.setAccountStatus(0, "ACTIVATED");
+
+            scheduler.acquireInFlight(0);
+            scheduler.acquireInFlight(0);
+
+            const controller = new AbortController();
+            setTimeout(() => controller.abort(), 50);
+
+            await expect(
+                scheduler.acquireNextAuthIndex("gemini-2.5-flash", { timeoutMs: 2000, signal: controller.signal })
+            ).rejects.toThrow();
+        });
+    });
+
     test("selectWeightedCandidate returns null for empty or invalid candidates", () => {
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
         expect(scheduler.selectWeightedCandidate(null, 1000)).toBeNull();
