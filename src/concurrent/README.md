@@ -1,7 +1,7 @@
 # 交接文档：轻量级多账号并发转发子系统 (src/concurrent)
 
-**更新日期:** 2026-08-05  
-**状态:** 已升级完成并已通过测试 (54/54 单元与集成测试全部通过，ESLint 0 Error)
+**更新日期:** 2026-08-11  
+**状态:** 已升级完成并已通过测试 (90/90 单元与集成测试全部通过，ESLint 0 Error)
 
 ---
 
@@ -17,10 +17,13 @@
 - **最少用量优先（Least-Used Load Balancing）：** 根据每日按模型统计的用量，优先将请求调度给当前模型使用量最少的账号，实现均衡消耗。
 - **30s 全局激活冷却与单次激活互斥锁 (Activation Lock & 30s Cooldown)：** 引入全局 `isActivatingAny` 互斥锁，严格防止并发请求同时触发多个账号并行激活；两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。冷却校验同样适用于 Baseline 激活。
 - **2 分钟激活寿命自动到期 (Activation Auto-Expiration)：** 账号激活后默认具备 2 分钟寿命上限。每次在调度请求 (`getNextAuthIndex`) 入口处触发状态刷新，若已激活账号空闲 (`inFlight === 0`) 且激活时长超过 2 分钟，自动复位过期为 `INACTIVE`。
+- **连续失败累加降级退休 (Consecutive Failure Retirement)：** 
+  - 取消了原先的 20秒静默隔离挂起逻辑，去掉相关 `isAccountSuspended` 的判定与配置。
+  - 修正了非 429 失败（如 403）触发挂起时，错误清空并复位 `failureCountMap` 连续失败计数的 Bug。
+  - 每一个请求失败（403/500/503 等）都会不中断地累加连续失败次数，当连续失败达到 `failureThreshold`（默认 3 次）或者直接收到 `immediateSwitchStatusCodes`（默认 `[429, 503]`）时，平滑而即时地触发降级退休 (`RETIRED`)，彻底解决了 403 无法下线的缺陷。
 - **动态池平滑退载与状态自动复位 (Dynamic Rebalance & State Restoration)：** 
-  - 单模型默认每日上限 **1000 次** (`dailyLimit`)，仅用作判定下线降级与替换依据，**不阻断线上调度**；
-  - 当账号在 `exhaustedModelsThreshold` 个模型（默认 1 个）上达到限额，或连续失败达到 `failureThreshold`（默认 3 次，或单次 429）时，触发标记为降级退休 (`RETIRED`)；
-  - 自动触发并发池动态再平衡 (`rebalanceConcurrentPool`)，按【健康账号 (Usage 升序) > 退休账号 (Usage 升序)】构建优先级队列；
+  - 彻底移除了模型用量超额降级退休逻辑，去掉相关 `exhaustedModelsThreshold` 的配置和环境变量，各模型每日配额仅做负载调度统计。
+  - 当账号因连续失败达到上限或收到立即切换状态码而 `RETIRED` 时，自动触发并发池动态再平衡 (`rebalanceConcurrentPool`)，按【健康账号 (Usage 升序) > 退休账号】构建优先级队列；
   - 若降级选入 `MAX_CONTEXTS` 保底目标集，被选中的 `RETIRED` 账号在拉起前自动恢复为 `INACTIVE` 并清空失败计数；落在保底集外的 Context 由 BrowserManager 在空闲时优雅关闭释放约 **700MB 内存**。
 - **北京时间 15:00 自动重置与跨周期复苏：** 每日北京时间 15:00:00 (UTC+8) 自动归零模型用量，并同步将 `RETIRED` 状态账号复位为 `INACTIVE` 重启可用。
 - **全链路可观测性 (UsageStatsService) & 图像 Part 转 Markdown：** 完整上报请求与尝试节点数据给 UI 监控面板，并支持将 Gemini 生成的 Base64 图片自动转换为 Markdown Inline Data URL 展现。
@@ -36,7 +39,7 @@ src/
 └── concurrent/
     ├── index.js                    # 并发模块入口门面 (Facade)
     ├── AccountScheduler.js         # 智能账号调度器 (Scheduler, State Machine & Load Balancer)
-    ├── ConcurrentRequestHandler.js # 高性能原生 Gemini API 请求拦截器、隔离重试与流转发核心
+    ├── ConcurrentRequestHandler.js # 高性能原生 Gemini API 请求拦截器与流转发核心
     ├── ModelUsageTracker.js        # 模型配额计数、北京 15:00 周期重置与磁盘持久化
     └── README.md                   # 模块交接与说明文档 (即本文档)
 ```
@@ -62,13 +65,13 @@ src/
 
 ### 2.3 `AccountScheduler.js` (智能账号调度器)
 
-- **职责：** 管理账号激活状态机、执行单模型配额过滤、30s 激活冷却、并发打散调度以及账号退休与无缝替换。
+- **职责：** 管理账号激活状态机、30s 激活冷却、并发打散调度以及账号退休与无缝替换。
 - **核心逻辑与状态机：**
   - **状态定义：** `INACTIVE`（初始/未解卡）、`ACTIVATING`（正在激活）、`ACTIVATED`（已解卡且可用）、`RETIRED`（下线退休，释放 Context）。
   - **首发账号同步：** 自动同步 `browserManager.currentAuthIndex` 为 `ACTIVATED`，绝不对默认启动账号重复执行激活。
   - **30s 激活冷却：** 维护 `lastGlobalActivationAt`，任意账号两次激活之间严格间隔 >= 30 秒。
   - **退休与动态池再平衡 (`checkAndRetireAccount` & `retireAndReplaceAccount` & `rebalanceConcurrentPool`)：**
-    - 检查在 N 个模型上达到每日配额（默认 1000 次），或连续失败达到 `failureThreshold`（默认 3 次）。
+    - 检查连续失败达到 `failureThreshold`（默认 3 次）或者直接收到立即切换的状态码。
     - 触发下线后标记为 `RETIRED`，并触发动态池再平衡 `rebalanceConcurrentPool()`；
     - 动态构建优先级队列，将 `RETIRED` 账号排在队尾。被保底选中的 `RETIRED` 账号自动恢复状态为 `INACTIVE` 并清空失败计数，超出容量的退休 Context 由 BrowserManager 在空闲时优雅关闭释放 700MB 内存。
   - **周期复苏 (`_checkAndResetCycle`)：** 在每日北京 15:00 周期跨越时，自动将所有 `RETIRED` 状态账号复位为 `INACTIVE` 并清空失败计数。
@@ -77,10 +80,8 @@ src/
 
 ### 2.4 `ConcurrentRequestHandler.js` (高性能请求分发)
 
-- **职责：** 拦截请求，解析标准化模型名，透传真实状态码/Header，集成 UI 统计追踪，实现失败 cross-account 重试与图片 Base64 转换。
+- **职责：** 拦截请求，解析标准化模型名，透传真实状态码/Header，集成 UI 统计追踪，图片 Base64 转换。
 - **关键设计细节：**
-  - **多账号无感重试：**
-    在响应头尚未发送 (`res.headersSent === false`) 且非 429 报错时，允许最多 2 次无感跨账号重试。
   - **监控集成 (`usageStatsService`)：**
     精准上报 `startRequest`、`updateRequest`、`recordAttempt` 与 `finishRequest` 节点信息，包含账号名称与流模式（`real`），使 UI 监控界面正确展示账号分布与请求状态。
   - **请求完成退休检查：**
@@ -92,7 +93,7 @@ src/
 
 ## 3. 完整调度流程详解
 
-当客户端发起一个原生 Gemini 请求（如 POST `/v1beta/models/gemini-2.5-pro:generateContent`）时，调度器 `AccountScheduler.getNextAuthIndex(modelName)` 按照以下步骤执行调度：
+当客户端发出原生 Gemini 请求（如 POST `/v1beta/models/gemini-2.5-pro:generateContent`）时，调度器 `AccountScheduler.getNextAuthIndex(modelName)` 按照以下步骤执行调度：
 
 ```
 [客户端请求到达]
@@ -108,7 +109,7 @@ src/
        │
        ▼
 3. 扫描在线 WebSocket 账号
-   - 过滤已 RETIRED / inFlight >= 2 的账号（额度用尽不跳过，仍作为候选参与用量升序分发，请求完成后由 checkAndRetireAccount 触发下线与替换）
+   - 过滤已 RETIRED / inFlight >= 2 的账号
    - 分类收集候选集:
      * activatedFree:     已激活且绝对空闲 (inFlight === 0)
      * activatedBusy:     已激活但正在处理 1 个请求 (inFlight === 1)
@@ -138,7 +139,7 @@ src/
 
 ## 4. 退休配置与模型上限指南 (`configs/models.json` & `.env`)
 
-### 4.1 模型限额配置 (`configs/models.json`)
+### 4.1 模型配额配置 (`configs/models.json`)
 
 在 `configs/models.json` 对应的模型定义中添加 `dailyLimit` 可选整数字段：
 
@@ -159,14 +160,14 @@ src/
 ### 4.2 退休下线环境变量 (`.env`)
 
 可通过环境变量或配置修改退休触发条件：
-- `EXHAUSTED_MODELS_THRESHOLD`：账号用尽配额的模型数量上限，默认值为 `1`（当在 1 个模型上达到上限即退休该账号并更换新账号）。
-- `FAILURE_THRESHOLD`：账号连续请求失败/429 上限，默认值为 `3`。
+- `FAILURE_THRESHOLD`：账号连续请求失败上限，默认值为 `3`。
+- `IMMEDIATE_SWITCH_STATUS_CODES`：触发立即退休的 HTTP 状态码列表，默认值为 `429,503`。
 
 ---
 
 ## 5. 测试与验证
 
-本子系统配备了完整的自动化单元与集成测试（共 63 个测试用例全部通过，ESLint 检查 0 错误）：
+本子系统配备了完整的自动化单元与集成测试（共 90 个测试用例全部通过，ESLint 检查 0 错误）：
 
 - **测试文件列表：**
   - `test/concurrent/model_usage_tracker.test.js`：验证北京时间 15:00 周期计算、计数累加与磁盘持久化。
