@@ -212,7 +212,7 @@ class AccountScheduler {
     }
 
     /**
-     * Record failure for an account and trigger suspension if threshold reached
+     * Record failure for an account and trigger suspension for 429
      * @param {number} authIndex
      * @param {number} statusCode
      */
@@ -223,23 +223,17 @@ class AccountScheduler {
         if (typeof statusCode === "number") {
             this.lastStatusCodeMap.set(authIndex, statusCode);
         }
+
+        // Always increment consecutive failure count
         const currentFailures = (this.failureCountMap.get(authIndex) || 0) + 1;
         this.failureCountMap.set(authIndex, currentFailures);
 
-        const secondsStr = `${Math.round(this.suspensionDurationMs / 1000)} seconds`;
         if (statusCode === 429) {
+            const secondsStr = `${Math.round(this.suspensionDurationMs / 1000)} seconds`;
             this.suspendedUntilMap.set(authIndex, Date.now() + this.suspensionDurationMs);
             if (this.logger && typeof this.logger.warn === "function") {
                 this.logger.warn(
                     `[AccountScheduler] AuthIndex #${authIndex} suspended for ${secondsStr} due to HTTP 429 rate limit`
-                );
-            }
-        } else if (currentFailures >= 2) {
-            this.suspendedUntilMap.set(authIndex, Date.now() + this.suspensionDurationMs);
-            this.failureCountMap.set(authIndex, 0);
-            if (this.logger && typeof this.logger.warn === "function") {
-                this.logger.warn(
-                    `[AccountScheduler] AuthIndex #${authIndex} suspended for ${secondsStr} due to 2 consecutive failures`
                 );
             }
         }
@@ -375,7 +369,7 @@ class AccountScheduler {
     }
 
     /**
-     * Check if account should be retired based on model daily limits or failure threshold
+     * Check if account should be retired based on failure threshold or immediate switch status codes
      * @param {number} authIndex
      * @returns {Promise<boolean>}
      */
@@ -384,22 +378,6 @@ class AccountScheduler {
         if (authIndex === undefined || authIndex < 0) return false;
         if (this.getAccountStatus(authIndex) === "RETIRED") return false;
 
-        let exhaustedCount = 0;
-        const modelList =
-            Array.isArray(this.modelList) && this.modelList.length > 0
-                ? this.modelList
-                : [{ name: "models/gemini-2.5-flash" }];
-        for (const modelConfig of modelList) {
-            if (!modelConfig || !modelConfig.name) continue;
-            const cleanName = modelConfig.name.replace("models/", "");
-            const limit = this.getModelDailyLimit(cleanName);
-            const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(authIndex, cleanName) : 0;
-            if (usage >= limit) {
-                exhaustedCount++;
-            }
-        }
-
-        const maxExhausted = this.config?.exhaustedModelsThreshold || 1;
         const failureThreshold = this.config?.failureThreshold || 3;
         const consecutiveFailures = this.failureCountMap.get(authIndex) || 0;
         const lastStatusCode = this.lastStatusCodeMap.get(authIndex);
@@ -413,9 +391,6 @@ class AccountScheduler {
         if (isImmediateSwitch) {
             shouldRetire = true;
             reason = `received immediate switch status code ${lastStatusCode}`;
-        } else if (exhaustedCount >= maxExhausted) {
-            shouldRetire = true;
-            reason = `reached daily usage limit on ${exhaustedCount} model(s) (threshold: ${maxExhausted})`;
         } else if (consecutiveFailures >= failureThreshold) {
             shouldRetire = true;
             reason = `reached ${consecutiveFailures} consecutive failures (threshold: ${failureThreshold})`;
