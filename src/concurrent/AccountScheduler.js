@@ -37,16 +37,11 @@ class AccountScheduler {
         this.accountStatusMap = new Map();
         this.inFlightMap = new Map();
         this.failureCountMap = new Map();
-        this.suspendedUntilMap = new Map();
         this.maxInFlightPerAccount = 2;
         this.activatedLifespanMs = 120000;
         this.lastGlobalActivationAt = 0;
         this.activationCooldownMs = 30000;
         this.isActivatingAny = false;
-        this.suspensionDurationMs =
-            typeof config?.concurrentSuspensionDurationMs === "number" && config.concurrentSuspensionDurationMs >= 0
-                ? config.concurrentSuspensionDurationMs
-                : 20000;
         this.immediateSwitchStatusCodes =
             Array.isArray(config?.immediateSwitchStatusCodes) && config.immediateSwitchStatusCodes.length > 0
                 ? config.immediateSwitchStatusCodes
@@ -89,7 +84,6 @@ class AccountScheduler {
                 }
             }
             this.failureCountMap.clear();
-            this.suspendedUntilMap.clear();
             this.lastStatusCodeMap.clear();
         }
     }
@@ -202,17 +196,7 @@ class AccountScheduler {
     }
 
     /**
-     * Check if account is currently suspended
-     * @param {number} authIndex
-     * @returns {boolean}
-     */
-    isAccountSuspended(authIndex) {
-        const suspendedUntil = this.suspendedUntilMap.get(authIndex) || 0;
-        return Date.now() < suspendedUntil;
-    }
-
-    /**
-     * Record failure for an account and trigger suspension for 429
+     * Record failure for an account
      * @param {number} authIndex
      * @param {number} statusCode
      */
@@ -227,16 +211,6 @@ class AccountScheduler {
         // Always increment consecutive failure count
         const currentFailures = (this.failureCountMap.get(authIndex) || 0) + 1;
         this.failureCountMap.set(authIndex, currentFailures);
-
-        if (statusCode === 429) {
-            const secondsStr = `${Math.round(this.suspensionDurationMs / 1000)} seconds`;
-            this.suspendedUntilMap.set(authIndex, Date.now() + this.suspensionDurationMs);
-            if (this.logger && typeof this.logger.warn === "function") {
-                this.logger.warn(
-                    `[AccountScheduler] AuthIndex #${authIndex} suspended for ${secondsStr} due to HTTP 429 rate limit`
-                );
-            }
-        }
     }
 
     /**
@@ -556,14 +530,6 @@ class AccountScheduler {
                 continue;
             }
             if (this._hasConnection(candidateIdx)) {
-                if (this.isAccountSuspended(candidateIdx)) {
-                    if (this.logger && typeof this.logger.debug === "function") {
-                        this.logger.debug(
-                            `[AccountScheduler] AuthIndex #${candidateIdx} skipped: account is suspended`
-                        );
-                    }
-                    continue;
-                }
                 onlineAccountCount++;
                 const usage = this.modelUsageTracker ? this.modelUsageTracker.getUsage(candidateIdx, modelName) : 0;
                 const inFlight = this.getInFlightCount(candidateIdx);

@@ -506,12 +506,12 @@ describe("AccountScheduler", () => {
         expect(scheduler.getInFlightCount(0)).toBe(1);
     });
 
-    test("recordFailure suspends account for 1 minute on 429 error", () => {
+    test("recordFailure increments failure count on 429 error without suspension", () => {
         const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-        expect(scheduler.isAccountSuspended(0)).toBe(false);
+        expect(scheduler.failureCountMap.get(0) || 0).toBe(0);
 
         scheduler.recordFailure(0, 429);
-        expect(scheduler.isAccountSuspended(0)).toBe(true);
+        expect(scheduler.failureCountMap.get(0)).toBe(1);
     });
 
     test("recordFailure accumulates consecutive non-429 failures smoothly and triggers retirement on threshold", async () => {
@@ -535,12 +535,10 @@ describe("AccountScheduler", () => {
         // First 403 failure
         scheduler.recordFailure(0, 403);
         expect(scheduler.failureCountMap.get(0)).toBe(1);
-        expect(scheduler.isAccountSuspended(0)).toBe(false);
 
-        // Second 403 failure - should NOT be suspended, should NOT reset to 0
+        // Second 403 failure - should NOT reset to 0
         scheduler.recordFailure(0, 403);
         expect(scheduler.failureCountMap.get(0)).toBe(2);
-        expect(scheduler.isAccountSuspended(0)).toBe(false);
 
         // Third 403 failure
         scheduler.recordFailure(0, 403);
@@ -549,17 +547,6 @@ describe("AccountScheduler", () => {
         const retired = await scheduler.checkAndRetireAccount(0);
         expect(retired).toBe(true);
         expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
-    });
-
-    test("getNextAuthIndex skips suspended accounts", async () => {
-        mockConnectionRegistry.hasConnection.mockReturnValue(true);
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-        scheduler.setAccountStatus(0, "ACTIVATED");
-        scheduler.setAccountStatus(1, "ACTIVATED");
-
-        scheduler.recordFailure(0, 429); // Account 0 is suspended
-        const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
-        expect(selected).toBe(1);
     });
 
     test("getNextAuthIndex prioritizes accounts with lower inFlightCount to spread load", async () => {
@@ -658,12 +645,11 @@ describe("AccountScheduler", () => {
         // Mock active cycle key as "2026-08-04_15:00"
         scheduler.currentCycleKey = "2026-08-04_15:00";
 
-        // Set up RETIRED status, failure counts and suspension
+        // Set up RETIRED status, failure counts
         scheduler.accountStatusMap.set(0, { lastActivatedAt: Date.now(), status: "RETIRED" });
         scheduler.accountStatusMap.set(1, { lastActivatedAt: Date.now(), status: "ACTIVATED" });
         scheduler.failureCountMap.set(0, 3);
         scheduler.failureCountMap.set(1, 1);
-        scheduler.suspendedUntilMap.set(1, Date.now() + 20000);
 
         // Force getBeijingCycleKey to return a new cycle key on next call
         jest.spyOn(scheduler, "getBeijingCycleKey").mockReturnValue("2026-08-05_15:00");
@@ -673,10 +659,9 @@ describe("AccountScheduler", () => {
         expect(status0).toBe("INACTIVE"); // Account 0 retired -> inactive
         expect(scheduler.getAccountStatus(1)).toBe("ACTIVATED"); // Account 1 activated -> remains activated
 
-        // Failures and suspensions should be cleared
+        // Failures should be cleared
         expect(scheduler.failureCountMap.get(0)).toBeUndefined();
         expect(scheduler.failureCountMap.get(1)).toBeUndefined();
-        expect(scheduler.suspendedUntilMap.get(1)).toBeUndefined();
         expect(scheduler.currentCycleKey).toBe("2026-08-05_15:00");
     });
 
