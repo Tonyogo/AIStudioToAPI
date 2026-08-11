@@ -17,11 +17,11 @@
 - **最少用量优先（Least-Used Load Balancing）：** 根据每日按模型统计的用量，优先将请求调度给当前模型使用量最少的账号，实现均衡消耗。
 - **30s 全局激活冷却与单次激活互斥锁 (Activation Lock & 30s Cooldown)：** 引入全局 `isActivatingAny` 互斥锁，严格防止并发请求同时触发多个账号并行激活；两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。冷却校验同样适用于 Baseline 激活。
 - **2 分钟激活寿命自动到期 (Activation Auto-Expiration)：** 账号激活后默认具备 2 分钟寿命上限。每次在调度请求 (`getNextAuthIndex`) 入口处触发状态刷新，若已激活账号空闲 (`inFlight === 0`) 且激活时长超过 2 分钟，自动复位过期为 `INACTIVE`。
-- **连续失败累加降级退休 (Consecutive Failure Retirement)：** 
+- **连续失败累加降级退休 (Consecutive Failure Retirement)：**
   - 取消了原先的 20秒静默隔离挂起逻辑，去掉相关 `isAccountSuspended` 的判定与配置。
   - 修正了非 429 失败（如 403）触发挂起时，错误清空并复位 `failureCountMap` 连续失败计数的 Bug。
   - 每一个请求失败（403/500/503 等）都会不中断地累加连续失败次数，当连续失败达到 `failureThreshold`（默认 3 次）或者直接收到 `immediateSwitchStatusCodes`（默认 `[429, 503]`）时，平滑而即时地触发降级退休 (`RETIRED`)，彻底解决了 403 无法下线的缺陷。
-- **动态池平滑退载与状态自动复位 (Dynamic Rebalance & State Restoration)：** 
+- **动态池平滑退载与状态自动复位 (Dynamic Rebalance & State Restoration)：**
   - 彻底移除了模型用量超额降级退休逻辑，去掉相关 `exhaustedModelsThreshold` 的配置和环境变量，各模型每日配额仅做负载调度统计。
   - 当账号因连续失败达到上限或收到立即切换状态码而 `RETIRED` 时，自动触发并发池动态再平衡 (`rebalanceConcurrentPool`)，按【健康账号 (Usage 升序) > 退休账号】构建优先级队列；
   - 若降级选入 `MAX_CONTEXTS` 保底目标集，被选中的 `RETIRED` 账号在拉起前自动恢复为 `INACTIVE` 并清空失败计数；落在保底集外的 Context 由 BrowserManager 在空闲时优雅关闭释放约 **700MB 内存**。
@@ -162,6 +162,7 @@ src/
 ### 4.2 退休下线与等待超时环境变量 (`.env`)
 
 可通过环境变量或配置修改退休触发条件与繁忙等待时间：
+
 - `FAILURE_THRESHOLD`：账号连续请求失败上限，默认值为 `3`。
 - `IMMEDIATE_SWITCH_STATUS_CODES`：触发立即退休的 HTTP 状态码列表，默认值为 `429,503`。
 - `CONCURRENT_WAIT_TIMEOUT_MS`：并发满载等待最大超时，默认值为 `60000`（60 秒），每次间隔 3000ms 重新轮询。
