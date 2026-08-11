@@ -434,13 +434,37 @@ class ConcurrentRequestHandler {
             streamMode: payload.isStream ? "real" : null,
         });
 
+        const abortController = new AbortController();
+        const onClientClose = () => {
+            abortController.abort();
+        };
+        if (typeof res.on === "function") {
+            res.on("close", onClientClose);
+        }
+
         let authIndex;
         try {
-            authIndex = await this.scheduler.getNextAuthIndex(payload.cleanModelName);
-            if (typeof this.scheduler.acquireInFlight === "function") {
-                this.scheduler.acquireInFlight(authIndex);
+            if (typeof this.scheduler.acquireNextAuthIndex === "function") {
+                authIndex = await this.scheduler.acquireNextAuthIndex(payload.cleanModelName, {
+                    signal: abortController.signal,
+                    timeoutMs: this.scheduler.config?.concurrentWaitTimeoutMs || 60000,
+                });
+            } else {
+                authIndex = await this.scheduler.getNextAuthIndex(payload.cleanModelName);
+                if (typeof this.scheduler.acquireInFlight === "function") {
+                    this.scheduler.acquireInFlight(authIndex);
+                }
             }
         } catch (err) {
+            if (typeof res.removeListener === "function") {
+                res.removeListener("close", onClientClose);
+            }
+            if (abortController.signal.aborted) {
+                if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info("[ConcurrentRequestHandler] Request aborted by client during account wait");
+                }
+                return;
+            }
             const statusCode = err.statusCode || 503;
             const statusText = err.statusText || (statusCode === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE");
             this.usageStatsService?.finishRequest(requestId, {
@@ -453,6 +477,11 @@ class ConcurrentRequestHandler {
             return res.status(statusCode).json({
                 error: { code: statusCode, message: err.message, status: statusText },
             });
+        }
+
+        // Clean up the client close listener once authIndex is acquired
+        if (typeof res.removeListener === "function") {
+            res.removeListener("close", onClientClose);
         }
 
         const accountName = this._getAccountName(authIndex);

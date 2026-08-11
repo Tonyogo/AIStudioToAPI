@@ -728,4 +728,44 @@ describe("ConcurrentRequestHandler", () => {
         expect(tools).toContainEqual({ googleSearch: {} });
         expect(tools).toContainEqual({ codeExecution: {} });
     });
+
+    test("handleGeminiRequest uses acquireNextAuthIndex with AbortSignal", async () => {
+        const mockSchedulerLocal = {
+            acquireNextAuthIndex: jest.fn().mockResolvedValue(0),
+            checkAndRetireAccount: jest.fn().mockResolvedValue(false),
+            config: { concurrentWaitTimeoutMs: 60000 },
+            releaseInFlight: jest.fn(),
+        };
+        const mockRegistryLocal = {
+            removeMessageQueue: jest.fn(),
+            sendRequest: jest.fn((authIdx, payload, cb) => cb(null, true, false, { status: 200 })),
+        };
+
+        const handler = new ConcurrentRequestHandler(mockRegistryLocal, mockSchedulerLocal, mockLogger, []);
+
+        const req = {
+            body: { contents: [] },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+        const res = {
+            end: jest.fn(),
+            json: jest.fn(),
+            on: jest.fn(),
+            removeListener: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+            write: jest.fn(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(mockSchedulerLocal.acquireNextAuthIndex).toHaveBeenCalledWith(
+            "gemini-2.5-flash",
+            expect.objectContaining({
+                signal: expect.any(Object),
+                timeoutMs: 60000,
+            })
+        );
+    });
 });
