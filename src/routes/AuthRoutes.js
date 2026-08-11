@@ -252,7 +252,9 @@ class AuthRoutes {
         app.post("/api/auth/toggle-disabled", isAuthenticated, (req, res) => {
             const { disabled, index } = req.body;
             if (!Number.isInteger(index) || index < 0 || typeof disabled !== "boolean") {
-                return res.status(400).json({ error: "Invalid parameters. Required: index (number), disabled (boolean)." });
+                return res
+                    .status(400)
+                    .json({ error: "Invalid parameters. Required: index (number), disabled (boolean)." });
             }
 
             try {

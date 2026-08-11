@@ -942,7 +942,11 @@
                                         size="small"
                                         @click.stop="toggleAccountDisabled(item)"
                                     >
-                                        {{ item.isDisabled || item.status === 'disabled' ? t('enableAccount') : t('disableAccount') }}
+                                        {{
+                                            item.isDisabled || item.status === "disabled"
+                                                ? t("enableAccount")
+                                                : t("disableAccount")
+                                        }}
                                     </el-button>
                                     <button
                                         class="btn-switch"
@@ -950,7 +954,12 @@
                                             'is-active': item.index === state.currentAuthIndex,
                                             'is-fast': item.hasContext && item.index !== state.currentAuthIndex,
                                         }"
-                                        :disabled="isBusy || item.index === state.currentAuthIndex || item.isDisabled || item.status === 'disabled'"
+                                        :disabled="
+                                            isBusy ||
+                                            item.index === state.currentAuthIndex ||
+                                            item.isDisabled ||
+                                            item.status === 'disabled'
+                                        "
                                         :title="
                                             item.index === state.currentAuthIndex
                                                 ? t('currentAccount')
@@ -4502,35 +4511,35 @@ const handleStreamingModeBeforeChange = async () => {
     }
 };
 
-const toggleAccountDisabled = async (account) => {
-    const isTargetDisabled = !(account.isDisabled || account.status === 'disabled');
+const toggleAccountDisabled = async account => {
+    const isTargetDisabled = !(account.isDisabled || account.status === "disabled");
     const confirmMsg = isTargetDisabled
-        ? t('confirmDisableAccount', { id: account.index, email: account.email || 'N/A' })
-        : t('confirmEnableAccount', { id: account.index, email: account.email || 'N/A' });
+        ? t("confirmDisableAccount", { email: account.email || "N/A", id: account.index })
+        : t("confirmEnableAccount", { email: account.email || "N/A", id: account.index });
 
     try {
-        await ElMessageBox.confirm(confirmMsg, t('warningTitle'), {
-            confirmButtonText: t('ok'),
-            cancelButtonText: t('cancel'),
-            type: 'warning',
+        await ElMessageBox.confirm(confirmMsg, t("warningTitle"), {
+            cancelButtonText: t("cancel"),
+            confirmButtonText: t("ok"),
+            type: "warning",
         });
 
-        const res = await fetch('/api/auth/toggle-disabled', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ index: account.index, disabled: isTargetDisabled }),
+        const res = await fetch("/api/auth/toggle-disabled", {
+            body: JSON.stringify({ disabled: isTargetDisabled, index: account.index }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
         });
 
         if (!res.ok) {
             const data = await res.json();
-            throw new Error(data.error || 'Failed to toggle account disabled state');
+            throw new Error(data.error || "Failed to toggle account disabled state");
         }
 
-        ElMessage.success(t('toggleDisabledSuccess'));
-        fetchStatus();
+        ElMessage.success(t("toggleDisabledSuccess"));
+        updateContent();
     } catch (err) {
-        if (err !== 'cancel') {
-            ElMessage.error(err.message || 'Action failed');
+        if (err !== "cancel") {
+            ElMessage.error(err.message || "Action failed");
         }
     }
 };

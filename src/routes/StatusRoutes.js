@@ -962,18 +962,14 @@ class StatusRoutes {
     }
 
     formatAccountsForStatus(authSource, currentAuthIndex) {
-        const {
-            initialIndices = [],
-            accountNameMap = new Map(),
-            disabledIndices = [],
-        } = authSource;
+        const { initialIndices = [], accountNameMap = new Map(), disabledIndices = [] } = authSource;
 
         const accounts = initialIndices.map(index => ({
-            id: index,
             email: accountNameMap.get(index) || null,
+            id: index,
             isCurrent: index === currentAuthIndex,
-            status: disabledIndices.includes(index) ? "disabled" : "active",
             isDisabled: disabledIndices.includes(index),
+            status: disabledIndices.includes(index) ? "disabled" : "active",
         }));
 
         return { accounts, disabledIndices };
