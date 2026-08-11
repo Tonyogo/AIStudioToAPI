@@ -43,6 +43,7 @@ class ConfigLoader {
             streamTimeoutMs: 60000,
             switchOnUses: 40,
             wsPort: 9998,
+            concurrentWaitTimeoutMs: parseInt(process.env.CONCURRENT_WAIT_TIMEOUT_MS, 10) || 60000,
         };
 
         // Environment variable overrides
