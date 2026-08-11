@@ -858,7 +858,10 @@
                                             {{ t("tagExpired") }}
                                         </span>
                                         <el-tag
-                                            v-if="item.status === 'disabled' || item.isDisabled"
+                                            v-if="
+                                                !state.isConcurrentMode &&
+                                                (item.status === 'disabled' || item.isDisabled)
+                                            "
                                             type="info"
                                             size="small"
                                             class="status-tag"
@@ -935,19 +938,32 @@
                                     </div>
                                 </el-tooltip>
                                 <div class="account-actions">
-                                    <el-button
+                                    <button
                                         v-if="!item.isCurrent"
-                                        :type="item.isDisabled || item.status === 'disabled' ? 'success' : 'warning'"
-                                        plain
-                                        size="small"
+                                        class="btn-toggle-disabled"
+                                        :class="{ 'is-disabled': item.isDisabled || item.status === 'disabled' }"
+                                        :title="
+                                            item.isDisabled || item.status === 'disabled'
+                                                ? t('enableAccount')
+                                                : t('disableAccount')
+                                        "
                                         @click.stop="toggleAccountDisabled(item)"
                                     >
-                                        {{
-                                            item.isDisabled || item.status === "disabled"
-                                                ? t("enableAccount")
-                                                : t("disableAccount")
-                                        }}
-                                    </el-button>
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                            <line x1="12" y1="2" x2="12" y2="12"></line>
+                                        </svg>
+                                    </button>
                                     <button
                                         class="btn-switch"
                                         :class="{
@@ -5788,6 +5804,23 @@ watchEffect(() => {
         &.btn-danger:hover:not(:disabled) {
             border-color: @error-color;
             color: @error-color;
+        }
+
+        &.btn-toggle-disabled:hover:not(:disabled) {
+            border-color: @warning-color;
+            color: @warning-color;
+        }
+
+        &.btn-toggle-disabled.is-disabled {
+            background-color: rgba(144, 147, 153, 0.1);
+            border-color: rgba(144, 147, 153, 0.2);
+            color: #909399;
+        }
+
+        &.btn-toggle-disabled.is-disabled:hover:not(:disabled) {
+            border-color: @success-color;
+            color: @success-color;
+            background-color: #f0f9eb;
         }
     }
 }
