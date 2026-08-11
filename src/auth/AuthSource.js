@@ -22,6 +22,8 @@ class AuthSource {
         this.rotationIndices = [];
         // Duplicate auth indices detected (valid JSON but skipped from rotation due to same email)
         this.duplicateIndices = [];
+        // Disabled auth indices (valid JSON but marked as disabled, excluded from rotation)
+        this.disabledIndices = [];
         // Expired auth indices (valid JSON but marked as expired, excluded from rotation)
         this.expiredIndices = [];
         this.initialIndices = [];
@@ -123,6 +125,7 @@ class AuthSource {
         this.canonicalIndexMap.clear();
         this.duplicateGroups = [];
         this.expiredIndices = [];
+        this.disabledIndices = [];
 
         for (const index of this.initialIndices) {
             // Iterate over initial to check all, not just previously available
@@ -135,6 +138,9 @@ class AuthSource {
                     // Track expired status from auth file
                     if (authData.expired === true) {
                         this.expiredIndices.push(index);
+                    }
+                    if (authData.disabled === true) {
+                        this.disabledIndices.push(index);
                     }
                 } catch (e) {
                     invalidSourceDescriptions.push(`auth-${index} (parse error)`);
@@ -176,10 +182,12 @@ class AuthSource {
 
         const emailKeyToIndices = new Map();
 
-        // Only process non-expired accounts for rotation and deduplication
-        const nonExpiredIndices = this.availableIndices.filter(idx => !this.expiredIndices.includes(idx));
+        // Only process non-expired and non-disabled accounts for rotation and deduplication
+        const availableForRotationIndices = this.availableIndices.filter(
+            idx => !this.expiredIndices.includes(idx) && !this.disabledIndices.includes(idx)
+        );
 
-        for (const index of nonExpiredIndices) {
+        for (const index of availableForRotationIndices) {
             const accountName = this.accountNameMap.get(index);
             const emailKey = this._normalizeEmailKey(accountName);
 
@@ -230,6 +238,13 @@ class AuthSource {
         if (this.expiredIndices.length > 0) {
             this.logger.warn(
                 `[Auth] Detected ${this.expiredIndices.length} expired auth files: [${this.expiredIndices.join(", ")}]. ` +
+                    `These accounts are excluded from automatic rotation.`
+            );
+        }
+
+        if (this.disabledIndices.length > 0) {
+            this.logger.info(
+                `[Auth] Detected ${this.disabledIndices.length} disabled auth files: [${this.disabledIndices.join(", ")}]. ` +
                     `These accounts are excluded from automatic rotation.`
             );
         }
@@ -373,6 +388,31 @@ class AuthSource {
      */
     isExpired(index) {
         return this.expiredIndices.includes(index);
+    }
+
+    toggleDisabled(index, disabled) {
+        if (!Number.isInteger(index) || index < 0) {
+            throw new Error("Invalid account index.");
+        }
+        const authFilePath = path.join(process.cwd(), "configs", "auth", `auth-${index}.json`);
+        if (!fs.existsSync(authFilePath)) {
+            throw new Error(`Auth file for account #${index} does not exist.`);
+        }
+
+        try {
+            const content = fs.readFileSync(authFilePath, "utf8");
+            const jsonObj = JSON.parse(content);
+            if (disabled) {
+                jsonObj.disabled = true;
+            } else {
+                delete jsonObj.disabled;
+            }
+            fs.writeFileSync(authFilePath, JSON.stringify(jsonObj, null, 4), "utf8");
+            this.reloadAuthSources(true);
+            return { disabled: !!disabled, index };
+        } catch (error) {
+            throw new Error(`Failed to update auth status for account #${index}: ${error.message}`);
+        }
     }
 }
 
