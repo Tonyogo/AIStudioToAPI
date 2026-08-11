@@ -1,4 +1,10 @@
 {
+    "accountDisabledTag": "已禁用",
+    "confirmDisableAccount": "确定要禁用账号 #{id}（{email}）吗？禁用后该账号将不参与请求调度与账号切换。",
+    "confirmEnableAccount": "确定要启用账号 #{id}（{email}）吗？",
+    "disableAccount": "禁用",
+    "enableAccount": "启用",
+    "toggleDisabledSuccess": "账号状态更新成功。",
     "aborted": "已中止",
     "account": "账号",
     "accountDedupConfirm": "将按同一邮箱保留最大 index 的 auth 文件并删除其余重复文件（前提：同一账号的多个 auth 按 index 递增生成，index 越大越新）。是否继续？",

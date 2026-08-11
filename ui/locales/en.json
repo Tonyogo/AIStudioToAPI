@@ -1,4 +1,10 @@
 {
+    "accountDisabledTag": "Disabled",
+    "confirmDisableAccount": "Are you sure you want to disable account #{id} ({email})? It will be excluded from scheduling and switching.",
+    "confirmEnableAccount": "Are you sure you want to enable account #{id} ({email})?",
+    "disableAccount": "Disable",
+    "enableAccount": "Enable",
+    "toggleDisabledSuccess": "Account status updated successfully.",
     "aborted": "Aborted",
     "account": "Account",
     "accountDedupConfirm": "Deduplicate auth files by email, keeping the highest index and deleting other duplicates (assumes indices increase over time for the same account). Continue?",
