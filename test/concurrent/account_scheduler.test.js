@@ -514,15 +514,41 @@ describe("AccountScheduler", () => {
         expect(scheduler.isAccountSuspended(0)).toBe(true);
     });
 
-    test("recordFailure suspends account after 2 consecutive non-429 5xx errors", () => {
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+    test("recordFailure accumulates consecutive non-429 failures smoothly and triggers retirement on threshold", async () => {
+        const mockBrowserManager = {
+            closeContext: jest.fn().mockResolvedValue(),
+            launchOrSwitchContext: jest.fn().mockResolvedValue(),
+        };
+        const mockConfig = { failureThreshold: 3 };
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            mockConfig
+        );
+        scheduler.setAccountStatus(0, "ACTIVATED");
+
+        // First 403 failure
+        scheduler.recordFailure(0, 403);
+        expect(scheduler.failureCountMap.get(0)).toBe(1);
         expect(scheduler.isAccountSuspended(0)).toBe(false);
 
-        scheduler.recordFailure(0, 500);
+        // Second 403 failure - should NOT be suspended, should NOT reset to 0
+        scheduler.recordFailure(0, 403);
+        expect(scheduler.failureCountMap.get(0)).toBe(2);
         expect(scheduler.isAccountSuspended(0)).toBe(false);
 
-        scheduler.recordFailure(0, 500);
-        expect(scheduler.isAccountSuspended(0)).toBe(true);
+        // Third 403 failure
+        scheduler.recordFailure(0, 403);
+        expect(scheduler.failureCountMap.get(0)).toBe(3);
+
+        const retired = await scheduler.checkAndRetireAccount(0);
+        expect(retired).toBe(true);
+        expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
     });
 
     test("getNextAuthIndex skips suspended accounts", async () => {
@@ -572,7 +598,7 @@ describe("AccountScheduler", () => {
         });
     });
 
-    test("checkAndRetireAccount retires account when model usage reaches dailyLimit", async () => {
+    test("checkAndRetireAccount does NOT retire account when model usage reaches dailyLimit", async () => {
         const mockModelTracker = {
             getUsage: jest.fn(idx => (idx === 0 ? 1000 : 0)),
         };
@@ -580,7 +606,7 @@ describe("AccountScheduler", () => {
             closeContext: jest.fn().mockResolvedValue(),
             launchOrSwitchContext: jest.fn().mockResolvedValue(),
         };
-        const mockConfig = { exhaustedModelsThreshold: 1, failureThreshold: 3 };
+        const mockConfig = { failureThreshold: 3 };
 
         const scheduler = new AccountScheduler(
             mockAuthSource,
@@ -594,8 +620,8 @@ describe("AccountScheduler", () => {
         scheduler.setAccountStatus(0, "ACTIVATED");
 
         const retired = await scheduler.checkAndRetireAccount(0);
-        expect(retired).toBe(true);
-        expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
+        expect(retired).toBe(false);
+        expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
     });
 
     test("checkAndRetireAccount retires account when consecutive failures reach failureThreshold", async () => {
