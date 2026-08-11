@@ -131,7 +131,8 @@
             "topP": 0.95,
             "topK": 64,
             "maxTemperature": 2.0,
-            "thinking": true
+            "thinking": true,
+            "schedulingStrategy": "least-used"
         },
         {
             "name": "models/gemini-pro-latest",
