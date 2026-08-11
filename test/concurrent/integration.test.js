@@ -60,7 +60,6 @@ describe("Concurrent System Integration Check", () => {
                 scheduler: {
                     getAccountStatus: () => "ready",
                     getInFlightCount: () => 0,
-                    isAccountSuspended: () => false,
                 },
             },
             config: {
