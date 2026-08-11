@@ -3898,6 +3898,8 @@ function getConcurrentStatusTagType(status) {
             return "info";
         case "RETIRED":
             return "danger";
+        case "disabled":
+            return "info";
         default:
             return "info";
     }
@@ -4512,10 +4514,16 @@ const handleStreamingModeBeforeChange = async () => {
 };
 
 const toggleAccountDisabled = async account => {
-    const isTargetDisabled = !(account.isDisabled || account.status === "disabled");
+    const isTargetDisabled = !(
+        account.isDisabled ||
+        account.status === "disabled" ||
+        account.concurrentStatus === "disabled"
+    );
+    const accountIndex = account.index !== undefined ? account.index : account.id;
+    const accountEmail = account.email || account.name || "N/A";
     const confirmMsg = isTargetDisabled
-        ? t("confirmDisableAccount", { email: account.email || "N/A", id: account.index })
-        : t("confirmEnableAccount", { email: account.email || "N/A", id: account.index });
+        ? t("confirmDisableAccount", { email: accountEmail, id: accountIndex })
+        : t("confirmEnableAccount", { email: accountEmail, id: accountIndex });
 
     try {
         await ElMessageBox.confirm(confirmMsg, t("warningTitle"), {
@@ -4525,7 +4533,7 @@ const toggleAccountDisabled = async account => {
         });
 
         const res = await fetch("/api/auth/toggle-disabled", {
-            body: JSON.stringify({ disabled: isTargetDisabled, index: account.index }),
+            body: JSON.stringify({ disabled: isTargetDisabled, index: accountIndex }),
             headers: { "Content-Type": "application/json" },
             method: "POST",
         });

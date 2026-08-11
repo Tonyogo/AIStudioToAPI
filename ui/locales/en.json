@@ -243,6 +243,7 @@
     "startedAt": "Started At",
     "statusActivated": "Activated",
     "statusActivating": "Activating",
+    "statusDisabled": "Disabled",
     "statusHeading": "Console Panel",
     "statusInactive": "Inactive",
     "statusRetired": "Retired",

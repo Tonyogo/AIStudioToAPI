@@ -243,6 +243,7 @@
     "startedAt": "启动时间",
     "statusActivated": "已激活",
     "statusActivating": "激活中",
+    "statusDisabled": "已禁用",
     "statusHeading": "控制台面板",
     "statusInactive": "未激活",
     "statusRetired": "已退休",

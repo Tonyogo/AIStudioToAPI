@@ -991,6 +991,8 @@ class StatusRoutes {
         const scheduler = concurrentComponents?.scheduler;
         const modelUsageTracker = concurrentComponents?.modelUsageTracker;
 
+        const disabledIndices = authSource.disabledIndices || [];
+
         const accountDetails = initialIndices.map(index => {
             const isInvalid = invalidIndices.includes(index);
             const name = isInvalid ? null : accountNameMap.get(index) || null;
@@ -999,12 +1001,26 @@ class StatusRoutes {
             const isDuplicate = canonicalIndex !== null && canonicalIndex !== index;
             const isRotation = rotationIndices.includes(index);
             const isExpired = expiredIndices.includes(index);
+            const isDisabled = disabledIndices.includes(index);
 
             const hasContext = browserManager.contexts.has(index);
 
-            const detail = { canonicalIndex, hasContext, index, isDuplicate, isExpired, isInvalid, isRotation, name };
+            const detail = {
+                canonicalIndex,
+                hasContext,
+                index,
+                isDisabled,
+                isDuplicate,
+                isExpired,
+                isInvalid,
+                isRotation,
+                name,
+                status: isDisabled ? "disabled" : "active",
+            };
 
-            if (isConcurrentMode) {
+            if (isDisabled) {
+                detail.concurrentStatus = "disabled";
+            } else if (isConcurrentMode) {
                 detail.concurrentStatus = scheduler ? scheduler.getAccountStatus(index) : "unknown";
                 detail.inFlight = scheduler ? scheduler.getInFlightCount(index) : 0;
                 detail.isSuspended = false;
