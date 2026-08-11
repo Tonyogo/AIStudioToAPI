@@ -768,7 +768,7 @@ class AccountScheduler {
         const POLL_INTERVAL_MS = 3000;
         const start = Date.now();
 
-        while (true) {
+        for (;;) {
             if (signal?.aborted) {
                 const err = new Error("Client request aborted during wait");
                 err.name = "AbortError";
@@ -784,7 +784,9 @@ class AccountScheduler {
                 const remaining = timeoutMs - elapsed;
 
                 if (remaining <= 0) {
-                    const timeoutErr = new Error(`All available accounts are busy (waited ${Math.round(elapsed / 1000)}s)`);
+                    const timeoutErr = new Error(
+                        `All available accounts are busy (waited ${Math.round(elapsed / 1000)}s)`
+                    );
                     timeoutErr.statusCode = 503;
                     timeoutErr.statusText = "UNAVAILABLE";
                     throw timeoutErr;

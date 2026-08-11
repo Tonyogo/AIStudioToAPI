@@ -64,9 +64,7 @@ describe("AccountScheduler", () => {
             scheduler.acquireInFlight(0);
             scheduler.acquireInFlight(0);
 
-            await expect(
-                scheduler.acquireNextAuthIndex("gemini-2.5-flash", { timeoutMs: 100 })
-            ).rejects.toMatchObject({
+            await expect(scheduler.acquireNextAuthIndex("gemini-2.5-flash", { timeoutMs: 100 })).rejects.toMatchObject({
                 message: expect.stringContaining("All available accounts are busy"),
                 statusCode: 503,
             });
@@ -85,7 +83,7 @@ describe("AccountScheduler", () => {
             setTimeout(() => controller.abort(), 50);
 
             await expect(
-                scheduler.acquireNextAuthIndex("gemini-2.5-flash", { timeoutMs: 2000, signal: controller.signal })
+                scheduler.acquireNextAuthIndex("gemini-2.5-flash", { signal: controller.signal, timeoutMs: 2000 })
             ).rejects.toThrow();
         });
     });
