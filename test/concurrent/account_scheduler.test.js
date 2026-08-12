@@ -1136,6 +1136,15 @@ describe("AccountScheduler", () => {
         });
     });
 
+    test("rebalanceConcurrentPool skips execution when already rebalancing", async () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+        scheduler._isRebalancing = true;
+
+        await scheduler.rebalanceConcurrentPool();
+
+        expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining("Rebalance already in progress"));
+    });
+
     describe("BrowserManager rebalanceContextPool delegation", () => {
         test("delegates rebalanceContextPool to accountScheduler when registered", async () => {
             const BrowserManager = require("../../src/core/BrowserManager");

@@ -42,6 +42,7 @@ class AccountScheduler {
         this.lastGlobalActivationAt = 0;
         this.activationCooldownMs = 30000;
         this.isActivatingAny = false;
+        this._isRebalancing = false;
         this.immediateSwitchStatusCodes =
             Array.isArray(config?.immediateSwitchStatusCodes) && config.immediateSwitchStatusCodes.length > 0
                 ? config.immediateSwitchStatusCodes
@@ -382,85 +383,96 @@ class AccountScheduler {
      * Rebalance concurrent context pool based on dynamic priorities and state restoration
      */
     async rebalanceConcurrentPool() {
-        if (this.logger && typeof this.logger.info === "function") {
-            this.logger.info("[ConcurrentPool] Triggering concurrent context pool rebalance...");
-        }
-        if (!this.browserManager) return;
-
-        const maxContexts = this.getMaxContexts();
-        const isUnlimited = maxContexts === Infinity || maxContexts === 0;
-
-        this._refreshActiveQueue();
-
-        const healthy = [];
-        const retired = [];
-
-        for (const idx of this.activeQueue) {
-            const isExpired =
-                this.authSource && typeof this.authSource.isExpired === "function"
-                    ? this.authSource.isExpired(idx)
-                    : false;
-            if (isExpired) continue;
-
-            const status = this.getAccountStatus(idx);
-            if (status === "RETIRED") {
-                retired.push(idx);
-            } else {
-                healthy.push(idx);
+        if (this._isRebalancing) {
+            if (this.logger && typeof this.logger.debug === "function") {
+                this.logger.debug("[ConcurrentPool] Rebalance already in progress, skipping redundant call.");
             }
+            return;
         }
+        this._isRebalancing = true;
+        try {
+            if (this.logger && typeof this.logger.info === "function") {
+                this.logger.info("[ConcurrentPool] Triggering concurrent context pool rebalance...");
+            }
+            if (!this.browserManager) return;
 
-        // Implicitly maintains LRU queue order: healthy first (recently used), RETIRED last (earliest retired first)
-        const priorityQueue = [...healthy, ...retired];
+            const maxContexts = this.getMaxContexts();
+            const isUnlimited = maxContexts === Infinity || maxContexts === 0;
 
-        const targetIndices = isUnlimited ? priorityQueue : priorityQueue.slice(0, maxContexts);
-        const targets = new Set(targetIndices);
+            this._refreshActiveQueue();
 
-        // Restore state for target candidates if currently RETIRED
-        for (const targetIdx of targetIndices) {
-            if (this.getAccountStatus(targetIdx) === "RETIRED") {
-                if (this.logger && typeof this.logger.info === "function") {
-                    this.logger.info(
-                        `[ConcurrentPool] Re-activating retired account #${targetIdx} back to INACTIVE as target candidate`
-                    );
+            const healthy = [];
+            const retired = [];
+
+            for (const idx of this.activeQueue) {
+                const isExpired =
+                    this.authSource && typeof this.authSource.isExpired === "function"
+                        ? this.authSource.isExpired(idx)
+                        : false;
+                if (isExpired) continue;
+
+                const status = this.getAccountStatus(idx);
+                if (status === "RETIRED") {
+                    retired.push(idx);
+                } else {
+                    healthy.push(idx);
                 }
-                this.setAccountStatus(targetIdx, "INACTIVE");
-                this.failureCountMap.set(targetIdx, 0);
             }
-        }
 
-        // Close excess contexts not in targets
-        if (this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function") {
-            for (const activeIdx of this.browserManager.contexts.keys()) {
-                if (!targets.has(activeIdx)) {
+            // Implicitly maintains LRU queue order: healthy first (recently used), RETIRED last (earliest retired first)
+            const priorityQueue = [...healthy, ...retired];
+
+            const targetIndices = isUnlimited ? priorityQueue : priorityQueue.slice(0, maxContexts);
+            const targets = new Set(targetIndices);
+
+            // Restore state for target candidates if currently RETIRED
+            for (const targetIdx of targetIndices) {
+                if (this.getAccountStatus(targetIdx) === "RETIRED") {
                     if (this.logger && typeof this.logger.info === "function") {
                         this.logger.info(
-                            `[ConcurrentPool] Closing excess active context #${activeIdx} (not in targets=[${[...targets]}])`
+                            `[ConcurrentPool] Re-activating retired account #${targetIdx} back to INACTIVE as target candidate`
                         );
                     }
-                    if (typeof this.browserManager._closeContextForPoolIfPossible === "function") {
-                        this.browserManager._closeContextForPoolIfPossible(activeIdx, "rebalance_retired");
+                    this.setAccountStatus(targetIdx, "INACTIVE");
+                    this.failureCountMap.set(targetIdx, 0);
+                }
+            }
+
+            // Close excess contexts not in targets
+            if (this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function") {
+                for (const activeIdx of this.browserManager.contexts.keys()) {
+                    if (!targets.has(activeIdx)) {
+                        if (this.logger && typeof this.logger.info === "function") {
+                            this.logger.info(
+                                `[ConcurrentPool] Closing excess active context #${activeIdx} (not in targets=[${[...targets]}])`
+                            );
+                        }
+                        if (typeof this.browserManager._closeContextForPoolIfPossible === "function") {
+                            this.browserManager._closeContextForPoolIfPossible(activeIdx, "rebalance_retired");
+                        }
                     }
                 }
             }
-        }
 
-        // Candidates: target indices not yet initialized in contexts Map
-        const activeContexts =
-            this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function"
-                ? new Set(this.browserManager.contexts.keys())
-                : new Set();
-        const candidates = targetIndices.filter(idx => !activeContexts.has(idx));
+            // Candidates: target indices not yet initialized in contexts Map
+            const activeContexts =
+                this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function"
+                    ? new Set(this.browserManager.contexts.keys())
+                    : new Set();
+            const candidates = targetIndices.filter(idx => !activeContexts.has(idx));
 
-        if (candidates.length > 0) {
-            if (this.logger && typeof this.logger.info === "function") {
-                this.logger.info(
-                    `[ConcurrentPool] Rebalancing concurrent pool: targets=[${[...targets]}], preloading candidates=[${candidates}]`
-                );
+            if (candidates.length > 0) {
+                if (this.logger && typeof this.logger.info === "function") {
+                    this.logger.info(
+                        `[ConcurrentPool] Rebalancing concurrent pool: targets=[${[...targets]}], preloading candidates=[${candidates}]`
+                    );
+                }
+                if (typeof this.browserManager._preloadBackgroundContexts === "function") {
+                    this.browserManager._preloadBackgroundContexts(candidates, isUnlimited ? 0 : maxContexts);
+                }
             }
-            if (typeof this.browserManager._preloadBackgroundContexts === "function") {
-                this.browserManager._preloadBackgroundContexts(candidates, isUnlimited ? 0 : maxContexts);
-            }
+        } finally {
+            this._isRebalancing = false;
         }
     }
 
