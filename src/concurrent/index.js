@@ -44,6 +44,11 @@ function initConcurrentMode(app, system) {
         modelList,
         config
     );
+
+    if (browserManager && typeof browserManager.setAccountScheduler === "function") {
+        browserManager.setAccountScheduler(scheduler);
+    }
+
     const usageStatsService = system.usageStatsService || null;
     const concurrentRequestHandler = new ConcurrentRequestHandler(
         connectionRegistry,
