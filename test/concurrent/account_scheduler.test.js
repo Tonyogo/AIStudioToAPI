@@ -1135,4 +1135,21 @@ describe("AccountScheduler", () => {
             expect(realScheduler.getAccountStatus(0)).toBe("RETIRED");
         });
     });
+
+    describe("BrowserManager rebalanceContextPool delegation", () => {
+        test("delegates rebalanceContextPool to accountScheduler when registered", async () => {
+            const BrowserManager = require("../../src/core/BrowserManager");
+            const bm = new BrowserManager(mockLogger, { maxContexts: 2 }, mockAuthSource);
+
+            const mockScheduler = {
+                rebalanceConcurrentPool: jest.fn().mockResolvedValue(undefined),
+            };
+
+            bm.setAccountScheduler(mockScheduler);
+
+            await bm.rebalanceContextPool();
+
+            expect(mockScheduler.rebalanceConcurrentPool).toHaveBeenCalledTimes(1);
+        });
+    });
 });
