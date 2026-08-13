@@ -390,6 +390,15 @@ class AuthSource {
         return this.expiredIndices.includes(index);
     }
 
+    /**
+     * Check if an auth is disabled
+     * @param {number} index - Auth index to check
+     * @returns {boolean}
+     */
+    isDisabled(index) {
+        return Array.isArray(this.disabledIndices) && this.disabledIndices.includes(index);
+    }
+
     toggleDisabled(index, disabled) {
         if (!Number.isInteger(index) || index < 0) {
             throw new Error("Invalid account index.");

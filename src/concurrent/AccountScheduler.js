@@ -255,14 +255,17 @@ class AccountScheduler {
     }
 
     /**
-     * Get all candidate auth indices from authSource
+     * Get all candidate auth indices from authSource (excluding disabled and expired accounts)
      * @returns {number[]}
      */
     _getAccountIndices() {
         if (!this.authSource) {
             return [];
         }
-        return this.authSource.availableIndices || [];
+        const indices = this.authSource.availableIndices || [];
+        const disabled = this.authSource.disabledIndices || [];
+        const expired = this.authSource.expiredIndices || [];
+        return indices.filter(idx => !disabled.includes(idx) && !expired.includes(idx));
     }
 
     /**
@@ -410,6 +413,14 @@ class AccountScheduler {
                         ? this.authSource.isExpired(idx)
                         : false;
                 if (isExpired) continue;
+
+                const isDisabled =
+                    this.authSource && typeof this.authSource.isDisabled === "function"
+                        ? this.authSource.isDisabled(idx)
+                        : Array.isArray(this.authSource?.disabledIndices)
+                        ? this.authSource.disabledIndices.includes(idx)
+                        : false;
+                if (isDisabled) continue;
 
                 const status = this.getAccountStatus(idx);
                 if (status === "RETIRED") {

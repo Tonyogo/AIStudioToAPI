@@ -1161,4 +1161,67 @@ describe("AccountScheduler", () => {
             expect(mockScheduler.rebalanceConcurrentPool).toHaveBeenCalledTimes(1);
         });
     });
+
+    describe("Disabled Accounts Handling", () => {
+        test("_getAccountIndices filters out disabledIndices and expiredIndices", () => {
+            const authSource = {
+                availableIndices: [0, 1, 2, 3],
+                disabledIndices: [1],
+                expiredIndices: [2],
+            };
+            const scheduler = new AccountScheduler(authSource, mockConnectionRegistry, mockLogger);
+            expect(scheduler._getAccountIndices()).toEqual([0, 3]);
+        });
+
+        test("rebalanceConcurrentPool skips disabled accounts and closes excess context if active", async () => {
+            const authSource = {
+                availableIndices: [0, 1, 2],
+                disabledIndices: [1],
+                isDisabled: jest.fn(idx => idx === 1),
+                isExpired: jest.fn(() => false),
+            };
+            const mockBrowserManager = {
+                _closeContextForPoolIfPossible: jest.fn(),
+                _preloadBackgroundContexts: jest.fn(),
+                contexts: new Map([
+                    [0, {}],
+                    [1, {}], // Account 1 is open in context but is disabled
+                ]),
+            };
+
+            const scheduler = new AccountScheduler(
+                authSource,
+                mockConnectionRegistry,
+                mockLogger,
+                mockBrowserManager,
+                null,
+                [],
+                { maxContexts: 2 }
+            );
+
+            await scheduler.rebalanceConcurrentPool();
+
+            // Account 1 should be excluded from targets, so browserManager should close context 1
+            expect(mockBrowserManager._closeContextForPoolIfPossible).toHaveBeenCalledWith(1, "rebalance_retired");
+        });
+
+        test("getNextAuthIndex skips disabled accounts even if available in authSource", async () => {
+            mockConnectionRegistry.hasConnection.mockReturnValue(true);
+            const authSource = {
+                availableIndices: [0, 1],
+                disabledIndices: [1],
+                isDisabled: jest.fn(idx => idx === 1),
+                isExpired: jest.fn(() => false),
+            };
+
+            const scheduler = new AccountScheduler(authSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+            scheduler.setAccountStatus(0, "ACTIVATED");
+            scheduler.setAccountStatus(1, "ACTIVATED");
+
+            // Even if index 1 is ACTIVATED, getNextAuthIndex gets candidate indices from _getAccountIndices
+            // which excludes index 1
+            const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
+            expect(selected).toBe(0);
+        });
+    });
 });
