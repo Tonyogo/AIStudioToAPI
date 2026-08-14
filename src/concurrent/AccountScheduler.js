@@ -418,8 +418,8 @@ class AccountScheduler {
                     this.authSource && typeof this.authSource.isDisabled === "function"
                         ? this.authSource.isDisabled(idx)
                         : Array.isArray(this.authSource?.disabledIndices)
-                        ? this.authSource.disabledIndices.includes(idx)
-                        : false;
+                          ? this.authSource.disabledIndices.includes(idx)
+                          : false;
                 if (isDisabled) continue;
 
                 const status = this.getAccountStatus(idx);

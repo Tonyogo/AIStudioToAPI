@@ -100,17 +100,44 @@ class AuthRoutes {
     }
 
     /**
-     * Authentication middleware
+     * Authentication middleware supporting Session, Bearer Token, and API Key headers
      */
     isAuthenticated(req, res, next) {
-        if (req.session.isAuthenticated) {
+        // 1. Session authentication
+        if (req.session?.isAuthenticated) {
             return next();
         }
 
+        // 2. Token / API Key header authentication
+        const authHeader = req.headers.authorization;
+        const apiKeyHeader = req.headers["x-api-key"] || req.headers["api-key"];
+        let token = null;
+
+        if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7).trim();
+        } else if (typeof apiKeyHeader === "string") {
+            token = apiKeyHeader.trim();
+        }
+
+        if (token) {
+            const expectedPassword = process.env.WEB_CONSOLE_PASSWORD;
+            const validApiKeys = this.serverSystem.config?.apiKeys || [];
+
+            if (expectedPassword && token === expectedPassword) {
+                return next();
+            }
+            if (Array.isArray(validApiKeys) && validApiKeys.includes(token)) {
+                return next();
+            }
+        }
+
+        // 3. Unauthenticated response
         // Use 303 See Other to force the browser to use GET for the redirect
         // This solves the issue where DELETE/POST requests would otherwise be redirected as DELETE/POST /login
-        if (req.xhr || req.headers.accept?.includes("application/json")) {
-            return res.status(401).json({ message: "unlimited" });
+        const isApiRequest =
+            req.path?.startsWith("/api/") || req.xhr || req.headers.accept?.includes("application/json");
+        if (isApiRequest) {
+            return res.status(401).json({ error: "Unauthorized", message: "unlimited" });
         }
 
         res.redirect(303, "/login");
