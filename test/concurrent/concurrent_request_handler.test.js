@@ -768,4 +768,71 @@ describe("ConcurrentRequestHandler", () => {
             })
         );
     });
+
+    test("handleGeminiRequest extracts x-scheduling-strategy and x-strategy header and passes to acquireNextAuthIndex", async () => {
+        const mockSchedulerLocal = {
+            acquireNextAuthIndex: jest.fn().mockResolvedValue(0),
+            checkAndRetireAccount: jest.fn().mockResolvedValue(false),
+            config: { concurrentWaitTimeoutMs: 60000 },
+            releaseInFlight: jest.fn(),
+        };
+        const mockRegistryLocal = {
+            removeMessageQueue: jest.fn(),
+            sendRequest: jest.fn((authIdx, payload, cb) => cb(null, true, false, { status: 200 })),
+        };
+
+        const handler = new ConcurrentRequestHandler(mockRegistryLocal, mockSchedulerLocal, mockLogger, []);
+
+        // 1. With x-scheduling-strategy header
+        const req1 = {
+            body: { contents: [] },
+            headers: { "x-scheduling-strategy": "round-robin" },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+        const res1 = {
+            end: jest.fn(),
+            json: jest.fn(),
+            on: jest.fn(),
+            removeListener: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+            write: jest.fn(),
+        };
+
+        await handler.handleGeminiRequest(req1, res1);
+
+        expect(mockSchedulerLocal.acquireNextAuthIndex).toHaveBeenCalledWith(
+            "gemini-2.5-flash",
+            expect.objectContaining({
+                strategy: "round-robin",
+            })
+        );
+
+        // 2. With x-strategy header
+        const req2 = {
+            body: { contents: [] },
+            headers: { "x-strategy": "weighted" },
+            method: "POST",
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+        const res2 = {
+            end: jest.fn(),
+            json: jest.fn(),
+            on: jest.fn(),
+            removeListener: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+            write: jest.fn(),
+        };
+
+        await handler.handleGeminiRequest(req2, res2);
+
+        expect(mockSchedulerLocal.acquireNextAuthIndex).toHaveBeenCalledWith(
+            "gemini-2.5-flash",
+            expect.objectContaining({
+                strategy: "weighted",
+            })
+        );
+    });
 });

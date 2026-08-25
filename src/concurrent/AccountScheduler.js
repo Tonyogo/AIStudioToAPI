@@ -3,7 +3,7 @@
  * Description: Round-Robin account scheduler for concurrent multi-account request routing
  */
 
-const { selectCandidate } = require("./strategies");
+const { selectCandidate, STRATEGIES } = require("./strategies");
 const ModelUsageTracker = require("./ModelUsageTracker");
 
 class AccountScheduler {
@@ -102,12 +102,25 @@ class AccountScheduler {
     }
 
     /**
-     * Resolve scheduling strategy name for a given model
-     * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "least-used"
-     * @param {string} modelName
+     * Resolve scheduling strategy name for a given model and optional request override
+     * Priority: 1. Request header/options -> 2. Model override in models.json -> 3. Global config/env -> 4. "least-used"
+     * @param {string} [modelName]
+     * @param {string} [requestStrategy=null]
      * @returns {string} Strategy name ("weighted" | "round-robin" | "least-used")
      */
-    getSchedulingStrategy(modelName) {
+    getSchedulingStrategy(modelName, requestStrategy = null) {
+        if (typeof requestStrategy === "string" && requestStrategy.trim() !== "") {
+            const normalized = requestStrategy.trim().toLowerCase();
+            if (STRATEGIES && STRATEGIES[normalized]) {
+                return normalized;
+            }
+            if (this.logger && typeof this.logger.debug === "function") {
+                this.logger.debug(
+                    `[AccountScheduler] Unknown scheduling strategy "${requestStrategy}" in request header/options, falling back`
+                );
+            }
+        }
+
         if (modelName && Array.isArray(this.modelList)) {
             const match = this.modelList.find(m => {
                 if (!m || !m.name) return false;
@@ -556,12 +569,14 @@ class AccountScheduler {
     }
 
     /**
-     * Select next available authIndex using Round-Robin scheduling and model usage tracking
-     * @param {string} [modelName=null] - Optional model name for least-used scheduling
+     * Select next available authIndex using configured strategy and model usage tracking
+     * @param {string} [modelName=null] - Optional model name for scheduling
+     * @param {Object|string} [options={}] - Options object containing { strategy } or strategy name string
      * @returns {Promise<number>} The selected authIndex
      * @throws {Error} If no connected authIndex is available
      */
-    async getNextAuthIndex(modelName = null) {
+    async getNextAuthIndex(modelName = null, options = {}) {
+        const requestStrategy = typeof options === "string" ? options : options?.strategy || null;
         this._refreshAccountStatuses();
         const indices = this._getAccountIndices();
         if (indices.length === 0) {
@@ -627,7 +642,7 @@ class AccountScheduler {
         const canCooldown =
             this.lastGlobalActivationAt === 0 || Date.now() - this.lastGlobalActivationAt >= this.activationCooldownMs;
         const maxContexts = this.getMaxContexts();
-        const strategyName = this.getSchedulingStrategy(modelName);
+        const strategyName = this.getSchedulingStrategy(modelName, requestStrategy);
         const strategyContext = { limit, modelName };
 
         // Baseline Check: If activated count < maxContexts and inactive candidates exist and 30s cooldown met, trigger background baseline activation
@@ -829,6 +844,7 @@ class AccountScheduler {
      * @param {Object} [options]
      * @param {number} [options.timeoutMs]
      * @param {AbortSignal} [options.signal]
+     * @param {string} [options.strategy]
      * @returns {Promise<number>} Selected authIndex
      */
     async acquireNextAuthIndex(modelName, options = {}) {
@@ -845,7 +861,7 @@ class AccountScheduler {
             }
 
             try {
-                const authIndex = await this.getNextAuthIndex(modelName);
+                const authIndex = await this.getNextAuthIndex(modelName, options);
                 this.acquireInFlight(authIndex);
                 return authIndex;
             } catch (err) {

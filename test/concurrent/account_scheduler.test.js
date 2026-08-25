@@ -918,7 +918,7 @@ describe("AccountScheduler", () => {
         expect(retired).toBe(false);
     });
 
-    test("getSchedulingStrategy resolves strategy in correct hierarchy order (model config > global config > default)", () => {
+    test("getSchedulingStrategy resolves strategy in correct hierarchy order (header/options > model config > global config > default)", () => {
         const mockModelList = [
             { name: "models/gemini-2.5-pro", schedulingStrategy: "round-robin" },
             { name: "models/gemini-2.5-flash" },
@@ -933,13 +933,21 @@ describe("AccountScheduler", () => {
             { concurrentSchedulingStrategy: "weighted" }
         );
 
-        // 1. Model override in models.json -> "round-robin"
+        // 1. Request header/options override takes highest precedence
+        expect(scheduler.getSchedulingStrategy("gemini-2.5-pro", "least-used")).toBe("least-used");
+        expect(scheduler.getSchedulingStrategy("gemini-2.5-flash", "round-robin")).toBe("round-robin");
+
+        // 2. Unknown request strategy falls back to model override or global config
+        expect(scheduler.getSchedulingStrategy("gemini-2.5-pro", "unknown_strategy")).toBe("round-robin");
+        expect(scheduler.getSchedulingStrategy("gemini-2.5-flash", "invalid_strategy")).toBe("weighted");
+
+        // 3. Model override in models.json -> "round-robin"
         expect(scheduler.getSchedulingStrategy("gemini-2.5-pro")).toBe("round-robin");
 
-        // 2. Model without override falls back to global config -> "weighted"
+        // 4. Model without override falls back to global config -> "weighted"
         expect(scheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("weighted");
 
-        // 3. Without global config or model override -> defaults to "least-used"
+        // 5. Without global config or model override -> defaults to "least-used"
         const defaultScheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
         expect(defaultScheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("least-used");
     });
@@ -969,6 +977,45 @@ describe("AccountScheduler", () => {
         expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(1);
         expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(2);
         expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(0);
+    });
+
+    test("getNextAuthIndex and acquireNextAuthIndex support per-request strategy override via options", async () => {
+        mockConnectionRegistry.hasConnection.mockReturnValue(true);
+        const mockModelTracker = {
+            getUsage: jest.fn(authIndex => (authIndex === 0 ? 900 : 100)), // Account 0 has higher usage
+        };
+        // Default model has no strategy override (would default to least-used)
+        const mockModelList = [{ name: "models/gemini-2.5-pro" }];
+
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            mockModelTracker,
+            mockModelList
+        );
+        scheduler.setAccountStatus(0, "ACTIVATED");
+        scheduler.setAccountStatus(1, "ACTIVATED");
+        scheduler.setAccountStatus(2, "ACTIVATED");
+
+        // Without strategy override -> least-used selects Account 1 (usage 100 < 900)
+        expect(await scheduler.getNextAuthIndex("gemini-2.5-pro")).toBe(1);
+
+        // Reset index
+        scheduler.currentIndex = 0;
+
+        // With round-robin option -> sequentially selects Account 0 then 1 then 2
+        expect(await scheduler.getNextAuthIndex("gemini-2.5-pro", { strategy: "round-robin" })).toBe(0);
+        expect(await scheduler.getNextAuthIndex("gemini-2.5-pro", { strategy: "round-robin" })).toBe(1);
+
+        // Reset index
+        scheduler.currentIndex = 0;
+
+        // With acquireNextAuthIndex passing strategy option
+        const acquired = await scheduler.acquireNextAuthIndex("gemini-2.5-pro", { strategy: "round-robin" });
+        expect(acquired).toBe(0);
+        scheduler.releaseInFlight(acquired);
     });
 
     describe("Active Queue and LRU Updates (Task 1)", () => {

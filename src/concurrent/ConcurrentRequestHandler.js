@@ -442,15 +442,21 @@ class ConcurrentRequestHandler {
             res.on("close", onClientClose);
         }
 
+        const headerStrategy =
+            (req.headers && (req.headers["x-scheduling-strategy"] || req.headers["x-strategy"])) || null;
+
         let authIndex;
         try {
             if (typeof this.scheduler.acquireNextAuthIndex === "function") {
                 authIndex = await this.scheduler.acquireNextAuthIndex(payload.cleanModelName, {
                     signal: abortController.signal,
+                    strategy: headerStrategy,
                     timeoutMs: this.scheduler.config?.concurrentWaitTimeoutMs || 60000,
                 });
             } else {
-                authIndex = await this.scheduler.getNextAuthIndex(payload.cleanModelName);
+                authIndex = await this.scheduler.getNextAuthIndex(payload.cleanModelName, {
+                    strategy: headerStrategy,
+                });
                 if (typeof this.scheduler.acquireInFlight === "function") {
                     this.scheduler.acquireInFlight(authIndex);
                 }

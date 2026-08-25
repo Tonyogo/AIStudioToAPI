@@ -17,7 +17,7 @@
   - **最少用量优先（Least-Used，默认）：** 根据每日按模型统计的用量，优先将请求调度给当前周期内对该模型使用量最少的账号，实现跨账号配额的绝对均衡消耗。
   - **经典轮询（Round-Robin）：** 按游标相对顺时针顺序依次分发。
   - **剩余配额加权（Weighted）：** 按账号剩余配额容量 $W_i = \max(1, \text{limit} - \text{usage}_i)$ 进行概率加权随机调度。
-  - **三级策略解析层级：** 模型配置 (`models.json`) > 全局环境变量/配置 (`CONCURRENT_SCHEDULING_STRATEGY`) > 默认缺省策略 (`least-used`)。
+  - **四级策略解析层级：** 请求头 (`x-scheduling-strategy` / `x-strategy`) > 模型配置 (`models.json`) > 全局环境变量/配置 (`CONCURRENT_SCHEDULING_STRATEGY`) > 默认缺省策略 (`least-used`)。支持请求级动态策略覆盖与未知策略宽容回退。
 - **LRU 活跃队列提升与保活 (\_moveToFront Queue Elevation)：**
   - 维护动态 `activeQueue` 记录账号活跃顺序。
   - 每次成功命中并分发请求后，立即将该账号提升至 `activeQueue` 队首 (`_moveToFront`)，确保频繁使用的健康活跃账号优先常驻 Context，避免被意外置换。
@@ -79,10 +79,12 @@ src/
 - **职责：** 管理账号激活状态机、调度策略解析、30s 激活冷却、LRU 队列管理、并发打散调度、账号退休与再平衡替换。
 - **核心逻辑与状态机：**
   - **状态定义：** `INACTIVE`（初始/未激活）、`ACTIVATING`（正在激活）、`ACTIVATED`（已激活且就绪）、`RETIRED`（下线退休，释放 Context）。
-  - **策略解析 (`getSchedulingStrategy(modelName)`)：**
-    - 优先级 1：模型配置 `models.json` 中的 `schedulingStrategy`（如 `"round-robin"`、`"least-used"`、`"weighted"`）；
-    - 优先级 2：全局环境变量 `CONCURRENT_SCHEDULING_STRATEGY` 或系统配置 `config.concurrentSchedulingStrategy`；
-    - 优先级 3：默认缺省策略 `"least-used"`。
+  - **策略解析 (`getSchedulingStrategy(modelName, requestStrategy)`)：**
+    - 优先级 1：请求头传入的 `x-scheduling-strategy` 或 `x-strategy`（支持单次请求动态覆盖）；
+    - 优先级 2：模型配置 `models.json` 中的 `schedulingStrategy`（如 `"round-robin"`、`"least-used"`、`"weighted"`）；
+    - 优先级 3：全局环境变量 `CONCURRENT_SCHEDULING_STRATEGY` 或系统配置 `config.concurrentSchedulingStrategy`；
+    - 优先级 4：默认缺省策略 `"least-used"`。
+    - **宽容回退：** 若请求头传入未知策略名，自动记录 debug 日志并继续向下解析，确保请求正常执行。
   - **首发账号同步：** 自动同步 `browserManager._currentAuthIndex` 为 `ACTIVATED`，绝不对默认启动账号重复执行激活。
   - **LRU 队列管理 (`_moveToFront` & `_moveToBack`)：** 请求命中时提升到队首，退休时下沉到队尾。
   - **30s 激活冷却：** 维护 `lastGlobalActivationAt`，任意账号两次激活之间严格间隔 >= 30 秒。
@@ -182,7 +184,32 @@ src/
 
 ## 4. 调度策略、模型配额与环境变量配置指南
 
-### 4.1 模型配置与自定义调度策略 (`configs/models.json`)
+### 4.1 请求头动态指定调度策略 (`x-scheduling-strategy` / `x-strategy`)
+
+客户端可以在发起原生 Gemini 请求时，通过 HTTP 请求头按请求动态指定当前请求的调度算法（拥有最高优先级）：
+
+- **请求头名称：** `x-scheduling-strategy`（同时兼容 `x-strategy`）
+- **可选值（大小写不敏感）：**
+  - `least-used`：最少用量优先（优先选择当日当前模型用量最少的账号）
+  - `round-robin`：经典轮询调度
+  - `weighted`：剩余配额加权随机调度
+
+**cURL 示例：**
+
+```bash
+# 使用请求头指定当前请求采用 round-robin 策略
+curl -X POST "http://localhost:3000/v1beta/models/gemini-2.5-flash:generateContent" \
+  -H "Content-Type: application/json" \
+  -H "x-scheduling-strategy: round-robin" \
+  -d '{
+    "contents": [{"parts": [{"text": "Hello Gemini!"}]}]
+  }'
+```
+
+- **说明：**
+  - 若传入未知策略名称（如 `x-scheduling-strategy: custom`），系统不会中断请求，而是记录调试日志并自动向下回退（模型配置 > 全局配置 > 默认 `least-used`）。
+
+### 4.2 模型配置与自定义调度策略 (`configs/models.json`)
 
 在 `configs/models.json` 对应的模型定义中，可以添加以下字段来自定义单模型配额与并发调度策略：
 
@@ -208,7 +235,7 @@ src/
   - 若模型未配置 `schedulingStrategy`，系统自动采用全局策略（默认 `"least-used"`）。
   - 周期重置时间固定为北京时间每天下午 15:00:00。
 
-### 4.2 环境变量配置 (`.env`)
+### 4.3 环境变量配置 (`.env`)
 
 可通过 `.env` 环境变量调整并发系统的全局策略、重试超时与退休阈值：
 
