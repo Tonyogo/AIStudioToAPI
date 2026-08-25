@@ -141,21 +141,15 @@ src/
 
 ## 4. 退休配置与模型上限指南 (`configs/models.json` & `.env`)
 
-### 4.1 模型配额与调度策略配置 (`configs/models.json`)
+### 4.1 模型配额配置 (`configs/models.json`)
 
-在 `configs/models.json` 对应的模型定义中，可以添加以下字段来自定义并发调度逻辑：
-- `dailyLimit`：可选整数字段，设置模型单账号每日上限配额。
-- `schedulingStrategy`：可选字符串字段，设置该模型的并发分配策略（覆盖全局默认策略）。可选值包括：
-  - `"round-robin"`：经典轮询，依次分配请求。
-  - `"least-used"`：最少用量优先，优先挑选当前北京 15:00 周期内，对该模型使用量最少的在线就绪账号。
-  - `"weighted"`：基于配额配比优先调度。
+在 `configs/models.json` 对应的模型定义中添加 `dailyLimit` 可选整数字段：
 
 ```json
 {
-  "name": "models/gemini-flash-lite-latest",
-  "displayName": "Gemini Flash-Lite Latest",
-  "schedulingStrategy": "least-used",
-  "dailyLimit": 1000,
+  "name": "models/gemini-2.5-pro",
+  "displayName": "Gemini 2.5 Pro",
+  "dailyLimit": 50,
   "inputTokenLimit": 1048576,
   "outputTokenLimit": 65536
 }
@@ -163,8 +157,7 @@ src/
 
 - **说明：**
   - 若不设置 `dailyLimit`，系统默认每个账号每日该模型上限为 **1000** 次。
-  - 若不设置 `schedulingStrategy`，系统默认采用全局环境变量 `CONCURRENT_SCHEDULING_STRATEGY` 定义的策略，默认为 `"round-robin"`。
-  - 周期重置时间固定为北京时间每天下午 15:00:00。
+  - 重置时间固定为北京时间每天下午 15:00:00。
 
 ### 4.2 退休下线与等待超时环境变量 (`.env`)
 
