@@ -122,6 +122,11 @@ class BrowserManager {
             "toolkit.telemetry.enabled": false, // Disable telemetry
             "toolkit.telemetry.unified": false, // Disable unified telemetry
         };
+        this.accountScheduler = null;
+    }
+
+    setAccountScheduler(accountScheduler) {
+        this.accountScheduler = accountScheduler;
     }
 
     get currentAuthIndex() {
@@ -1922,6 +1927,11 @@ class BrowserManager {
      * Removes excess contexts and starts missing ones in background
      */
     async rebalanceContextPool() {
+        if (this.accountScheduler && typeof this.accountScheduler.rebalanceConcurrentPool === "function") {
+            this.logger.info("[ContextPool] Concurrent mode active, delegating rebalance to AccountScheduler...");
+            return await this.accountScheduler.rebalanceConcurrentPool();
+        }
+
         const maxContexts = this.config.maxContexts;
         // maxContexts === 0 means unlimited pool size
         const isUnlimited = maxContexts === 0;
