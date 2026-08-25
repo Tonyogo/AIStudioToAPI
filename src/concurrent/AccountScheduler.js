@@ -728,6 +728,7 @@ class AccountScheduler {
         try {
             await this.browserManager.launchOrSwitchContext(authIndex);
             this.setAccountStatus(authIndex, "ACTIVATED");
+            this._moveToFront(authIndex);
             if (this.logger && typeof this.logger.info === "function") {
                 this.logger.info(`[AccountScheduler] Account #${authIndex} successfully activated via BrowserManager`);
             }

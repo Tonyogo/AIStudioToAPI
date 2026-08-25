@@ -128,6 +128,19 @@ describe("AccountScheduler", () => {
         expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
     });
 
+    test("_moveToFront elevates specified authIndex to the head of activeQueue", () => {
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+        scheduler._refreshActiveQueue(); // activeQueue becomes [0, 1, 2]
+        expect(scheduler.activeQueue).toEqual([0, 1, 2]);
+
+        scheduler._moveToFront(2);
+        expect(scheduler.activeQueue).toEqual([2, 0, 1]);
+
+        // Subsequent _moveToFront calls
+        scheduler._moveToFront(1);
+        expect(scheduler.activeQueue).toEqual([1, 2, 0]);
+    });
+
     test("getNextAuthIndex reuses lightly busy account when maxContexts limit is reached and does not proactively scale-out", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockBrowserManager = {
