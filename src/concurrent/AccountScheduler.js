@@ -103,7 +103,7 @@ class AccountScheduler {
 
     /**
      * Resolve scheduling strategy name for a given model
-     * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "round-robin"
+     * Priority: 1. Model override in models.json -> 2. Global config/env -> 3. "least-used"
      * @param {string} modelName
      * @returns {string} Strategy name ("weighted" | "round-robin" | "least-used")
      */
@@ -124,7 +124,7 @@ class AccountScheduler {
             return globalStrategy.trim().toLowerCase();
         }
 
-        return "round-robin";
+        return "least-used";
     }
 
     /**

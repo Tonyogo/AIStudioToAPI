@@ -930,18 +930,18 @@ describe("AccountScheduler", () => {
             mockBrowserManager,
             null,
             mockModelList,
-            { concurrentSchedulingStrategy: "least-used" }
+            { concurrentSchedulingStrategy: "weighted" }
         );
 
         // 1. Model override in models.json -> "round-robin"
         expect(scheduler.getSchedulingStrategy("gemini-2.5-pro")).toBe("round-robin");
 
-        // 2. Model without override falls back to global config -> "least-used"
-        expect(scheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("least-used");
+        // 2. Model without override falls back to global config -> "weighted"
+        expect(scheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("weighted");
 
-        // 3. Without global config or model override -> defaults to "round-robin"
+        // 3. Without global config or model override -> defaults to "least-used"
         const defaultScheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
-        expect(defaultScheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("round-robin");
+        expect(defaultScheduler.getSchedulingStrategy("gemini-2.5-flash")).toBe("least-used");
     });
 
     test("getNextAuthIndex uses model-specific round-robin strategy correctly", async () => {

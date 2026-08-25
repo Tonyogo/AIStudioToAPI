@@ -62,8 +62,10 @@ describe("Scheduling Strategies", () => {
             expect(selectCandidate("least-used", unordered)).toBe(candidateA);
         });
 
-        test("falls back to round-robin strategy for unknown strategy name", () => {
-            expect(selectCandidate("unknown_strategy", [candidateB, candidateC, candidateA])).toBe(candidateA);
+        test("falls back to least-used strategy for unknown strategy name", () => {
+            const highUsageOrder0 = { idx: 0, inFlight: 0, order: 0, usage: 500 };
+            const lowUsageOrder1 = { idx: 1, inFlight: 0, order: 1, usage: 100 };
+            expect(selectCandidate("unknown_strategy", [highUsageOrder0, lowUsageOrder1])).toBe(lowUsageOrder1);
         });
     });
 });
