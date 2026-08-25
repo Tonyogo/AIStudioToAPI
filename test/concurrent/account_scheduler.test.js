@@ -141,6 +141,35 @@ describe("AccountScheduler", () => {
         expect(scheduler.activeQueue).toEqual([1, 2, 0]);
     });
 
+    test("rebalanceConcurrentPool prioritizes currentAuthIndex and loaded contexts over candidate accounts", async () => {
+        const scheduler = new AccountScheduler(
+            mockAuthSource,
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            { maxContexts: 2 }
+        );
+        scheduler._refreshActiveQueue(); // [0, 1, 2]
+
+        // Contexts Map currently holds #0 and #2
+        mockBrowserManager.contexts = new Map([
+            [0, { page: {} }],
+            [2, { page: {} }],
+        ]);
+        mockBrowserManager._currentAuthIndex = 2; // Current active account is #2
+        mockBrowserManager._closeContextForPoolIfPossible = jest.fn();
+        mockBrowserManager._preloadBackgroundContexts = jest.fn();
+
+        await scheduler.rebalanceConcurrentPool();
+
+        // Verify context #2 is NOT closed
+        expect(mockBrowserManager._closeContextForPoolIfPossible).not.toHaveBeenCalledWith(2, expect.any(String));
+        // Verify preloading does not pull in #1 at the expense of closing #2
+        expect(mockBrowserManager._closeContextForPoolIfPossible).not.toHaveBeenCalled();
+    });
+
     test("getNextAuthIndex reuses lightly busy account when maxContexts limit is reached and does not proactively scale-out", async () => {
         mockConnectionRegistry.hasConnection.mockReturnValue(true);
         const mockBrowserManager = {

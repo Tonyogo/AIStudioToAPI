@@ -404,7 +404,19 @@ class AccountScheduler {
 
             this._refreshActiveQueue();
 
-            const healthy = [];
+            const currentAuthIndex =
+                typeof this.browserManager._currentAuthIndex === "number" ? this.browserManager._currentAuthIndex : -1;
+            if (currentAuthIndex >= 0 && this.getAccountStatus(currentAuthIndex) !== "RETIRED") {
+                this._moveToFront(currentAuthIndex);
+            }
+
+            const loadedContextKeys =
+                this.browserManager.contexts && typeof this.browserManager.contexts.keys === "function"
+                    ? new Set(this.browserManager.contexts.keys())
+                    : new Set();
+
+            const healthyLoaded = [];
+            const healthyUnloaded = [];
             const retired = [];
 
             for (const idx of this.activeQueue) {
@@ -425,13 +437,46 @@ class AccountScheduler {
                 const status = this.getAccountStatus(idx);
                 if (status === "RETIRED") {
                     retired.push(idx);
+                } else if (loadedContextKeys.has(idx)) {
+                    healthyLoaded.push(idx);
                 } else {
-                    healthy.push(idx);
+                    healthyUnloaded.push(idx);
                 }
             }
 
-            // Implicitly maintains LRU queue order: healthy first (recently used), RETIRED last (earliest retired first)
-            const priorityQueue = [...healthy, ...retired];
+            // Priority Queue Order:
+            // 1. Current account (if healthy and loaded/unloaded)
+            // 2. Healthy accounts with loaded browser contexts
+            // 3. Healthy accounts without loaded contexts
+            // 4. RETIRED accounts
+            const priorityQueue = [];
+
+            if (
+                currentAuthIndex >= 0 &&
+                !this.authSource?.isExpired?.(currentAuthIndex) &&
+                !this.authSource?.isDisabled?.(currentAuthIndex) &&
+                this.getAccountStatus(currentAuthIndex) !== "RETIRED"
+            ) {
+                priorityQueue.push(currentAuthIndex);
+            }
+
+            for (const idx of healthyLoaded) {
+                if (!priorityQueue.includes(idx)) {
+                    priorityQueue.push(idx);
+                }
+            }
+
+            for (const idx of healthyUnloaded) {
+                if (!priorityQueue.includes(idx)) {
+                    priorityQueue.push(idx);
+                }
+            }
+
+            for (const idx of retired) {
+                if (!priorityQueue.includes(idx)) {
+                    priorityQueue.push(idx);
+                }
+            }
 
             const targetIndices = isUnlimited ? priorityQueue : priorityQueue.slice(0, maxContexts);
             const targets = new Set(targetIndices);
