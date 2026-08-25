@@ -446,7 +446,7 @@ describe("AccountScheduler", () => {
         expect(mockModelTracker.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
     });
 
-    test("getModelDailyLimit returns configured dailyLimit or Infinity if omitted", () => {
+    test("getModelDailyLimit returns configured dailyLimit or 100 if omitted", () => {
         const mockModelList = [{ dailyLimit: 50, name: "models/gemini-2.5-pro" }, { name: "models/gemini-2.5-flash" }];
         const scheduler = new AccountScheduler(
             mockAuthSource,
@@ -458,11 +458,11 @@ describe("AccountScheduler", () => {
         );
 
         expect(scheduler.getModelDailyLimit("gemini-2.5-pro")).toBe(50);
-        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(1000);
-        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(1000);
+        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(100);
+        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(100);
     });
 
-    test("getModelDailyLimit returns 1000 when model dailyLimit is not configured", () => {
+    test("getModelDailyLimit returns 100 when model dailyLimit is not configured", () => {
         const mockModelList = [{ name: "models/gemini-2.5-flash" }];
         const scheduler = new AccountScheduler(
             mockAuthSource,
@@ -473,8 +473,8 @@ describe("AccountScheduler", () => {
             mockModelList
         );
 
-        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(1000);
-        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(1000);
+        expect(scheduler.getModelDailyLimit("gemini-2.5-flash")).toBe(100);
+        expect(scheduler.getModelDailyLimit("unknown-model")).toBe(100);
     });
 
     test("getNextAuthIndex selects least used account even when dailyLimit is reached", async () => {

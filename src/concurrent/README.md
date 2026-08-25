@@ -143,7 +143,7 @@ src/
        ▼
 2. 过滤不可用账号 (_getAccountIndices)
    - 排除 disabledIndices 与 expiredIndices
-   - 提取模型单账号每日上限 (dailyLimit, 默认 1000 次)
+   - 提取模型单账号每日上限 (dailyLimit, 默认 100 次)
    - 解析调度策略 (getSchedulingStrategy, 默认 least-used)
        │
        ▼
@@ -213,7 +213,7 @@ curl -X POST "http://localhost:3000/v1beta/models/gemini-2.5-flash:generateConte
 
 在 `configs/models.json` 对应的模型定义中，可以添加以下字段来自定义单模型配额与并发调度策略：
 
-- `dailyLimit`：可选整数，设置该模型单账号每日使用上限（默认 `1000`）。
+- `dailyLimit`：可选整数，设置该模型单账号每日使用上限（默认 `100`）。
 - `schedulingStrategy`：可选字符串，指定该模型专用的并发调度算法（覆盖全局默认策略）：
   - `"least-used"`（推荐/默认）：最少用量优先，优先挑选当前北京 15:00 周期内该模型使用量最少的在线账号。
   - `"round-robin"`：经典轮询，按顺序依次轮流分发。
@@ -231,7 +231,7 @@ curl -X POST "http://localhost:3000/v1beta/models/gemini-2.5-flash:generateConte
 ```
 
 - **说明：**
-  - 若模型未配置 `dailyLimit`，系统默认每个账号每日该模型上限为 **1000** 次。
+  - 若模型未配置 `dailyLimit`，系统默认每个账号每日该模型上限为 **100** 次。
   - 若模型未配置 `schedulingStrategy`，系统自动采用全局策略（默认 `"least-used"`）。
   - 周期重置时间固定为北京时间每天下午 15:00:00。
 

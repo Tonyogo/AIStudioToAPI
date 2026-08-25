@@ -143,11 +143,11 @@ class AccountScheduler {
     /**
      * Get the configured daily limit for a specific model
      * @param {string} modelName - Model name
-     * @returns {number} Daily limit or Infinity
+     * @returns {number} Daily limit or 100
      */
     getModelDailyLimit(modelName) {
-        if (!Array.isArray(this.modelList) || this.modelList.length === 0) return 1000;
-        if (!modelName) return 1000;
+        if (!Array.isArray(this.modelList) || this.modelList.length === 0) return 100;
+        if (!modelName) return 100;
         const match = this.modelList.find(m => {
             if (!m || !m.name) return false;
             const cleanName = m.name.replace("models/", "");
@@ -156,7 +156,7 @@ class AccountScheduler {
         if (match && typeof match.dailyLimit === "number" && match.dailyLimit > 0) {
             return match.dailyLimit;
         }
-        return 1000;
+        return 100;
     }
 
     /**
