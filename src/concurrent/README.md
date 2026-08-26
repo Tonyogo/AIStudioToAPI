@@ -30,8 +30,9 @@
   - 引入全局 `isActivatingAny` 互斥锁，严格防止并发请求同时触发多个账号并行激活；两次账号激活之间严格保持 >= 30s 冷却，防止频繁触发浏览器上下文切换。
 - **2 分钟激活寿命自动到期 (Activation Auto-Expiration)：**
   - 账号激活后具备 2 分钟寿命上限 (`activatedLifespanMs = 120000`)。每次在调度请求 (`getNextAuthIndex`) 入口处触发状态刷新，若已激活账号空闲 (`inFlight === 0`) 且激活时长超过 2 分钟，自动复位为 `INACTIVE`。
-- **连续失败累加降级退休 (Consecutive Failure Retirement)：**
+- **连续失败累加与请求量达标降级退休 (Failure & Usage Retirement)：**
   - 每一个请求失败（403/500/503 等）都会不中断地累加连续失败次数，当连续失败达到 `failureThreshold`（默认 3 次）或者直接收到 `immediateSwitchStatusCodes`（默认 `[429, 503]`）时，平滑而即时地触发降级退休 (`RETIRED`)。
+  - **基于 `SWITCH_ON_USES` 轮换：** 每个账号独立统计累计请求次数，当单账号请求量达到 `SWITCH_ON_USES`（默认 40 次）上限后，自动触发退休降级并清零计数，促使并发池拉起后备健康账号平滑接替，实现多账号平滑滚动轮换。
 - **动态池平滑退载与状态自动复位 (Dynamic Rebalance & State Restoration)：**
   - 当账号因连续失败达到上限或收到立即切换状态码而 `RETIRED` 时，自动触发并发池动态再平衡 (`rebalanceConcurrentPool`)，按【健康活跃账号 (LRU 顺序) > 退休账号 (最早退休顺序)】构建优先级队列；
   - 若降级选入 `MAX_CONTEXTS` 保底目标集，被选中的 `RETIRED` 账号在拉起前自动恢复为 `INACTIVE` 并清空失败计数；落在保底集外的 Context 由 BrowserManager 在空闲时优雅关闭释放约 **700MB 内存**。
@@ -89,9 +90,9 @@ src/
   - **LRU 队列管理 (`_moveToFront` & `_moveToBack`)：** 请求命中时提升到队首，退休时下沉到队尾。
   - **30s 激活冷却：** 维护 `lastGlobalActivationAt`，任意账号两次激活之间严格间隔 >= 30 秒。
   - **退休与动态池再平衡 (`checkAndRetireAccount` & `retireAndReplaceAccount` & `rebalanceConcurrentPool`)：**
-    - 检查连续失败达到 `failureThreshold`（默认 3 次）或者直接收到立即切换的状态码（默认 429、503）。
+    - 检查连续失败达到 `failureThreshold`（默认 3 次）、收到立即切换状态码（默认 429、503）或单账号请求计数达到 `SWITCH_ON_USES`（默认 40 次）。
     - 触发下线后标记为 `RETIRED`，并触发动态池再平衡 `rebalanceConcurrentPool()`；
-    - 动态构建优先级队列，将 `RETIRED` 账号排在队尾。被保底选中的 `RETIRED` 账号自动恢复状态为 `INACTIVE` 并清空失败计数，超出容量的退休 Context 由 BrowserManager 在空闲时优雅关闭释放约 700MB 内存。
+    - 动态构建优先级队列，将 `RETIRED` 账号排在队尾。被保底选中的 `RETIRED` 账号自动恢复状态为 `INACTIVE` 并清空失败计数与使用计数，超出容量的退休 Context 由 BrowserManager 在空闲时优雅关闭释放约 700MB 内存。
   - **周期复苏 (`_checkAndResetCycle`)：** 在每日北京 15:00 周期跨越时，自动将所有 `RETIRED` 状态账号复位为 `INACTIVE` 并清空失败计数。
 - **完整调度流程 (`acquireNextAuthIndex` & `getNextAuthIndex`)：**
   详见本文档 [第 3 节：完整调度流程](#3-完整调度流程详解)。

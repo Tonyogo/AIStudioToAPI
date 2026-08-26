@@ -1350,5 +1350,92 @@ describe("AccountScheduler", () => {
             const selected = await scheduler.getNextAuthIndex("gemini-2.5-flash");
             expect(selected).toBe(0);
         });
+
+        test("recordUsage tracks account usage count and checkAndRetireAccount retires account when switchOnUses threshold is reached", async () => {
+            const mockBrowserManager = {
+                closeContext: jest.fn().mockResolvedValue(),
+                launchOrSwitchContext: jest.fn().mockResolvedValue(),
+            };
+            const mockConfig = { switchOnUses: 3 };
+
+            const scheduler = new AccountScheduler(
+                mockAuthSource,
+                mockConnectionRegistry,
+                mockLogger,
+                mockBrowserManager,
+                null,
+                [],
+                mockConfig
+            );
+            scheduler.setAccountStatus(0, "ACTIVATED");
+
+            expect(scheduler.getAccountUsageCount(0)).toBe(0);
+
+            // Record 1st and 2nd usage
+            scheduler.recordUsage(0, "gemini-2.5-flash");
+            expect(scheduler.getAccountUsageCount(0)).toBe(1);
+            let retired = await scheduler.checkAndRetireAccount(0);
+            expect(retired).toBe(false);
+            expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+
+            scheduler.recordUsage(0, "gemini-2.5-flash");
+            expect(scheduler.getAccountUsageCount(0)).toBe(2);
+            retired = await scheduler.checkAndRetireAccount(0);
+            expect(retired).toBe(false);
+
+            // Record 3rd usage -> reaches switchOnUses threshold (3)
+            scheduler.recordUsage(0, "gemini-2.5-flash");
+            expect(scheduler.getAccountUsageCount(0)).toBe(3);
+
+            jest.spyOn(scheduler, "retireAndReplaceAccount").mockResolvedValue();
+            retired = await scheduler.checkAndRetireAccount(0);
+            expect(retired).toBe(true);
+            expect(scheduler.retireAndReplaceAccount).toHaveBeenCalledWith(0, "reached usage threshold (3/3 requests)");
+            // After triggering retirement, the account usage count is reset
+            expect(scheduler.getAccountUsageCount(0)).toBe(0);
+        });
+
+        test("switchOnUses <= 0 does NOT trigger account retirement regardless of request count", async () => {
+            const mockConfig = { switchOnUses: 0 };
+            const scheduler = new AccountScheduler(
+                mockAuthSource,
+                mockConnectionRegistry,
+                mockLogger,
+                mockBrowserManager,
+                null,
+                [],
+                mockConfig
+            );
+            scheduler.setAccountStatus(0, "ACTIVATED");
+
+            for (let i = 0; i < 50; i++) {
+                scheduler.recordUsage(0, "gemini-2.5-flash");
+            }
+            expect(scheduler.getAccountUsageCount(0)).toBe(50);
+
+            const retired = await scheduler.checkAndRetireAccount(0);
+            expect(retired).toBe(false);
+            expect(scheduler.getAccountStatus(0)).toBe("ACTIVATED");
+        });
+
+        test("unretireAccount and cycle reset clear account usage count", () => {
+            const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger);
+            scheduler.recordUsage(0, "gemini-2.5-flash");
+            scheduler.recordUsage(0, "gemini-2.5-flash");
+            expect(scheduler.getAccountUsageCount(0)).toBe(2);
+
+            scheduler.unretireAccount(0);
+            expect(scheduler.getAccountUsageCount(0)).toBe(0);
+
+            scheduler.recordUsage(1, "gemini-2.5-flash");
+            expect(scheduler.getAccountUsageCount(1)).toBe(1);
+
+            // Trigger Beijing cycle rollover
+            scheduler.currentCycleKey = "2026-08-04_15:00";
+            jest.spyOn(scheduler, "getBeijingCycleKey").mockReturnValue("2026-08-05_15:00");
+            scheduler.getAccountStatus(0);
+
+            expect(scheduler.getAccountUsageCount(1)).toBe(0);
+        });
     });
 });

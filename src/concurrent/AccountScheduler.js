@@ -37,6 +37,7 @@ class AccountScheduler {
         this.accountStatusMap = new Map();
         this.inFlightMap = new Map();
         this.failureCountMap = new Map();
+        this.accountUsageCountMap = new Map();
         this.maxInFlightPerAccount = 2;
         this.activatedLifespanMs = 120000;
         this.lastGlobalActivationAt = 0;
@@ -85,6 +86,7 @@ class AccountScheduler {
                 }
             }
             this.failureCountMap.clear();
+            this.accountUsageCountMap.clear();
             this.lastStatusCodeMap.clear();
         }
     }
@@ -210,13 +212,14 @@ class AccountScheduler {
     }
 
     /**
-     * Unretire an account and restore its status to INACTIVE, clearing failure counts
+     * Unretire an account and restore its status to INACTIVE, clearing failure and usage counts
      * @param {number} authIndex
      */
     unretireAccount(authIndex) {
         if (authIndex === undefined || authIndex < 0) return;
         this.setAccountStatus(authIndex, "INACTIVE");
         this.failureCountMap.set(authIndex, 0);
+        this.accountUsageCountMap.set(authIndex, 0);
         this.lastStatusCodeMap.delete(authIndex);
     }
 
@@ -360,18 +363,32 @@ class AccountScheduler {
     }
 
     /**
+     * Get account-level total request usage count
+     * @param {number} authIndex
+     * @returns {number}
+     */
+    getAccountUsageCount(authIndex) {
+        if (authIndex === undefined || authIndex < 0) return 0;
+        return this.accountUsageCountMap.get(authIndex) || 0;
+    }
+
+    /**
      * Record usage for a specific account and model
      * @param {number} authIndex
      * @param {string} modelName
      */
     recordUsage(authIndex, modelName) {
+        if (authIndex !== undefined && authIndex >= 0) {
+            const currentUsage = this.getAccountUsageCount(authIndex);
+            this.accountUsageCountMap.set(authIndex, currentUsage + 1);
+        }
         if (this.modelUsageTracker && typeof this.modelUsageTracker.recordUsage === "function") {
             this.modelUsageTracker.recordUsage(authIndex, modelName);
         }
     }
 
     /**
-     * Check if account should be retired based on failure threshold or immediate switch status codes
+     * Check if account should be retired based on failure threshold, immediate switch status codes, or switchOnUses limit
      * @param {number} authIndex
      * @returns {Promise<boolean>}
      */
@@ -383,6 +400,8 @@ class AccountScheduler {
         const failureThreshold = this.config?.failureThreshold || 3;
         const consecutiveFailures = this.failureCountMap.get(authIndex) || 0;
         const lastStatusCode = this.lastStatusCodeMap.get(authIndex);
+        const switchOnUses = typeof this.config?.switchOnUses === "number" ? this.config.switchOnUses : 0;
+        const accountUsageCount = this.getAccountUsageCount(authIndex);
 
         let shouldRetire = false;
         let reason = "";
@@ -396,10 +415,14 @@ class AccountScheduler {
         } else if (consecutiveFailures >= failureThreshold) {
             shouldRetire = true;
             reason = `reached ${consecutiveFailures} consecutive failures (threshold: ${failureThreshold})`;
+        } else if (switchOnUses > 0 && accountUsageCount >= switchOnUses) {
+            shouldRetire = true;
+            reason = `reached usage threshold (${accountUsageCount}/${switchOnUses} requests)`;
         }
 
         if (shouldRetire) {
             this.lastStatusCodeMap.delete(authIndex);
+            this.accountUsageCountMap.set(authIndex, 0);
             await this.retireAndReplaceAccount(authIndex, reason);
             return true;
         }
@@ -519,8 +542,7 @@ class AccountScheduler {
                             `[ConcurrentPool] Re-activating retired account #${targetIdx} back to INACTIVE as target candidate`
                         );
                     }
-                    this.setAccountStatus(targetIdx, "INACTIVE");
-                    this.failureCountMap.set(targetIdx, 0);
+                    this.unretireAccount(targetIdx);
                 }
             }
 
