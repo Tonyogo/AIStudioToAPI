@@ -582,6 +582,44 @@ describe("AccountScheduler", () => {
         expect(mockBrowserManager._preloadBackgroundContexts).toHaveBeenCalledWith([0], 1);
     });
 
+    test("rebalanceConcurrentPool unretires and protects currentAuthIndex from closure when switched to a RETIRED account", async () => {
+        const mockBrowserManager = {
+            _closeContextForPoolIfPossible: jest.fn(),
+            _currentAuthIndex: 0,
+            _preloadBackgroundContexts: jest.fn(),
+            contexts: new Map([
+                [0, { page: {} }],
+                [1, { page: {} }],
+            ]),
+        };
+
+        const scheduler = new AccountScheduler(
+            { availableIndices: [0, 1, 2] },
+            mockConnectionRegistry,
+            mockLogger,
+            mockBrowserManager,
+            null,
+            [],
+            { maxContexts: 1 }
+        );
+
+        // Account 0 was previously RETIRED with failure count
+        scheduler.setAccountStatus(0, "RETIRED");
+        scheduler.failureCountMap.set(0, 3);
+        scheduler.setAccountStatus(1, "ACTIVATED");
+        scheduler.setAccountStatus(2, "INACTIVE");
+
+        await scheduler.rebalanceConcurrentPool();
+
+        // Account 0 is currentAuthIndex, so it should be unretired and placed at Priority 1
+        expect(scheduler.getAccountStatus(0)).toBe("INACTIVE");
+        expect(scheduler.failureCountMap.get(0)).toBe(0);
+
+        // Since maxContexts=1 and currentAuthIndex=0, target is [0]. Context 1 should be closed, 0 must NOT be closed!
+        expect(mockBrowserManager._closeContextForPoolIfPossible).toHaveBeenCalledWith(1, "rebalance_retired");
+        expect(mockBrowserManager._closeContextForPoolIfPossible).not.toHaveBeenCalledWith(0, expect.anything());
+    });
+
     test("activateAccount skips activation if 30s global cooldown has not elapsed", async () => {
         const mockBrowserManager = {
             _sendActiveTrigger: jest.fn(),

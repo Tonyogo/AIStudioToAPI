@@ -185,7 +185,7 @@ describe("ConcurrentRequestHandler", () => {
 
         await handler.handleGeminiRequest(req, res);
 
-        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash");
+        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash", { strategy: null });
         expect(mockScheduler.recordUsage).toHaveBeenCalledWith(0, "gemini-2.5-flash");
     });
 
@@ -212,7 +212,7 @@ describe("ConcurrentRequestHandler", () => {
 
         await handler.handleGeminiRequest(req, res);
 
-        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-3-flash-preview");
+        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-3-flash-preview", { strategy: null });
         expect(mockConnectionRegistry.sendRequest).toHaveBeenCalled();
         const sendPayload = mockConnectionRegistry.sendRequest.mock.calls[0][1];
 
@@ -646,7 +646,7 @@ describe("ConcurrentRequestHandler", () => {
 
         await handler.handleGeminiRequest(req, res);
 
-        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash");
+        expect(mockScheduler.getNextAuthIndex).toHaveBeenCalledWith("gemini-2.5-flash", { strategy: null });
         expect(mockConnectionRegistry.sendRequest).toHaveBeenCalled();
         const sendPayload = mockConnectionRegistry.sendRequest.mock.calls[0][1];
 

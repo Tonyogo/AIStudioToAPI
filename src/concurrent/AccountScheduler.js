@@ -210,6 +210,17 @@ class AccountScheduler {
     }
 
     /**
+     * Unretire an account and restore its status to INACTIVE, clearing failure counts
+     * @param {number} authIndex
+     */
+    unretireAccount(authIndex) {
+        if (authIndex === undefined || authIndex < 0) return;
+        this.setAccountStatus(authIndex, "INACTIVE");
+        this.failureCountMap.set(authIndex, 0);
+        this.lastStatusCodeMap.delete(authIndex);
+    }
+
+    /**
      * Record failure for an account
      * @param {number} authIndex
      * @param {number} statusCode
@@ -419,7 +430,14 @@ class AccountScheduler {
 
             const currentAuthIndex =
                 typeof this.browserManager._currentAuthIndex === "number" ? this.browserManager._currentAuthIndex : -1;
-            if (currentAuthIndex >= 0 && this.getAccountStatus(currentAuthIndex) !== "RETIRED") {
+            if (
+                currentAuthIndex >= 0 &&
+                !this.authSource?.isExpired?.(currentAuthIndex) &&
+                !this.authSource?.isDisabled?.(currentAuthIndex)
+            ) {
+                if (this.getAccountStatus(currentAuthIndex) === "RETIRED") {
+                    this.unretireAccount(currentAuthIndex);
+                }
                 this._moveToFront(currentAuthIndex);
             }
 
@@ -467,8 +485,7 @@ class AccountScheduler {
             if (
                 currentAuthIndex >= 0 &&
                 !this.authSource?.isExpired?.(currentAuthIndex) &&
-                !this.authSource?.isDisabled?.(currentAuthIndex) &&
-                this.getAccountStatus(currentAuthIndex) !== "RETIRED"
+                !this.authSource?.isDisabled?.(currentAuthIndex)
             ) {
                 priorityQueue.push(currentAuthIndex);
             }
@@ -585,16 +602,21 @@ class AccountScheduler {
             throw err;
         }
 
-        // Auto-sync browserManager.currentAuthIndex as ACTIVATED if online and currently INACTIVE
+        // Auto-sync browserManager.currentAuthIndex as ACTIVATED if online
         if (this.browserManager && typeof this.browserManager._currentAuthIndex === "number") {
             const currentIdx = this.browserManager._currentAuthIndex;
             if (
                 currentIdx >= 0 &&
-                this.getAccountStatus(currentIdx) !== "RETIRED" &&
                 this._hasConnection(currentIdx) &&
-                this.getAccountStatus(currentIdx) === "INACTIVE"
+                !this.authSource?.isExpired?.(currentIdx) &&
+                !this.authSource?.isDisabled?.(currentIdx)
             ) {
-                this.setAccountStatus(currentIdx, "ACTIVATED");
+                if (this.getAccountStatus(currentIdx) === "RETIRED") {
+                    this.unretireAccount(currentIdx);
+                }
+                if (this.getAccountStatus(currentIdx) === "INACTIVE") {
+                    this.setAccountStatus(currentIdx, "ACTIVATED");
+                }
             }
         }
 
