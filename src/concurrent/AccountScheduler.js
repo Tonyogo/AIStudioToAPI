@@ -600,6 +600,11 @@ class AccountScheduler {
         // Move retired index to end of activeQueue (LRU Update)
         this._moveToBack(authIndex);
 
+        // If the retired account was currentAuthIndex in browserManager, clear currentAuthIndex reference
+        if (this.browserManager && this.browserManager._currentAuthIndex === authIndex) {
+            this.browserManager._currentAuthIndex = -1;
+        }
+
         this.rebalanceConcurrentPool().catch(err => {
             if (this.logger && typeof this.logger.error === "function") {
                 this.logger.error(`[AccountScheduler] Background rebalance failed after retirement: ${err.message}`);

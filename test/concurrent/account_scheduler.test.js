@@ -507,8 +507,11 @@ describe("AccountScheduler", () => {
         Math.random.mockRestore();
     });
 
-    test("retireAndReplaceAccount marks account RETIRED and triggers rebalanceConcurrentPool", async () => {
-        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBrowserManager);
+    test("retireAndReplaceAccount marks account RETIRED, resets currentAuthIndex if retired, and triggers rebalanceConcurrentPool", async () => {
+        const mockBm = {
+            _currentAuthIndex: 0,
+        };
+        const scheduler = new AccountScheduler(mockAuthSource, mockConnectionRegistry, mockLogger, mockBm);
         jest.spyOn(scheduler, "rebalanceConcurrentPool").mockResolvedValue();
 
         scheduler.setAccountStatus(0, "ACTIVATED");
@@ -516,6 +519,7 @@ describe("AccountScheduler", () => {
         await scheduler.retireAndReplaceAccount(0, "test retirement");
 
         expect(scheduler.getAccountStatus(0)).toBe("RETIRED");
+        expect(mockBm._currentAuthIndex).toBe(-1);
         expect(scheduler.rebalanceConcurrentPool).toHaveBeenCalled();
     });
 
