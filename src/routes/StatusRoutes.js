@@ -613,6 +613,65 @@ class StatusRoutes {
             }
         });
 
+        // Close context for a specific account
+        app.post("/api/accounts/:index/close-context", isAuthenticated, async (req, res) => {
+            try {
+                if (this._rejectIfSystemBusy(res)) return;
+
+                const index = parseInt(req.params.index, 10);
+                if (isNaN(index) || !Number.isInteger(index)) {
+                    return res.status(400).json({ message: "errorInvalidIndex" });
+                }
+
+                const { authSource, browserManager, connectionRegistry, requestHandler } = this.serverSystem;
+
+                if (!authSource.initialIndices.includes(index)) {
+                    return res.status(404).json({ message: "errorAccountNotFound" });
+                }
+
+                const hasContext = browserManager.contexts.has(index);
+                const isInitializing = browserManager.initializingContexts.has(index);
+
+                if (!hasContext && !isInitializing) {
+                    return res.status(200).json({
+                        index,
+                        message: "contextAlreadyClosed",
+                    });
+                }
+
+                const isCurrent = requestHandler.currentAuthIndex === index;
+
+                this.logger.info(
+                    `[WebUI] Manually closing context for account #${index}${isCurrent ? " (current account)" : ""}...`
+                );
+
+                // 1. Proactively terminate any pending request message queues for this account
+                connectionRegistry.closeMessageQueuesForAuth(index, "manual_context_closed");
+
+                // 2. If it's the current active account, reset requestHandler currentAuthIndex to -1
+                if (isCurrent) {
+                    requestHandler.currentAuthIndex = -1;
+                }
+
+                // 3. Close the browser context
+                await browserManager.closeContext(index);
+
+                // 4. Close WebSocket connection
+                connectionRegistry.closeConnectionByAuth(index);
+
+                return res.status(200).json({
+                    index,
+                    message: "closeContextSuccess",
+                });
+            } catch (error) {
+                this.logger.error(`[WebUI] Failed to close context for account #${req.params.index}: ${error.message}`);
+                return res.status(500).json({
+                    error: error.message,
+                    message: "closeContextFailed",
+                });
+            }
+        });
+
         app.delete("/api/accounts/:index", isAuthenticated, async (req, res) => {
             if (this._rejectIfSystemBusy(res)) return;
 
