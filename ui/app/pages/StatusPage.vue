@@ -965,6 +965,29 @@
                                         </svg>
                                     </button>
                                     <button
+                                        v-if="item.hasContext"
+                                        class="btn-close-context"
+                                        :disabled="isBusy"
+                                        :title="t('btnCloseContext')"
+                                        @click.stop="closeAccountContext(item)"
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="M18.36 6.64a9 9 0 0 1 0 12.73"></path>
+                                            <path d="M5.64 18.36a9 9 0 0 1 0-12.73"></path>
+                                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                                        </svg>
+                                    </button>
+                                    <button
                                         class="btn-switch"
                                         :class="{
                                             'is-active': item.index === state.currentAuthIndex,
@@ -4568,6 +4591,54 @@ const toggleAccountDisabled = async account => {
     }
 };
 
+const closeAccountContext = async item => {
+    if (isBusy.value) return;
+
+    const isCurrent = item.index === state.currentAuthIndex;
+    if (isCurrent) {
+        try {
+            await ElMessageBox.confirm(
+                t("confirmCloseCurrentContext", {
+                    id: item.index,
+                    index: item.index,
+                    name: getAccountDisplayName(item),
+                }),
+                t("confirmCloseContextTitle"),
+                {
+                    cancelButtonText: t("cancel"),
+                    confirmButtonText: t("btnCloseContext"),
+                    type: "warning",
+                }
+            );
+        } catch {
+            return;
+        }
+    }
+
+    state.isSwitchingAccount = true;
+    try {
+        const response = await fetch(`/api/accounts/${item.index}/close-context`, {
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+            ElMessage.success(t(data.message || "closeContextSuccess", { index: item.index }));
+            await updateContent();
+        } else {
+            ElMessage.error(
+                t("closeContextFailed", { error: getApiErrorMessage(data) || data.message || "Unknown error" })
+            );
+        }
+    } catch (error) {
+        console.error("Failed to close account context:", error);
+        ElMessage.error(t("closeContextFailed", { error: error.message || error }));
+    } finally {
+        state.isSwitchingAccount = false;
+    }
+};
+
 // Switch account by index
 const switchAccountByIndex = targetIndex => {
     if (state.currentAuthIndex === targetIndex) {
@@ -5804,6 +5875,11 @@ watchEffect(() => {
         &.btn-danger:hover:not(:disabled) {
             border-color: @error-color;
             color: @error-color;
+        }
+
+        &.btn-close-context:hover:not(:disabled) {
+            border-color: @warning-color;
+            color: @warning-color;
         }
 
         &.btn-toggle-disabled:hover:not(:disabled) {
