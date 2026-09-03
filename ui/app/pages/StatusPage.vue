@@ -827,22 +827,155 @@
                                         >
                                             {{ getAccountDisplayName(item) }}
                                         </span>
+
+                                        <template v-if="state.isConcurrentMode && item.concurrentStatus">
+                                            <el-tag
+                                                size="small"
+                                                :type="getConcurrentStatusTagType(item.concurrentStatus)"
+                                                class="status-tag"
+                                            >
+                                                {{ t("status" + capitalize(item.concurrentStatus)) }}
+                                                <span v-if="item.inFlight > 0" class="in-flight-badge"
+                                                    >({{ item.inFlight }})</span
+                                                >
+                                            </el-tag>
+
+                                            <el-tag
+                                                v-if="item.isSuspended"
+                                                size="small"
+                                                type="warning"
+                                                class="status-tag"
+                                                :title="t('statusSuspended')"
+                                            >
+                                                {{ t("statusSuspended") }}
+                                            </el-tag>
+                                        </template>
+
                                         <span v-if="item.index === state.currentAuthIndex" class="current-badge">
                                             {{ t("tagCurrent") }}
                                         </span>
                                         <span v-if="item.isExpired" class="expired-badge">
                                             {{ t("tagExpired") }}
                                         </span>
+                                        <el-tag
+                                            v-if="
+                                                !state.isConcurrentMode &&
+                                                (item.status === 'disabled' || item.isDisabled)
+                                            "
+                                            type="info"
+                                            size="small"
+                                            class="status-tag"
+                                        >
+                                            {{ t("accountDisabledTag") }}
+                                        </el-tag>
+
+                                        <template v-if="state.isConcurrentMode && item.usage">
+                                            <el-popover
+                                                placement="top-start"
+                                                :width="300"
+                                                trigger="hover"
+                                                effect="dark"
+                                                popper-class="usage-popover-card"
+                                            >
+                                                <template #reference>
+                                                    <div class="usage-capsule-pill" @click.stop>
+                                                        <svg
+                                                            class="pill-icon"
+                                                            viewBox="0 0 24 24"
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            stroke-width="2"
+                                                        >
+                                                            <path
+                                                                d="M12 20V10M18 20V4M6 20v-4"
+                                                                stroke-linecap="round"
+                                                                stroke-linejoin="round"
+                                                            />
+                                                        </svg>
+                                                        <span class="pill-label">{{ t("todayUsage") }}</span>
+                                                        <span class="pill-count">{{ item.usage.total }}</span>
+                                                    </div>
+                                                </template>
+
+                                                <div class="usage-popover-inner">
+                                                    <div class="popover-header">
+                                                        <span class="popover-title">{{
+                                                            t("modelUsageBreakdown")
+                                                        }}</span>
+                                                        <span class="popover-total-badge"
+                                                            >{{ item.usage.total }} reqs</span
+                                                        >
+                                                    </div>
+                                                    <div class="popover-models-list">
+                                                        <div
+                                                            v-for="(val, model) in item.usage.byModel"
+                                                            :key="model"
+                                                            class="popover-model-item"
+                                                        >
+                                                            <div class="model-meta">
+                                                                <span class="model-name">{{ model }}</span>
+                                                                <span class="model-usage-text"
+                                                                    >{{ val.usage }} / {{ val.limit }}</span
+                                                                >
+                                                            </div>
+                                                            <el-progress
+                                                                :percentage="
+                                                                    Math.min(
+                                                                        100,
+                                                                        Math.round((val.usage / val.limit) * 100)
+                                                                    )
+                                                                "
+                                                                :stroke-width="6"
+                                                                :show-text="false"
+                                                                :color="getProgressColor(val.usage / val.limit)"
+                                                                class="model-progress-bar"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </el-popover>
+                                        </template>
                                     </div>
                                 </el-tooltip>
                                 <div class="account-actions">
+                                    <button
+                                        v-if="!item.isCurrent"
+                                        class="btn-toggle-disabled"
+                                        :class="{ 'is-disabled': item.isDisabled || item.status === 'disabled' }"
+                                        :title="
+                                            item.isDisabled || item.status === 'disabled'
+                                                ? t('enableAccount')
+                                                : t('disableAccount')
+                                        "
+                                        @click.stop="toggleAccountDisabled(item)"
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                            <line x1="12" y1="2" x2="12" y2="12"></line>
+                                        </svg>
+                                    </button>
                                     <button
                                         class="btn-switch"
                                         :class="{
                                             'is-active': item.index === state.currentAuthIndex,
                                             'is-fast': item.hasContext && item.index !== state.currentAuthIndex,
                                         }"
-                                        :disabled="isBusy || item.index === state.currentAuthIndex"
+                                        :disabled="
+                                            isBusy ||
+                                            item.index === state.currentAuthIndex ||
+                                            item.isDisabled ||
+                                            item.status === 'disabled'
+                                        "
                                         :title="
                                             item.index === state.currentAuthIndex
                                                 ? t('currentAccount')
@@ -2838,6 +2971,12 @@ const t = (key, options) => {
     return I18n.t(key, options);
 };
 
+const getProgressColor = ratio => {
+    if (ratio >= 0.9) return "#f56c6c";
+    if (ratio >= 0.7) return "#e6a23c";
+    return "#409eff";
+};
+
 // Stats tab state (reused from UsageStatsPage)
 const statsState = reactive({
     accounts: [],
@@ -3465,6 +3604,7 @@ const formatAccount = (authIndex, accountName) => {
     return `#${authIndex} ${accountName || "N/A"}`;
 };
 const fetchUsageStats = async () => {
+    if (activeTab.value !== "stats") return;
     const res = await fetch("/api/usage-stats");
     if (res.redirected) {
         window.location.href = res.url;
@@ -3683,6 +3823,12 @@ const switchTab = tabName => {
 
     activeTab.value = tabName;
 
+    if (tabName === "stats") {
+        fetchUsageStats().catch(err => {
+            console.error("Error fetching stats data:", err.message || err);
+        });
+    }
+
     if (tabName === "logs") {
         nextTick(() => {
             const logContainer = document.getElementById("log-container");
@@ -3712,6 +3858,7 @@ const state = reactive({
     forceUrlContextEnabled: false,
     forceWebSearchEnabled: false,
     hasUpdate: false,
+    isConcurrentMode: false,
     isSwitchingAccount: false,
     isSystemBusy: false,
     isUpdating: false,
@@ -3756,6 +3903,28 @@ const browserConnectedText = computed(() => {
     }
     return state.browserConnected ? t("running") : t("disconnected");
 });
+
+function getConcurrentStatusTagType(status) {
+    switch (status) {
+        case "ACTIVATED":
+            return "success";
+        case "ACTIVATING":
+            return "primary";
+        case "INACTIVE":
+            return "info";
+        case "RETIRED":
+            return "danger";
+        case "disabled":
+            return "info";
+        default:
+            return "info";
+    }
+}
+
+function capitalize(str) {
+    if (!str || typeof str !== "string") return "";
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
 
 // Total scanned accounts count
 const totalScannedCount = computed(() => state.accountDetails.length);
@@ -4360,6 +4529,45 @@ const handleStreamingModeBeforeChange = async () => {
     }
 };
 
+const toggleAccountDisabled = async account => {
+    const isTargetDisabled = !(
+        account.isDisabled ||
+        account.status === "disabled" ||
+        account.concurrentStatus === "disabled"
+    );
+    const accountIndex = account.index !== undefined ? account.index : account.id;
+    const accountEmail = account.email || account.name || "N/A";
+    const confirmMsg = isTargetDisabled
+        ? t("confirmDisableAccount", { email: accountEmail, id: accountIndex })
+        : t("confirmEnableAccount", { email: accountEmail, id: accountIndex });
+
+    try {
+        await ElMessageBox.confirm(confirmMsg, t("warningTitle"), {
+            cancelButtonText: t("cancel"),
+            confirmButtonText: t("ok"),
+            type: "warning",
+        });
+
+        const res = await fetch("/api/auth/toggle-disabled", {
+            body: JSON.stringify({ disabled: isTargetDisabled, index: accountIndex }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+        });
+
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || "Failed to toggle account disabled state");
+        }
+
+        ElMessage.success(t("toggleDisabledSuccess"));
+        updateContent();
+    } catch (err) {
+        if (err !== "cancel") {
+            ElMessage.error(err.message || "Action failed");
+        }
+    }
+};
+
 // Switch account by index
 const switchAccountByIndex = targetIndex => {
     if (state.currentAuthIndex === targetIndex) {
@@ -4444,6 +4652,7 @@ const updateStatus = data => {
     state.forceUrlContextEnabled = isEnabled(data.status.forceUrlContext);
     state.debugModeEnabled = isEnabled(data.status.debugMode);
     state.currentAuthIndex = data.status.currentAuthIndex;
+    state.isConcurrentMode = isEnabled(data.status.isConcurrentMode);
     state.accountDetails = data.status.accountDetails || [];
     state.activeContextsCount = data.status.activeContextsCount || 0;
     state.maxContexts = data.status.maxContexts ?? 1;
@@ -4997,7 +5206,6 @@ onMounted(() => {
     statsFiltersMobileMediaQuery.addEventListener("change", syncStatsFiltersViewport);
 
     updateContent().finally(scheduleUpdate);
-    fetchUsageStats().finally(scheduleUpdate);
 
     // Check for updates once on initial load
     checkForUpdates();
@@ -5597,6 +5805,23 @@ watchEffect(() => {
             border-color: @error-color;
             color: @error-color;
         }
+
+        &.btn-toggle-disabled:hover:not(:disabled) {
+            border-color: @warning-color;
+            color: @warning-color;
+        }
+
+        &.btn-toggle-disabled.is-disabled {
+            background-color: rgba(144, 147, 153, 0.1);
+            border-color: rgba(144, 147, 153, 0.2);
+            color: #909399;
+        }
+
+        &.btn-toggle-disabled.is-disabled:hover:not(:disabled) {
+            border-color: @success-color;
+            color: @success-color;
+            background-color: #f0f9eb;
+        }
     }
 }
 
@@ -6178,6 +6403,107 @@ watchEffect(() => {
         color: #fff;
         font-weight: 700;
         font-family: @font-family-mono;
+    }
+}
+
+.usage-capsule-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px 0 6px;
+    border-radius: 11px;
+    background: rgba(64, 158, 255, 0.08);
+    border: 1px solid rgba(64, 158, 255, 0.2);
+    cursor: pointer;
+    margin-left: 6px;
+    transition: all 0.2s ease;
+    user-select: none;
+
+    &:hover {
+        background: rgba(64, 158, 255, 0.15);
+        border-color: rgba(64, 158, 255, 0.4);
+        box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
+        transform: translateY(-1px);
+    }
+
+    .pill-icon {
+        width: 12px;
+        height: 12px;
+        color: #409eff;
+    }
+
+    .pill-label {
+        font-size: 11px;
+        color: var(--el-text-color-regular, #606266);
+        font-weight: 500;
+    }
+
+    .pill-count {
+        font-size: 11px;
+        font-weight: 700;
+        font-family: var(--font-family-mono, monospace);
+        color: #409eff;
+        background: rgba(64, 158, 255, 0.12);
+        padding: 0 5px;
+        border-radius: 8px;
+        line-height: 16px;
+    }
+}
+
+.usage-popover-inner {
+    padding: 2px 4px;
+
+    .popover-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+
+        .popover-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .popover-total-badge {
+            font-size: 11px;
+            color: #409eff;
+            font-weight: 700;
+            font-family: var(--font-family-mono, monospace);
+        }
+    }
+
+    .popover-models-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        .popover-model-item {
+            .model-meta {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 3px;
+                font-size: 11px;
+
+                .model-name {
+                    color: #e6a23c;
+                    font-weight: 500;
+                }
+
+                .model-usage-text {
+                    color: #a8abb2;
+                    font-family: var(--font-family-mono, monospace);
+                }
+            }
+
+            .model-progress-bar {
+                margin: 0;
+            }
+        }
     }
 }
 

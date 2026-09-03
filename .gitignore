@@ -33,6 +33,8 @@ data/
 # Temporary files
 tmp/
 temp/
+tmp_test_data/
+.superpowers/
 ui/dist/
 *.css
 test/
