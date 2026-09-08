@@ -613,6 +613,65 @@ class StatusRoutes {
             }
         });
 
+        // Close context for a specific account
+        app.post("/api/accounts/:index/close-context", isAuthenticated, async (req, res) => {
+            try {
+                if (this._rejectIfSystemBusy(res)) return;
+
+                const index = parseInt(req.params.index, 10);
+                if (isNaN(index) || !Number.isInteger(index)) {
+                    return res.status(400).json({ message: "errorInvalidIndex" });
+                }
+
+                const { authSource, browserManager, connectionRegistry, requestHandler } = this.serverSystem;
+
+                if (!authSource.initialIndices.includes(index)) {
+                    return res.status(404).json({ message: "errorAccountNotFound" });
+                }
+
+                const hasContext = browserManager.contexts.has(index);
+                const isInitializing = browserManager.initializingContexts.has(index);
+
+                if (!hasContext && !isInitializing) {
+                    return res.status(200).json({
+                        index,
+                        message: "contextAlreadyClosed",
+                    });
+                }
+
+                const isCurrent = requestHandler.currentAuthIndex === index;
+
+                this.logger.info(
+                    `[WebUI] Manually closing context for account #${index}${isCurrent ? " (current account)" : ""}...`
+                );
+
+                // 1. Proactively terminate any pending request message queues for this account
+                connectionRegistry.closeMessageQueuesForAuth(index, "manual_context_closed");
+
+                // 2. If it's the current active account, reset requestHandler currentAuthIndex to -1
+                if (isCurrent) {
+                    requestHandler.currentAuthIndex = -1;
+                }
+
+                // 3. Close the browser context
+                await browserManager.closeContext(index);
+
+                // 4. Close WebSocket connection
+                connectionRegistry.closeConnectionByAuth(index);
+
+                return res.status(200).json({
+                    index,
+                    message: "closeContextSuccess",
+                });
+            } catch (error) {
+                this.logger.error(`[WebUI] Failed to close context for account #${req.params.index}: ${error.message}`);
+                return res.status(500).json({
+                    error: error.message,
+                    message: "closeContextFailed",
+                });
+            }
+        });
+
         app.delete("/api/accounts/:index", isAuthenticated, async (req, res) => {
             if (this._rejectIfSystemBusy(res)) return;
 
@@ -961,8 +1020,22 @@ class StatusRoutes {
         });
     }
 
+    formatAccountsForStatus(authSource, currentAuthIndex) {
+        const { initialIndices = [], accountNameMap = new Map(), disabledIndices = [] } = authSource;
+
+        const accounts = initialIndices.map(index => ({
+            email: accountNameMap.get(index) || null,
+            id: index,
+            isCurrent: index === currentAuthIndex,
+            isDisabled: disabledIndices.includes(index),
+            status: disabledIndices.includes(index) ? "disabled" : "active",
+        }));
+
+        return { accounts, disabledIndices };
+    }
+
     _getStatusData() {
-        const { config, requestHandler, authSource, browserManager } = this.serverSystem;
+        const { config, requestHandler, authSource, browserManager, concurrentComponents } = this.serverSystem;
         const initialIndices = authSource.initialIndices || [];
         const invalidIndices = initialIndices.filter(i => !authSource.availableIndices.includes(i));
         const rotationIndices = authSource.getRotationIndices();
@@ -972,6 +1045,13 @@ class StatusRoutes {
         const allLogs = this.logger.logBuffer || [];
         const displayLogs = allLogs.slice(-limit);
         const accountNameMap = authSource.accountNameMap;
+
+        const isConcurrentMode = process.env.ENABLE_CONCURRENT === "true";
+        const scheduler = concurrentComponents?.scheduler;
+        const modelUsageTracker = this.serverSystem.modelUsageTracker || concurrentComponents?.modelUsageTracker;
+
+        const disabledIndices = authSource.disabledIndices || [];
+
         const accountDetails = initialIndices.map(index => {
             const isInvalid = invalidIndices.includes(index);
             const name = isInvalid ? null : accountNameMap.get(index) || null;
@@ -980,10 +1060,39 @@ class StatusRoutes {
             const isDuplicate = canonicalIndex !== null && canonicalIndex !== index;
             const isRotation = rotationIndices.includes(index);
             const isExpired = expiredIndices.includes(index);
+            const isDisabled = disabledIndices.includes(index);
 
             const hasContext = browserManager.contexts.has(index);
 
-            return { canonicalIndex, hasContext, index, isDuplicate, isExpired, isInvalid, isRotation, name };
+            const detail = {
+                canonicalIndex,
+                hasContext,
+                index,
+                isDisabled,
+                isDuplicate,
+                isExpired,
+                isInvalid,
+                isRotation,
+                name,
+                status: isDisabled ? "disabled" : "active",
+            };
+
+            if (isDisabled) {
+                detail.concurrentStatus = "disabled";
+            } else if (isConcurrentMode) {
+                detail.concurrentStatus = scheduler ? scheduler.getAccountStatus(index) : "unknown";
+                detail.inFlight = scheduler ? scheduler.getInFlightCount(index) : 0;
+                detail.isSuspended = false;
+            }
+
+            detail.usage = modelUsageTracker ? modelUsageTracker.getAccountUsageDetails(index, config.modelList) : null;
+
+            if (isConcurrentMode && isDisabled) {
+                detail.inFlight = 0;
+                detail.isSuspended = false;
+            }
+
+            return detail;
         });
 
         const currentAuthIndex = requestHandler.currentAuthIndex;
@@ -999,41 +1108,47 @@ class StatusRoutes {
                 ? `${requestHandler.failureCount} / ${config.failureThreshold}`
                 : requestHandler.failureCount;
 
+        const statusObj = {
+            accountDetails,
+            activeContextsCount: browserManager.contexts.size,
+            apiKeySource: config.apiKeySource,
+            browserConnected: !!this.serverSystem.connectionRegistry.getConnectionByAuth(currentAuthIndex, false),
+            checkUpdate: config.checkUpdate,
+            currentAccountName,
+            currentAuthIndex,
+            debugMode: LoggingService.isDebugEnabled(),
+            duplicateIndicesRaw: duplicateIndices,
+            enableAuthUpdate: config.enableAuthUpdate,
+            expiredIndicesRaw: expiredIndices,
+            failureCount,
+            forceCodeExecution: config.forceCodeExecution,
+            forceThinking: config.forceThinking,
+            forceUrlContext: config.forceUrlContext,
+            forceWebSearch: config.forceWebSearch,
+            immediateSwitchStatusCodes:
+                config.immediateSwitchStatusCodes.length > 0
+                    ? `[${config.immediateSwitchStatusCodes.join(", ")}]`
+                    : "Disabled",
+            initialIndicesRaw: initialIndices,
+            invalidIndicesRaw: invalidIndices,
+            isSystemBusy: requestHandler.isSystemBusy,
+            logMaxCount: limit,
+            maxContexts: config.maxContexts,
+            maxRetries: config.maxRetries,
+            rotationIndicesRaw: rotationIndices,
+            safetySettingsThreshold: config.safetySettingsThreshold,
+            streamingMode: config.streamingMode,
+            usageCount,
+        };
+
+        if (isConcurrentMode) {
+            statusObj.isConcurrentMode = true;
+        }
+
         return {
             logCount: displayLogs.length,
             logs: displayLogs.join("\n"),
-            status: {
-                accountDetails,
-                activeContextsCount: browserManager.contexts.size,
-                apiKeySource: config.apiKeySource,
-                browserConnected: !!this.serverSystem.connectionRegistry.getConnectionByAuth(currentAuthIndex, false),
-                checkUpdate: config.checkUpdate,
-                currentAccountName,
-                currentAuthIndex,
-                debugMode: LoggingService.isDebugEnabled(),
-                duplicateIndicesRaw: duplicateIndices,
-                enableAuthUpdate: config.enableAuthUpdate,
-                expiredIndicesRaw: expiredIndices,
-                failureCount,
-                forceCodeExecution: config.forceCodeExecution,
-                forceThinking: config.forceThinking,
-                forceUrlContext: config.forceUrlContext,
-                forceWebSearch: config.forceWebSearch,
-                immediateSwitchStatusCodes:
-                    config.immediateSwitchStatusCodes.length > 0
-                        ? `[${config.immediateSwitchStatusCodes.join(", ")}]`
-                        : "Disabled",
-                initialIndicesRaw: initialIndices,
-                invalidIndicesRaw: invalidIndices,
-                isSystemBusy: requestHandler.isSystemBusy,
-                logMaxCount: limit,
-                maxContexts: config.maxContexts,
-                maxRetries: config.maxRetries,
-                rotationIndicesRaw: rotationIndices,
-                safetySettingsThreshold: config.safetySettingsThreshold,
-                streamingMode: config.streamingMode,
-                usageCount,
-            },
+            status: statusObj,
         };
     }
 }

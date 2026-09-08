@@ -24,6 +24,7 @@ class ConfigLoader {
             apiKeySource: "Not set",
             browserExecutablePath: null,
             checkUpdate: true,
+            concurrentWaitTimeoutMs: parseInt(process.env.CONCURRENT_WAIT_TIMEOUT_MS, 10) || 60000,
             enableAuthUpdate: true,
             enableUsageStats: true,
             failureThreshold: 3,

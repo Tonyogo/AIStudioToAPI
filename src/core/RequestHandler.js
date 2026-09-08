@@ -70,6 +70,32 @@ class RequestHandler {
         return this.serverSystem.usageStatsService || null;
     }
 
+    _getModelUsageTracker() {
+        return this.serverSystem?.modelUsageTracker || null;
+    }
+
+    _recordGenerativeModelUsage(authIndex, cleanModelName) {
+        if (!cleanModelName || authIndex === undefined || authIndex < 0) return;
+        const tracker = this._getModelUsageTracker();
+        if (tracker && typeof tracker.recordUsage === "function") {
+            tracker.recordUsage(authIndex, cleanModelName);
+        }
+    }
+
+    _extractCleanModelName(proxyRequest) {
+        if (!proxyRequest) return null;
+        if (proxyRequest.clean_model_name) return proxyRequest.clean_model_name;
+        if (proxyRequest.tracking_model) return proxyRequest.tracking_model;
+        const rawModel = this._extractModelFromPath(proxyRequest.path);
+        if (rawModel) {
+            const { cleanModelName: toolStripped } = FormatConverter.parseModelBuiltInToolSuffixes(rawModel);
+            const { cleanModelName: streamStripped } = FormatConverter.parseModelStreamingModeSuffix(toolStripped);
+            const { cleanModelName } = FormatConverter.parseModelThinkingLevel(streamStripped);
+            return cleanModelName;
+        }
+        return null;
+    }
+
     _getAccountNameForIndex(authIndex) {
         if (!Number.isInteger(authIndex) || authIndex < 0) {
             return null;
@@ -1182,6 +1208,7 @@ class RequestHandler {
             const googleEndpoint = useRealStream ? "streamGenerateContent" : "generateContent";
             const proxyRequest = {
                 body: JSON.stringify(googleBody),
+                clean_model_name: model,
                 headers: { "Content-Type": "application/json" },
                 is_generative: true,
                 method: "POST",
@@ -1585,6 +1612,7 @@ class RequestHandler {
             const googleEndpoint = useRealStream ? "streamGenerateContent" : "generateContent";
             const proxyRequest = {
                 body: JSON.stringify(googleBody),
+                clean_model_name: model,
                 headers: { "Content-Type": "application/json" },
                 is_generative: true,
                 method: "POST",
@@ -1957,6 +1985,7 @@ class RequestHandler {
             const googleEndpoint = useRealStream ? "streamGenerateContent" : "generateContent";
             const proxyRequest = {
                 body: JSON.stringify(googleBody),
+                clean_model_name: model,
                 headers: { "Content-Type": "application/json" },
                 is_generative: true,
                 method: "POST",
@@ -4153,6 +4182,7 @@ class RequestHandler {
         let modelStreamingMode = null;
         let modelForceCodeExecution = false;
         let modelForceWebSearch = false;
+        let cleanModelName = null;
 
         if (modelPathMatch) {
             const pathPrefix = modelPathMatch[1];
@@ -4166,8 +4196,9 @@ class RequestHandler {
             } = FormatConverter.parseModelBuiltInToolSuffixes(rawModelName);
             const { cleanModelName: streamStrippedModel, streamingMode: parsedStreamingMode } =
                 FormatConverter.parseModelStreamingModeSuffix(toolStrippedModel);
-            const { cleanModelName, thinkingLevel: parsedThinkingLevel } =
+            const { cleanModelName: parsedCleanModelName, thinkingLevel: parsedThinkingLevel } =
                 FormatConverter.parseModelThinkingLevel(streamStrippedModel);
+            cleanModelName = parsedCleanModelName;
             modelForceCodeExecution = parsedForceCodeExecution;
             modelForceWebSearch = parsedForceWebSearch;
             modelStreamingMode = parsedStreamingMode;
@@ -4329,6 +4360,7 @@ class RequestHandler {
 
         return {
             body: req.method !== "GET" ? JSON.stringify(requestBodyObj) : undefined,
+            clean_model_name: cleanModelName,
             headers: req.headers,
             is_generative:
                 req.method === "POST" &&
@@ -4367,6 +4399,14 @@ class RequestHandler {
                 `[Request] Forwarding request #${proxyRequest.request_id} via connection for authIndex=${authIndex}` +
                     ` (attempt=${proxyRequest.request_attempt_id})`
             );
+
+            if (proxyRequest.is_generative) {
+                const modelName = this._extractCleanModelName(proxyRequest);
+                if (modelName) {
+                    this._recordGenerativeModelUsage(authIndex, modelName);
+                }
+            }
+
             connection.send(
                 JSON.stringify({
                     event_type: "proxy_request",

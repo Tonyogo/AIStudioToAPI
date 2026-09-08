@@ -21,6 +21,7 @@ const BrowserManager = require("./BrowserManager");
 const ConnectionRegistry = require("./ConnectionRegistry");
 const RequestHandler = require("./RequestHandler");
 const UsageStatsService = require("./UsageStatsService");
+const ModelUsageTracker = require("./ModelUsageTracker");
 const ConfigLoader = require("../utils/ConfigLoader");
 const WebRoutes = require("../routes/WebRoutes");
 
@@ -44,6 +45,7 @@ class ProxyServerSystem extends EventEmitter {
             path.join(process.cwd(), "data"),
             this.config.enableUsageStats
         );
+        this.modelUsageTracker = new ModelUsageTracker(this.logger);
 
         // Create ConnectionRegistry with lightweight reconnect callback
         // When WebSocket connection is lost but browser is still running,
@@ -461,6 +463,9 @@ class ProxyServerSystem extends EventEmitter {
         app.use(this._createAuthMiddleware());
 
         // API routes
+        const { initConcurrentMode } = require("../concurrent");
+        this.concurrentComponents = initConcurrentMode(app, this);
+
         app.get(["/v1/models"], (req, res) => {
             // OpenAI format
             const models = this.config.modelList.map(model => ({
