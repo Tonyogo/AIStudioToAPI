@@ -18,6 +18,7 @@ const { URL } = require("url");
 const LoggingService = require("../utils/LoggingService");
 const AuthSource = require("../auth/AuthSource");
 const BrowserManager = require("./BrowserManager");
+const AuthStateTracker = require("./AuthStateTracker");
 const ConnectionRegistry = require("./ConnectionRegistry");
 const RequestHandler = require("./RequestHandler");
 const UsageStatsService = require("./UsageStatsService");
@@ -39,6 +40,8 @@ class ProxyServerSystem extends EventEmitter {
 
         this.authSource = new AuthSource(this.logger);
         this.browserManager = new BrowserManager(this.logger, this.config, this.authSource);
+        this.authStateTracker = new AuthStateTracker(this.logger);
+        this.browserManager.setAuthStateTracker(this.authStateTracker);
         this.usageStatsService = new UsageStatsService(
             this.authSource,
             this.logger,
@@ -142,29 +145,24 @@ class ProxyServerSystem extends EventEmitter {
         }
 
         // Determine startup order
-        let startupOrder = allRotationIndices.length > 0 ? [...allRotationIndices] : [...allAvailableIndices];
-        const hasInitialAuthIndex = Number.isInteger(initialAuthIndex);
-        if (hasInitialAuthIndex) {
-            const canonicalInitialIndex = this.authSource.getCanonicalIndex(initialAuthIndex);
-            if (canonicalInitialIndex !== null && startupOrder.includes(canonicalInitialIndex)) {
-                if (canonicalInitialIndex !== initialAuthIndex) {
-                    this.logger.warn(
-                        `[System] Specified startup index #${initialAuthIndex} is a duplicate, using latest auth index #${canonicalInitialIndex} instead.`
-                    );
-                } else {
-                    this.logger.info(
-                        `[System] Detected specified startup index #${initialAuthIndex}, will try it first.`
-                    );
-                }
-                startupOrder = [canonicalInitialIndex, ...startupOrder.filter(i => i !== canonicalInitialIndex)];
-            } else {
-                this.logger.warn(
-                    `[System] Specified startup index #${initialAuthIndex} is invalid or unavailable, will start in default order.`
-                );
-            }
+        const { chosenIndex, source, startupOrder } = this.authStateTracker.resolveStartupIndex({
+            availableIndices: allAvailableIndices,
+            canonicalIndexGetter: idx => this.authSource.getCanonicalIndex(idx),
+            envInitialIndex: initialAuthIndex,
+            rotationIndices: allRotationIndices,
+        });
+
+        if (source === "persisted") {
+            this.logger.info(`[System] 🔄 Resuming from last active auth index #${chosenIndex}.`);
+        } else if (source === "persisted_fallback") {
+            this.logger.warn(
+                `[System] ⚠️ Last active auth index unavailable, falling back to next available index #${chosenIndex}.`
+            );
+        } else if (source === "env") {
+            this.logger.info(`[System] Detected specified startup index #${chosenIndex}, will try it first.`);
         } else {
             this.logger.info(
-                `[System] No valid startup index specified, will activate first available context [${startupOrder[0]}].`
+                `[System] No valid startup index specified or persisted, activating first available context #${chosenIndex}.`
             );
         }
 
