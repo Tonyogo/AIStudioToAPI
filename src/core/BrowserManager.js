@@ -65,6 +65,7 @@ class BrowserManager {
         this._onAuthQueuesDrained = null;
         this._isSystemBusyProvider = null;
         this.pendingContextClosures = new Map();
+        this.authStateTracker = null;
 
         // Background wakeup service status (instance-level, tracks this.page)
         // Prevents multiple BackgroundWakeup instances from running simultaneously
@@ -179,6 +180,10 @@ class BrowserManager {
 
     setSystemBusyProvider(provider) {
         this._isSystemBusyProvider = typeof provider === "function" ? provider : null;
+    }
+
+    setAuthStateTracker(tracker) {
+        this.authStateTracker = tracker;
     }
 
     _isSystemBusy() {
@@ -783,6 +788,14 @@ class BrowserManager {
         this._startHealthMonitor();
         this._startBackgroundWakeup();
         this._sendActiveTrigger("[Browser]", pg);
+
+        if (this.authStateTracker && typeof this.authStateTracker.saveLastAuthIndex === "function") {
+            try {
+                this.authStateTracker.saveLastAuthIndex(authIndex);
+            } catch (err) {
+                this.logger.warn(`[Browser] Failed to persist auth state for account #${authIndex}: ${err.message}`);
+            }
+        }
     }
 
     /**
