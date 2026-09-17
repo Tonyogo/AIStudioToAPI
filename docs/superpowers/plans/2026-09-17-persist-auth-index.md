@@ -35,7 +35,7 @@
     - `saveLastAuthIndex(authIndex: number): boolean`
     - `resolveStartupIndex({ availableIndices: number[], rotationIndices: number[], canonicalIndexGetter: (idx: number) => number | null, envInitialIndex?: number | null }): { chosenIndex: number, startupOrder: number[], source: "persisted" | "persisted_fallback" | "env" | "default" }`
 
-- [ ] **Step 1: 编写失败的单元测试 `test/core/auth_state_tracker.test.js`**
+- [x] **Step 1: 编写失败的单元测试 `test/core/auth_state_tracker.test.js`**
 
 ```javascript
 /* eslint-env jest */
@@ -170,12 +170,12 @@ describe("AuthStateTracker", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 运行: `npx jest test/core/auth_state_tracker.test.js`
 预期: 失败（`Cannot find module '../../src/core/AuthStateTracker'`）
 
-- [ ] **Step 3: 实现 `src/core/AuthStateTracker.js`**
+- [x] **Step 3: 实现 `src/core/AuthStateTracker.js`**
 
 ```javascript
 /**
@@ -310,12 +310,12 @@ class AuthStateTracker {
 module.exports = AuthStateTracker;
 ```
 
-- [ ] **Step 4: 运行测试并确认全部通过**
+- [x] **Step 4: 运行测试并确认全部通过**
 
 运行: `npx jest test/core/auth_state_tracker.test.js`
 预期: PASS
 
-- [ ] **Step 5: 提交任务 1 代码**
+- [x] **Step 5: 提交任务 1 代码**
 
 ```bash
 git add src/core/AuthStateTracker.js test/core/auth_state_tracker.test.js
@@ -334,7 +334,7 @@ git commit -m "feat(auth): implement AuthStateTracker with persistence and fallb
 - Consumes: `AuthStateTracker` instance via `setAuthStateTracker(tracker)`
 - Produces: `_activateContext(ctx, pg, authIndex)` triggers `this.authStateTracker?.saveLastAuthIndex(authIndex)`
 
-- [ ] **Step 1: 编写单元测试验证 `BrowserManager` 调用 `saveLastAuthIndex`**
+- [x] **Step 1: 编写单元测试验证 `BrowserManager` 调用 `saveLastAuthIndex`**
 
 ```javascript
 /* eslint-env jest */
@@ -366,12 +366,12 @@ describe("BrowserManager AuthStateTracker integration", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 运行: `npx jest test/core/browser_manager_auth_state.test.js`
 预期: FAIL (`manager.setAuthStateTracker is not a function`)
 
-- [ ] **Step 3: 在 `src/core/BrowserManager.js` 中添加 `setAuthStateTracker` 并在 `_activateContext` 中调用**
+- [x] **Step 3: 在 `src/core/BrowserManager.js` 中添加 `setAuthStateTracker` 并在 `_activateContext` 中调用**
 
 修改 `src/core/BrowserManager.js`:
 - 在构造函数中初始化 `this.authStateTracker = null;`
@@ -392,12 +392,12 @@ describe("BrowserManager AuthStateTracker integration", () => {
   }
   ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行: `npx jest test/core/browser_manager_auth_state.test.js`
 预期: PASS
 
-- [ ] **Step 5: 提交任务 2 代码**
+- [x] **Step 5: 提交任务 2 代码**
 
 ```bash
 git add src/core/BrowserManager.js test/core/browser_manager_auth_state.test.js
@@ -416,7 +416,7 @@ git commit -m "feat(browser): save active auth index via AuthStateTracker in _ac
 - Consumes: `AuthStateTracker`, `AuthSource`, `BrowserManager`
 - Produces: `ProxyServerSystem.start(initialAuthIndex)` resolves startup order from `AuthStateTracker.resolveStartupIndex` and logs startup source.
 
-- [ ] **Step 1: 编写单元测试验证 `ProxyServerSystem` 启动序号决策与日志**
+- [x] **Step 1: 编写单元测试验证 `ProxyServerSystem` 启动序号决策与日志**
 
 ```javascript
 /* eslint-env jest */
@@ -453,12 +453,12 @@ describe("ProxyServerSystem startup auth index resolution", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 运行: `npx jest test/core/proxy_server_system_startup_auth.test.js`
 预期: FAIL (`system.authStateTracker is not defined`)
 
-- [ ] **Step 3: 修改 `src/core/ProxyServerSystem.js`**
+- [x] **Step 3: 修改 `src/core/ProxyServerSystem.js`**
 
 1. 引入 `AuthStateTracker`：
    ```javascript
@@ -490,12 +490,12 @@ describe("ProxyServerSystem startup auth index resolution", () => {
    }
    ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行: `npx jest test/core/proxy_server_system_startup_auth.test.js`
 预期: PASS
 
-- [ ] **Step 5: 提交任务 3 代码**
+- [x] **Step 5: 提交任务 3 代码**
 
 ```bash
 git add src/core/ProxyServerSystem.js test/core/proxy_server_system_startup_auth.test.js
@@ -510,18 +510,18 @@ git commit -m "feat(system): wire AuthStateTracker into ProxyServerSystem startu
 - Test: 全量单元测试 `npm test`
 - Code quality: `npm run lint:js` & `npm run format:check`
 
-- [ ] **Step 1: 运行所有单元测试**
+- [x] **Step 1: 运行所有单元测试**
 
 运行: `npx jest`
 预期: 所有单元测试套件全部通过 (All test suites pass)
 
-- [ ] **Step 2: 运行代码规范检查与格式检查**
+- [x] **Step 2: 运行代码规范检查与格式检查**
 
 运行: `npm run lint:js`
 运行: `npm run format:check`
 预期: 无 ESLint 错误，无 Prettier 格式差异
 
-- [ ] **Step 3: 清理临时测试用例或保留回归测试，提交最终代码**
+- [x] **Step 3: 清理临时测试用例或保留回归测试，提交最终代码**
 
 ```bash
 git add test/
