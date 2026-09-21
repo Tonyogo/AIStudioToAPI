@@ -104,6 +104,21 @@ class RequestHandler {
         return this.authSource?.accountNameMap?.get(authIndex) || null;
     }
 
+    _injectAccountHeader(res, authIndex = this.currentAuthIndex) {
+        if (!res || res.headersSent) return;
+        const resolvedAuthIndex = Number.isInteger(authIndex) ? authIndex : this.currentAuthIndex;
+        let accountName = this._getAccountNameForIndex(resolvedAuthIndex);
+        if (!accountName && this.authSource?.getCanonicalIndex) {
+            const canonicalIdx = this.authSource.getCanonicalIndex(resolvedAuthIndex);
+            if (canonicalIdx !== resolvedAuthIndex) {
+                accountName = this._getAccountNameForIndex(canonicalIdx);
+            }
+        }
+        if (accountName && typeof accountName === "string") {
+            res.setHeader("X-Account-Name", accountName);
+        }
+    }
+
     _getClientIp(req) {
         return this.serverSystem.webRoutes.authRoutes.getClientIP(req);
     }
@@ -1330,6 +1345,7 @@ class RequestHandler {
                         Connection: "keep-alive",
                         "Content-Type": "text/event-stream",
                     });
+                    this._injectAccountHeader(res, currentQueueAuthIndex);
                     this.logger.info(`[Request] OpenAI streaming response (Real Mode) started...`);
                     await this._streamOpenAIResponse(currentQueue, res, model, requestId);
                 } else {
@@ -1346,6 +1362,7 @@ class RequestHandler {
                                         Connection: "keep-alive",
                                         "Content-Type": "text/event-stream",
                                     });
+                                    this._injectAccountHeader(res);
                                 }
                                 if (!res.writableEnded) {
                                     res.write(": keep-alive\n\n");
@@ -1403,6 +1420,7 @@ class RequestHandler {
                                     Connection: "keep-alive",
                                     "Content-Type": "text/event-stream",
                                 });
+                                this._injectAccountHeader(res);
                             }
                             // Clear keep-alive timer as we are about to send real data
                             if (connectionMaintainer) clearTimeout(connectionMaintainer);
@@ -2097,6 +2115,7 @@ class RequestHandler {
                         Connection: "keep-alive",
                         "Content-Type": "text/event-stream",
                     });
+                    this._injectAccountHeader(res, currentQueueAuthIndex);
                     this.logger.info(`[Request] Claude streaming response (Real Mode) started...`);
                     await this._streamClaudeResponse(currentQueue, res, model, requestId);
                 } else {
@@ -2112,6 +2131,7 @@ class RequestHandler {
                                         Connection: "keep-alive",
                                         "Content-Type": "text/event-stream",
                                     });
+                                    this._injectAccountHeader(res);
                                 }
                                 if (!res.writableEnded) {
                                     res.write("event: ping\ndata: {}\n\n");
@@ -2165,6 +2185,7 @@ class RequestHandler {
                                     Connection: "keep-alive",
                                     "Content-Type": "text/event-stream",
                                 });
+                                this._injectAccountHeader(res);
                             }
                             if (connectionMaintainer) clearTimeout(connectionMaintainer);
 
@@ -2671,6 +2692,7 @@ class RequestHandler {
         try {
             const googleResponse = JSON.parse(fullBody);
             const claudeResponse = this.formatConverter.convertGoogleToClaudeNonStream(googleResponse, model);
+            this._injectAccountHeader(res);
             res.type("application/json").send(JSON.stringify(claudeResponse));
             this.logger.info(`✅ [Request] Response completed (Claude non-stream), request ID: ${requestId}`);
         } catch (e) {
@@ -2694,6 +2716,7 @@ class RequestHandler {
                     res.setHeader("Content-Type", "text/event-stream");
                     res.setHeader("Cache-Control", "no-cache");
                     res.setHeader("Connection", "keep-alive");
+                    this._injectAccountHeader(res);
                 }
                 if (!res.writableEnded) {
                     res.write(": keep-alive\n\n");
@@ -2752,6 +2775,7 @@ class RequestHandler {
                 res.setHeader("Content-Type", "text/event-stream");
                 res.setHeader("Cache-Control", "no-cache");
                 res.setHeader("Connection", "keep-alive");
+                this._injectAccountHeader(res);
             }
             // Clear the keep-alive timer as we are about to send real data
             clearTimeout(connectionMaintainer);
@@ -3055,6 +3079,7 @@ class RequestHandler {
         }
 
         this._setResponseHeaders(res, headerMessage, req);
+        this._injectAccountHeader(res, currentQueueAuthIndex);
         // Fallback: Ensure Content-Type is set for streaming response
         if (!res.get("Content-Type")) {
             res.type("text/event-stream");
@@ -3207,6 +3232,7 @@ class RequestHandler {
             }
 
             this._setResponseHeaders(res, headerMessage, req);
+            this._injectAccountHeader(res);
 
             // Ensure Content-Type is set (Express defaults Buffer to application/octet-stream)
             if (!res.get("Content-Type")) {
@@ -3737,6 +3763,7 @@ class RequestHandler {
         try {
             const googleResponse = JSON.parse(fullBody);
             const openAIResponse = this.formatConverter.convertGoogleToOpenAINonStream(googleResponse, model);
+            this._injectAccountHeader(res);
             res.type("application/json").send(JSON.stringify(openAIResponse));
             this.logger.info(`✅ [Request] Response completed (OpenAI non-stream), request ID: ${requestId}`);
         } catch (e) {
