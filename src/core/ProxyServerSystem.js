@@ -395,7 +395,7 @@ class ProxyServerSystem extends EventEmitter {
                 "x-goog-upload-url, x-goog-upload-status, x-goog-upload-chunk-granularity, " +
                     "x-goog-upload-control-url, x-goog-upload-command, x-goog-upload-content-type, " +
                     "x-goog-upload-protocol, x-goog-upload-file-name, x-goog-upload-offset, " +
-                    "date, content-type, content-length, location"
+                    "date, content-type, content-length, location, x-account-name, X-Account-Name"
             );
 
             if (req.method === "OPTIONS") {
