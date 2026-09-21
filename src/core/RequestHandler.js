@@ -1752,6 +1752,7 @@ class RequestHandler {
                         Connection: "keep-alive",
                         "Content-Type": "text/event-stream",
                     });
+                    this._injectAccountHeader(res, currentQueueAuthIndex);
                     this.logger.info(`[Request] OpenAI Response API streaming response (Real Mode) started...`);
                     await this._streamOpenAIResponseAPIResponse(currentQueue, res, model, {
                         requestId,
@@ -1771,6 +1772,7 @@ class RequestHandler {
                                         Connection: "keep-alive",
                                         "Content-Type": "text/event-stream",
                                     });
+                                    this._injectAccountHeader(res);
                                 }
                                 if (!res.writableEnded) {
                                     res.write(": keep-alive\n\n");
@@ -1832,6 +1834,7 @@ class RequestHandler {
                                     Connection: "keep-alive",
                                     "Content-Type": "text/event-stream",
                                 });
+                                this._injectAccountHeader(res);
                             }
                             // Clear keep-alive timer as we are about to send real data
                             if (connectionMaintainer) clearTimeout(connectionMaintainer);
@@ -2411,6 +2414,7 @@ class RequestHandler {
                 }
 
                 // Return Claude-compatible response
+                this._injectAccountHeader(res, messageQueueAuthIndex);
                 res.status(200).json({
                     input_tokens: totalTokens,
                 });
@@ -2569,6 +2573,7 @@ class RequestHandler {
                     this.authSwitcher.failureCount = 0;
                 }
 
+                this._injectAccountHeader(res, messageQueueAuthIndex);
                 res.status(200).json({
                     input_tokens: totalTokens,
                 });
@@ -3727,6 +3732,7 @@ class RequestHandler {
                 model,
                 responseDefaults
             );
+            this._injectAccountHeader(res);
             res.type("application/json").send(JSON.stringify(responseAPIResponse));
             this.logger.info(
                 `✅ [Request] Response completed (OpenAI Response API non-stream), request ID: ${requestId}`
@@ -3819,6 +3825,7 @@ class RequestHandler {
     }
 
     _handleRequestError(error, res, requestId = null) {
+        this._injectAccountHeader(res);
         const format = this._resolveErrorFormat(res);
         // Normalize error message to handle non-Error objects and missing/non-string messages
         const errorMsg = String(error?.message ?? error);
@@ -3971,53 +3978,53 @@ class RequestHandler {
     }
 
     _sendErrorResponse(res, status, message, errorType = null) {
-        if (!res.headersSent) {
-            const statusCode = Number(status) || 500;
-            const resolvedFormat = this._resolveErrorFormat(res);
-            const resolvedErrorType = errorType || this._getDefaultErrorType(resolvedFormat, statusCode);
-            let errorPayload;
+        if (!res || res.headersSent) return;
+        this._injectAccountHeader(res);
+        const statusCode = Number(status) || 500;
+        const resolvedFormat = this._resolveErrorFormat(res);
+        const resolvedErrorType = errorType || this._getDefaultErrorType(resolvedFormat, statusCode);
+        let errorPayload;
 
-            if (resolvedFormat === "claude") {
-                errorPayload = {
-                    error: {
-                        message,
-                        type: resolvedErrorType,
-                    },
-                    type: "error",
-                };
-            } else if (resolvedFormat === "openai") {
-                errorPayload = {
-                    error: {
-                        code: statusCode,
-                        message,
-                        type: resolvedErrorType,
-                    },
-                };
-            } else if (resolvedFormat === "response_api") {
-                errorPayload = {
-                    error: {
-                        code: resolvedErrorType,
-                        message,
-                        param: null,
-                        type: resolvedErrorType,
-                    },
-                };
-            } else {
-                let statusText = "INTERNAL";
-                if (statusCode === 504) statusText = "DEADLINE_EXCEEDED";
-                else if (statusCode === 503) statusText = "UNAVAILABLE";
-                errorPayload = {
-                    error: {
-                        code: statusCode,
-                        message,
-                        status: statusText,
-                    },
-                };
-            }
-
-            this._markTrackedResponseError(res, message, statusCode);
-            res.status(statusCode).type("application/json").send(JSON.stringify(errorPayload));
+        if (resolvedFormat === "claude") {
+            errorPayload = {
+                error: {
+                    message,
+                    type: resolvedErrorType,
+                },
+                type: "error",
+            };
+        } else if (resolvedFormat === "openai") {
+            errorPayload = {
+                error: {
+                    code: statusCode,
+                    message,
+                    type: resolvedErrorType,
+                },
+            };
+        } else if (resolvedFormat === "response_api") {
+            errorPayload = {
+                error: {
+                    code: resolvedErrorType,
+                    message,
+                    param: null,
+                    type: resolvedErrorType,
+                },
+            };
+        } else {
+            let statusText = "INTERNAL";
+            if (statusCode === 504) statusText = "DEADLINE_EXCEEDED";
+            else if (statusCode === 503) statusText = "UNAVAILABLE";
+            errorPayload = {
+                error: {
+                    code: statusCode,
+                    message,
+                    status: statusText,
+                },
+            };
         }
+
+        this._markTrackedResponseError(res, message, statusCode);
+        res.status(statusCode).type("application/json").send(JSON.stringify(errorPayload));
     }
 
     _isResponseWritable(res) {

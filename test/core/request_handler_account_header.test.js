@@ -63,4 +63,21 @@ describe("RequestHandler - X-Account-Name injection", () => {
         handler._injectAccountHeader(res, 999);
         expect(res.setHeader).not.toHaveBeenCalled();
     });
+
+    test("_sendErrorResponse injects X-Account-Name header when headers are not sent", () => {
+        const headers = {};
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            send: jest.fn(),
+            setHeader: jest.fn((key, val) => {
+                headers[key] = val;
+            }),
+            status: jest.fn().mockReturnThis(),
+            type: jest.fn().mockReturnThis(),
+        };
+
+        handler._sendErrorResponse(res, 500, "Internal Server Error");
+        expect(res.setHeader).toHaveBeenCalledWith("X-Account-Name", "account0@gmail.com");
+    });
 });
