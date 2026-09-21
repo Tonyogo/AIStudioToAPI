@@ -835,4 +835,91 @@ describe("ConcurrentRequestHandler", () => {
             })
         );
     });
+
+    test("handleGeminiRequest injects X-Account-Name header on non-stream response", async () => {
+        const mockAuthSource = {
+            accountNameMap: new Map([[0, "concurrent-acc@gmail.com"]]),
+            getCanonicalIndex: idx => idx,
+        };
+
+        const handler = new ConcurrentRequestHandler(
+            mockConnectionRegistry,
+            mockScheduler,
+            mockLogger,
+            [{ name: "models/gemini-2.5-flash" }],
+            null,
+            mockAuthSource
+        );
+
+        mockConnectionRegistry.sendRequest.mockImplementation(async (authIndex, payload, cb) => {
+            cb({ candidates: [{ content: { parts: [{ text: "hello" }] } }] }, true, false, { status: 200 });
+        });
+
+        const req = {
+            body: { contents: [{ parts: [{ text: "hi" }], role: "user" }] },
+            headers: {},
+            method: "POST",
+            params: { 0: "gemini-2.5-flash:generateContent" },
+            path: "/v1beta/models/gemini-2.5-flash:generateContent",
+            query: {},
+        };
+
+        const headers = {};
+        const res = {
+            headersSent: false,
+            json: jest.fn(),
+            setHeader: jest.fn((k, v) => {
+                headers[k] = v;
+            }),
+            status: jest.fn().mockReturnThis(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(res.setHeader).toHaveBeenCalledWith("X-Account-Name", "concurrent-acc@gmail.com");
+    });
+
+    test("handleGeminiRequest injects X-Account-Name header on stream response", async () => {
+        const mockAuthSource = {
+            accountNameMap: new Map([[0, "concurrent-acc@gmail.com"]]),
+            getCanonicalIndex: idx => idx,
+        };
+
+        const handler = new ConcurrentRequestHandler(
+            mockConnectionRegistry,
+            mockScheduler,
+            mockLogger,
+            [{ name: "models/gemini-2.5-flash" }],
+            null,
+            mockAuthSource
+        );
+
+        mockConnectionRegistry.sendRequest.mockImplementation(async (authIndex, payload, cb) => {
+            cb("data: {}\n\n", false, false, { status: 200 });
+            cb(null, true, false, { status: 200 });
+        });
+
+        const req = {
+            body: { contents: [{ parts: [{ text: "hi" }], role: "user" }] },
+            headers: {},
+            method: "POST",
+            params: { 0: "gemini-2.5-flash:streamGenerateContent" },
+            path: "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+            query: {},
+        };
+
+        const res = {
+            end: jest.fn(),
+            flushHeaders: jest.fn(),
+            headersSent: false,
+            json: jest.fn(),
+            setHeader: jest.fn(),
+            status: jest.fn().mockReturnThis(),
+            write: jest.fn(),
+        };
+
+        await handler.handleGeminiRequest(req, res);
+
+        expect(res.setHeader).toHaveBeenCalledWith("X-Account-Name", "concurrent-acc@gmail.com");
+    });
 });

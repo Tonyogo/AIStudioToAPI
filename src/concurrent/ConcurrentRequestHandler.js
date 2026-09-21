@@ -11,13 +11,23 @@ class ConcurrentRequestHandler {
      * @param {Object} scheduler - AccountScheduler instance
      * @param {Object} [logger] - Logger instance
      * @param {Array} [modelList] - Model list from configuration
+     * @param {Object} [usageStatsService] - UsageStatsService instance
+     * @param {Object} [authSource] - AuthSource instance
      */
-    constructor(connectionRegistry, scheduler, logger = console, modelList = [], usageStatsService = null) {
+    constructor(
+        connectionRegistry,
+        scheduler,
+        logger = console,
+        modelList = [],
+        usageStatsService = null,
+        authSource = null
+    ) {
         this.connectionRegistry = connectionRegistry;
         this.scheduler = scheduler;
         this.logger = logger;
         this.modelList = modelList;
         this.usageStatsService = usageStatsService;
+        this.authSource = authSource || scheduler?.authSource || null;
 
         const config = this.scheduler?.config || {};
         this.formatConverter = new FormatConverter(this.logger, { config });
@@ -163,7 +173,28 @@ class ConcurrentRequestHandler {
      */
     _getAccountName(authIndex) {
         if (!Number.isInteger(authIndex) || authIndex < 0) return null;
-        return this.scheduler?.authSource?.accountNameMap?.get(authIndex) || null;
+        const source = this.authSource || this.scheduler?.authSource;
+        let accountName = source?.accountNameMap?.get(authIndex);
+        if (!accountName && source?.getCanonicalIndex) {
+            const canonicalIdx = source.getCanonicalIndex(authIndex);
+            if (canonicalIdx !== authIndex) {
+                accountName = source.accountNameMap?.get(canonicalIdx);
+            }
+        }
+        return accountName || null;
+    }
+
+    /**
+     * Inject X-Account-Name header into response
+     * @param {Object} res - Express response object
+     * @param {number} authIndex - Auth index
+     */
+    _injectAccountHeader(res, authIndex) {
+        if (!res || res.headersSent) return;
+        const accountName = this._getAccountName(authIndex);
+        if (accountName && typeof accountName === "string") {
+            res.setHeader("X-Account-Name", accountName);
+        }
     }
 
     /**
@@ -376,6 +407,10 @@ class ConcurrentRequestHandler {
             if (Array.isArray(chunk.embeddings) && chunk.embeddings.length > 0) {
                 chunk = chunk.embeddings[0];
             }
+        }
+
+        if (meta?.authIndex !== undefined) {
+            this._injectAccountHeader(res, meta.authIndex);
         }
 
         if (isStream) {
@@ -591,7 +626,10 @@ class ConcurrentRequestHandler {
                         return;
                     }
 
-                    this._sendResponseChunk(res, chunk, isFinished, payload.responseTransform, payload.isStream, meta);
+                    this._sendResponseChunk(res, chunk, isFinished, payload.responseTransform, payload.isStream, {
+                        ...meta,
+                        authIndex,
+                    });
                 }
             );
 
