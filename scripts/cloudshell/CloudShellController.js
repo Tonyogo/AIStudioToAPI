@@ -229,6 +229,63 @@ class CloudShellController {
             await new Promise(r => setTimeout(r, 1000));
         }
     }
+
+    async sendHeartbeat() {
+        if (!this.page || this.page.isClosed()) return;
+        try {
+            await this.focusTerminal().catch(() => {});
+            await this.page.keyboard.press("Space");
+            await this.page.keyboard.press("Backspace");
+            this.log(`💓 Sent anti-idle heartbeat (${new Date().toLocaleTimeString()})`);
+        } catch (e) {
+            this.warn(`Heartbeat dispatch warning: ${e.message}`);
+        }
+    }
+
+    stopKeepAliveLoop() {
+        this._keepAliveRunning = false;
+        if (this._heartbeatTimer) {
+            clearInterval(this._heartbeatTimer);
+            this._heartbeatTimer = null;
+        }
+    }
+
+    async startKeepAliveLoop(keepAliveMinutes = 0, intervalSec = 120) {
+        if (keepAliveMinutes === 0) {
+            this.log("Keep-alive set to 0. Exiting after commands.");
+            return;
+        }
+
+        const isInfinite = keepAliveMinutes === -1;
+        this.log(
+            `🛡️ Starting keep-alive loop: ${
+                isInfinite ? "infinite" : `${keepAliveMinutes} min`
+            }, heartbeat every ${intervalSec}s... Press Ctrl+C to terminate.`
+        );
+
+        this._keepAliveRunning = true;
+        const startTime = Date.now();
+        const maxDurationMs = isInfinite ? Infinity : keepAliveMinutes * 60 * 1000;
+
+        while (this._keepAliveRunning && Date.now() - startTime < maxDurationMs) {
+            if (this.page.isClosed()) {
+                this.warn("Page was closed. Exiting keep-alive loop.");
+                break;
+            }
+
+            await this.sendHeartbeat();
+            await this.bypassModalsOnce();
+
+            const sleepSeconds = Math.min(intervalSec, 10);
+            for (let i = 0; i < intervalSec / sleepSeconds; i++) {
+                if (!this._keepAliveRunning) break;
+                await new Promise(r => setTimeout(r, sleepSeconds * 1000));
+            }
+        }
+
+        this.log("🏁 Keep-alive duration completed.");
+        this.stopKeepAliveLoop();
+    }
 }
 
 module.exports = {
