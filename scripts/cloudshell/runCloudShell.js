@@ -29,7 +29,7 @@ const main = async () => {
 
     let commandsToExecute = [];
     if (options.cmd) {
-        commandsToExecute.push(options.cmd);
+        commandsToExecute.push(...options.cmd.split(/\r?\n/));
     }
     if (options.filePath) {
         const fullScriptPath = path.resolve(process.cwd(), options.filePath);
@@ -38,7 +38,7 @@ const main = async () => {
             process.exit(1);
         }
         const fileContent = fs.readFileSync(fullScriptPath, "utf-8");
-        const lines = fileContent.split("\n");
+        const lines = fileContent.split(/\r?\n/);
         commandsToExecute = commandsToExecute.concat(lines);
     }
 

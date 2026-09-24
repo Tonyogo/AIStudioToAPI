@@ -222,7 +222,13 @@ class CloudShellController {
     }
 
     async executeCommands(commands = []) {
-        for (const cmd of commands) {
+        const flattened = [];
+        for (const item of commands) {
+            if (typeof item === "string") {
+                flattened.push(...item.split(/\r?\n/));
+            }
+        }
+        for (const cmd of flattened) {
             const trimmed = (cmd || "").trim();
             if (!trimmed || trimmed.startsWith("#")) continue;
             await this.executeCommand(trimmed);
