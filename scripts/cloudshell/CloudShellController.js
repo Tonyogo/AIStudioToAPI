@@ -141,6 +141,94 @@ class CloudShellController {
             return null;
         }
     }
+
+    async findTerminalTarget() {
+        for (const frame of this.page.frames()) {
+            try {
+                const textareaLocator = frame.locator("textarea.xterm-helper-textarea");
+                const screenLocator = frame.locator(".xterm-screen, .terminal, [role='terminal']");
+
+                const screen = typeof screenLocator.first === "function" ? screenLocator.first() : screenLocator;
+                const textarea =
+                    typeof textareaLocator.first === "function" ? textareaLocator.first() : textareaLocator;
+
+                const hasScreen = (await screenLocator.count()) > 0 && (await screen.isVisible().catch(() => false));
+                if (hasScreen) {
+                    const hasTextarea =
+                        (await textareaLocator.count()) > 0 && (await textarea.isVisible().catch(() => false));
+                    return {
+                        frame,
+                        screen,
+                        textarea: hasTextarea ? textarea : null,
+                    };
+                }
+            } catch {
+                // Continue scanning other frames
+            }
+        }
+        return null;
+    }
+
+    async waitForTerminalReady(timeoutMs = 180000) {
+        this.log(`⏳ Waiting for Cloud Shell machine provisioning & terminal ready (max ${timeoutMs / 1000}s)...`);
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < timeoutMs) {
+            await this.checkPageStatus();
+            await this.bypassModalsOnce();
+
+            const target = await this.findTerminalTarget();
+            if (target) {
+                this.log("✅ Terminal located and ready!");
+                return target;
+            }
+
+            await new Promise(r => setTimeout(r, 1500));
+        }
+
+        await this.saveDebugArtifacts("terminal_timeout");
+        throw new Error(
+            `Timeout after ${timeoutMs / 1000}s waiting for Cloud Shell terminal to initialize. ` +
+                `Artifacts dumped to logs/cloudshell/.`
+        );
+    }
+
+    async focusTerminal() {
+        const target = await this.findTerminalTarget();
+        if (!target) return false;
+
+        try {
+            await target.screen.click({ force: true, timeout: 2000 });
+            if (target.textarea) {
+                await target.textarea.focus().catch(() => {});
+            }
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    async executeCommand(command) {
+        if (!command || typeof command !== "string") return;
+        this.log(`⌨️ Executing command: "${command}"`);
+
+        await this.focusTerminal();
+        await new Promise(r => setTimeout(r, 100));
+
+        await this.page.keyboard.type(command, { delay: 15 });
+        await new Promise(r => setTimeout(r, 200));
+        await this.page.keyboard.press("Enter");
+        this.log(`✅ Command dispatched: "${command}"`);
+    }
+
+    async executeCommands(commands = []) {
+        for (const cmd of commands) {
+            const trimmed = (cmd || "").trim();
+            if (!trimmed || trimmed.startsWith("#")) continue;
+            await this.executeCommand(trimmed);
+            await new Promise(r => setTimeout(r, 1000));
+        }
+    }
 }
 
 module.exports = {
