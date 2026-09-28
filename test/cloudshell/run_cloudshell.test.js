@@ -46,6 +46,37 @@ describe("CloudShell CLI Entrypoint Smoke Test", () => {
         expect(res.stdout).toContain("not running");
     });
 
+    test("cloudshell pause outputs message when daemon is not running", () => {
+        const res = spawnSync("node", [scriptPath, "pause"], { encoding: "utf-8" });
+        expect(res.status).toBe(0);
+        expect(res.stdout).toContain("not running");
+    });
+
+    test("cloudshell resume outputs message when daemon is not running", () => {
+        const res = spawnSync("node", [scriptPath, "resume"], { encoding: "utf-8" });
+        expect(res.status).toBe(0);
+        expect(res.stdout).toContain("not running");
+    });
+
+    test("handlePause and handleResume update stateTracker when alive", () => {
+        const { handlePause, handleResume } = require("../../scripts/cloudshell/runCloudShell");
+        const mockTracker = { setPaused: jest.fn() };
+        const mockDaemon = {
+            getPid: () => 1234,
+            isProcessAlive: () => true,
+        };
+
+        const spyLog = jest.spyOn(console, "log").mockImplementation(() => {});
+
+        handlePause(mockTracker, mockDaemon);
+        expect(mockTracker.setPaused).toHaveBeenCalledWith(true);
+
+        handleResume(mockTracker, mockDaemon);
+        expect(mockTracker.setPaused).toHaveBeenCalledWith(false);
+
+        spyLog.mockRestore();
+    });
+
     test("default without subcommand outputs status and usage", () => {
         const res = spawnSync("node", [scriptPath], { encoding: "utf-8" });
         expect(res.status).toBe(0);

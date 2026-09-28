@@ -46,6 +46,30 @@ const handleLogs = (options, daemonManager) => {
     });
 };
 
+const handlePause = (stateTracker, daemonManager) => {
+    const pid = daemonManager.getPid();
+    const isAlive = pid ? daemonManager.isProcessAlive(pid) : false;
+    if (!isAlive) {
+        console.log("CloudShell is not running. Nothing to pause.");
+        return;
+    }
+    stateTracker.setPaused(true);
+    console.log("⏸️ [CloudShell] Anti-detection mouse movements & auto-rotation have been PAUSED.");
+    console.log("   You can now safely perform manual operations without mouse interruption.");
+    console.log("   Run 'npm run cloudshell -- resume' when you are finished.");
+};
+
+const handleResume = (stateTracker, daemonManager) => {
+    const pid = daemonManager.getPid();
+    const isAlive = pid ? daemonManager.isProcessAlive(pid) : false;
+    if (!isAlive) {
+        console.log("CloudShell is not running.");
+        return;
+    }
+    stateTracker.setPaused(false);
+    console.log("▶️ [CloudShell] Anti-detection mouse movements & auto-rotation have been RESUMED.");
+};
+
 const handleStart = async (options, stateTracker, daemonManager) => {
     const manager = new CloudShellManager(null, { ...options, stateTracker });
     manager.validateAuthFiles();
@@ -163,6 +187,14 @@ const main = async () => {
             case "logs":
                 handleLogs(options, daemonManager);
                 break;
+            case "pause":
+                handlePause(stateTracker, daemonManager);
+                process.exit(0);
+                break;
+            case "resume":
+                handleResume(stateTracker, daemonManager);
+                process.exit(0);
+                break;
             case "start":
                 await handleStart(options, stateTracker, daemonManager);
                 break;
@@ -181,4 +213,4 @@ if (require.main === module) {
     main();
 }
 
-module.exports = { main };
+module.exports = { handlePause, handleResume, main };
