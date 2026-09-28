@@ -13,7 +13,9 @@
   - [2. 查询运行状态 (status)](#2-查询运行状态-status)
   - [3. 查看实时日志 (logs)](#3-查看实时日志-logs)
   - [4. 停止运行 (stop)](#4-停止运行-stop)
-  - [5. 重启服务 (restart)](#5-重启服务-restart)
+  - [5. 临时暂停防检测微操作 (pause)](#5-临时暂停防检测微操作-pause)
+  - [6. 恢复防检测保活循环 (resume)](#6-恢复防检测保活循环-resume)
+  - [7. 重启服务 (restart)](#7-重启服务-restart)
 - [命令行参数详解](#命令行参数详解)
 - [常见使用场景](#常见使用场景)
   - [1. 单账号长驻保活](#1-单账号长驻保活)
@@ -21,6 +23,7 @@
   - [3. 全量账号自动发现长驻 (--all)](#3-全量账号自动发现长驻---all)
   - [4. 可视化界面排查调试 (Headed 模式)](#4-可视化界面排查调试-headed-模式)
   - [5. 自定义心跳与轮换间隔](#5-自定义心跳与轮换间隔)
+  - [6. 临时手动排查与恢复 (Manual Mode)](#6-临时手动排查与恢复-manual-mode)
 - [工作原理与关键机制](#工作原理与关键机制)
 - [常见问题与排查 (FAQ)](#常见问题与排查-faq)
 
@@ -59,7 +62,7 @@
 
 ## 快速开始与管理子命令
 
-可以通过 npm script 快捷调用完整的管理命令：`start`、`status`、`stop`、`restart`、`logs`。若未传子命令，默认执行 `status` 并打印帮助。
+可以通过 npm script 快捷调用完整的管理命令：`start`、`status`、`stop`、`restart`、`logs`、`pause`、`resume`。若未传子命令，默认执行 `status` 并打印帮助。
 
 ### 1. 启动守护进程 (start)
 
@@ -84,7 +87,7 @@ npm run cloudshell -- start --auth 0 --headed
 
 ### 2. 查询运行状态 (status)
 
-查看当前后台守护进程状态、运行时长、当前活跃账号及各账号心跳：
+查看当前后台守护进程状态、防检测模式、多账号自动切屏状态、运行时长、当前活跃账号及各账号心跳：
 
 ```bash
 npm run cloudshell -- status
@@ -92,11 +95,31 @@ npm run cloudshell -- status
 npm run cloudshell
 ```
 
-输出示例：
+输出示例（正常激活状态）：
 
 ```text
 ==================================================
 Cloud Shell Status: Running (PID: 12345)
+Anti-Detection:     ▶️ Active (Enabled)
+Auto-Rotation:      ▶️ Active (Every 10 min)
+Started At:         2026-09-28T06:00:00.000Z
+Uptime:             2h 15m 30s
+Switch Interval:    10 min
+Current Active:     Auth 0
+--------------------------------------------------
+Accounts:
+* [Auth 0] user1@gmail.com | Status: Active (Heartbeat: 2026-09-28T08:15:20.000Z)
+  [Auth 1] user2@gmail.com | Status: Ready (Heartbeat: 2026-09-28T08:14:50.000Z)
+==================================================
+```
+
+输出示例（暂停手动模式）：
+
+```text
+==================================================
+Cloud Shell Status: Running (PID: 12345)
+Anti-Detection:     ⏸️ Paused (Manual Mode)
+Auto-Rotation:      ⏸️ Paused
 Started At:         2026-09-28T06:00:00.000Z
 Uptime:             2h 15m 30s
 Switch Interval:    10 min
@@ -132,7 +155,37 @@ npm run cloudshell -- stop
 npm run cloudshell -- stop --force
 ```
 
-### 5. 重启服务 (restart)
+### 5. 临时暂停防检测微操作 (pause)
+
+当需要在 Cloud Shell 终端或通过 Headed 窗口临时进行手动排查、键入长命令或调试时，拟人鼠标晃动和自动切屏可能会干扰正常操作。可执行 `pause` 暂停这些动作，将控制权完全留给用户，同时后台仍保留键盘心跳保活：
+
+```bash
+npm run cloudshell -- pause
+```
+
+输出示例：
+
+```text
+⏸️ [CloudShell] Anti-detection mouse movements & auto-rotation have been PAUSED.
+   You can now safely perform manual operations without mouse interruption.
+   Run 'npm run cloudshell -- resume' when you are finished.
+```
+
+### 6. 恢复防检测保活循环 (resume)
+
+在手动操作或排查完成后，执行 `resume` 恢复拟人鼠标移动、微滚动与多账号定时自动切屏：
+
+```bash
+npm run cloudshell -- resume
+```
+
+输出示例：
+
+```text
+▶️ [CloudShell] Anti-detection mouse movements & auto-rotation have been RESUMED.
+```
+
+### 7. 重启服务 (restart)
 
 停止当前运行中的后台进程，并使用新参数重新启动守护进程：
 
@@ -211,6 +264,22 @@ npm run cloudshell -- start --all --headless false
 ```bash
 npm run cloudshell -- start --auth 0-2 --heartbeat-interval 60 --switch-interval 5 --keep-alive 120
 ```
+
+### 6. 临时手动排查与恢复 (Manual Mode)
+
+在多账号后台保活或前台调试期间，若需要手动在 Cloud Shell 终端键入长命令、排查报错或查看环境状态：
+
+1. **暂停自动微操作**：
+   ```bash
+   npm run cloudshell -- pause
+   ```
+   此时页面自动切屏与鼠标晃动将立即静止，后台基础键盘心跳与弹窗旁路继续保留。
+2. **执行手动排查**：在终端窗口中安心执行手动输入与调试，无鼠标夺取或窗口跳出干扰。
+3. **恢复自动化保活**：
+   ```bash
+   npm run cloudshell -- resume
+   ```
+   微操作与定时切屏立即恢复调度。
 
 ---
 

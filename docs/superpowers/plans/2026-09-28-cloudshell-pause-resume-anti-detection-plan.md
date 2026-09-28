@@ -25,39 +25,41 @@
 ### Task 1: 扩展 CLI 选项解析器支持 `pause` 与 `resume`
 
 **Files:**
+
 - Modify: `scripts/cloudshell/options.js:55-75, 240-275`
 - Modify: `test/cloudshell/options.test.js`
 
 **Interfaces:**
+
 - Produces: `parseCliArgs(args)` supporting `command: "pause"` and `command: "resume"`
 
-- [ ] **Step 1: 编写失败的解析测试**
+- [x] **Step 1: 编写失败的解析测试**
 
 在 `test/cloudshell/options.test.js` 中新增：
 
 ```javascript
 test("parses pause and resume subcommands correctly", () => {
-    expect(parseCliArgs(["pause"]).command).toBe("pause");
-    expect(parseCliArgs(["resume"]).command).toBe("resume");
+  expect(parseCliArgs(["pause"]).command).toBe("pause");
+  expect(parseCliArgs(["resume"]).command).toBe("resume");
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/options.test.js`
 Expected: FAIL (因为 `VALID_COMMANDS` 尚未包含 `pause` 和 `resume`)
 
-- [ ] **Step 3: 修改 `options.js`**
+- [x] **Step 3: 修改 `options.js`**
 
 1. 将 `VALID_COMMANDS` 扩展为包含 `"pause"` 和 `"resume"`；
 2. 更新 `printHelp()` 函数，加入 `pause` 和 `resume` 的说明与用例。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/options.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/options.js test/cloudshell/options.test.js
@@ -69,56 +71,58 @@ git commit -m "feat(cloudshell): support pause and resume subcommands in options
 ### Task 2: 在 `StateTracker` 中实现暂停标志持久化与状态格式化
 
 **Files:**
+
 - Modify: `scripts/cloudshell/stateTracker.js`
 - Modify: `test/cloudshell/state_tracker.test.js`
 
 **Interfaces:**
+
 - Produces:
   - `tracker.setPaused(paused: boolean)`: 更新 `state.json` 中的 `antiDetectionPaused` 并创建/删除 `logs/cloudshell/paused.flag`
   - `tracker.isPaused(): boolean`: 检测 `paused.flag` 是否存在或 state 中的字段
   - `tracker.formatStatusOutput(state, isAlive)`: 渲染 `Anti-Detection` 和 `Auto-Rotation` 状态行
 
-- [ ] **Step 1: 编写 `StateTracker` 暂停相关的失败测试**
+- [x] **Step 1: 编写 `StateTracker` 暂停相关的失败测试**
 
 在 `test/cloudshell/state_tracker.test.js` 中新增测试：
 
 ```javascript
 test("sets and gets paused flag correctly", () => {
-    const tracker = new StateTracker(testStateFile);
-    expect(tracker.isPaused()).toBe(false);
+  const tracker = new StateTracker(testStateFile);
+  expect(tracker.isPaused()).toBe(false);
 
-    tracker.setPaused(true);
-    expect(tracker.isPaused()).toBe(true);
-    expect(fs.existsSync(tracker.flagFilePath)).toBe(true);
+  tracker.setPaused(true);
+  expect(tracker.isPaused()).toBe(true);
+  expect(fs.existsSync(tracker.flagFilePath)).toBe(true);
 
-    tracker.setPaused(false);
-    expect(tracker.isPaused()).toBe(false);
-    expect(fs.existsSync(tracker.flagFilePath)).toBe(false);
+  tracker.setPaused(false);
+  expect(tracker.isPaused()).toBe(false);
+  expect(fs.existsSync(tracker.flagFilePath)).toBe(false);
 });
 
 test("formatStatusOutput displays Paused status when antiDetectionPaused is true", () => {
-    const tracker = new StateTracker(testStateFile);
-    const runningState = {
-        accounts: [{ accountName: "test@gmail.com", authIndex: 0, status: "active" }],
-        antiDetectionPaused: true,
-        currentAuthIndex: 0,
-        pid: 8888,
-        startedAt: new Date().toISOString(),
-        status: "running",
-        switchIntervalMinutes: 10,
-    };
-    const output = tracker.formatStatusOutput(runningState, true);
-    expect(output).toContain("Paused (Manual Mode)");
-    expect(output).toContain("Auto-Rotation:      ⏸️ Paused");
+  const tracker = new StateTracker(testStateFile);
+  const runningState = {
+    accounts: [{ accountName: "test@gmail.com", authIndex: 0, status: "active" }],
+    antiDetectionPaused: true,
+    currentAuthIndex: 0,
+    pid: 8888,
+    startedAt: new Date().toISOString(),
+    status: "running",
+    switchIntervalMinutes: 10,
+  };
+  const output = tracker.formatStatusOutput(runningState, true);
+  expect(output).toContain("Paused (Manual Mode)");
+  expect(output).toContain("Auto-Rotation:      ⏸️ Paused");
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/state_tracker.test.js`
 Expected: FAIL (`tracker.setPaused` is not a function)
 
-- [ ] **Step 3: 修改 `stateTracker.js` 实现���辑**
+- [x] **Step 3: 修改 `stateTracker.js` 实现���辑**
 
 1. 构造函数中增加 `this.flagFilePath = path.join(path.dirname(this.stateFilePath), "paused.flag");`；
 2. 实现 `setPaused(paused)`：
@@ -131,12 +135,12 @@ Expected: FAIL (`tracker.setPaused` is not a function)
    - `Anti-Detection:     ${isPaused ? "⏸️ Paused (Manual Mode)" : "▶️ Active (Enabled)"}`
    - `Auto-Rotation:      ${isPaused ? "⏸️ Paused" : `▶️ Active (Every ${state.switchIntervalMinutes} min)`}`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/state_tracker.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/stateTracker.js test/cloudshell/state_tracker.test.js
@@ -148,73 +152,75 @@ git commit -m "feat(cloudshell): implement pause flag persistence and status for
 ### Task 3: 在 `CloudShellManager` 主控循环中接入暂停感知
 
 **Files:**
+
 - Modify: `scripts/cloudshell/CloudShellManager.js`
 - Modify: `test/cloudshell/cloudshell_manager.test.js`
 
 **Interfaces:**
+
 - Consumes: `this.stateTracker.isPaused()` or `options.isPausedFn`
 - Behavior: 当暂停时，跳过活跃上下文微操作与自动轮换，但维持心跳与弹窗旁路
 
-- [ ] **Step 1: 编写 `CloudShellManager` 暂停感知的失败测试**
+- [x] **Step 1: 编写 `CloudShellManager` 暂停感知的失败测试**
 
 在 `test/cloudshell/cloudshell_manager.test.js` 中新增测试：
 
 ```javascript
 test("skips micro-actions and rotation when paused, but continues heartbeats", async () => {
-    let paused = true;
-    const mockStateTracker = {
-        clearState: jest.fn(),
-        isPaused: () => paused,
-        saveState: jest.fn(),
-    };
+  let paused = true;
+  const mockStateTracker = {
+    clearState: jest.fn(),
+    isPaused: () => paused,
+    saveState: jest.fn(),
+  };
 
-    const mockController = {
-        bypassModalsOnce: jest.fn().mockResolvedValue(false),
-        performActiveMicroActions: jest.fn().mockResolvedValue(),
-        sendHeartbeat: jest.fn().mockResolvedValue(),
-    };
+  const mockController = {
+    bypassModalsOnce: jest.fn().mockResolvedValue(false),
+    performActiveMicroActions: jest.fn().mockResolvedValue(),
+    sendHeartbeat: jest.fn().mockResolvedValue(),
+  };
 
-    const manager = new CloudShellManager(null, {
-        authIndices: [0, 1],
-        heartbeatIntervalSeconds: 4, // 1 tick
-        keepAliveMinutes: 0.001, // short loop
-        stateTracker: mockStateTracker,
-        switchIntervalMinutes: 0.05,
-    });
+  const manager = new CloudShellManager(null, {
+    authIndices: [0, 1],
+    heartbeatIntervalSeconds: 4, // 1 tick
+    keepAliveMinutes: 0.001, // short loop
+    stateTracker: mockStateTracker,
+    switchIntervalMinutes: 0.05,
+  });
 
-    manager.contexts.set(0, {
-        controller: mockController,
-        page: { isClosed: () => false },
-    });
-    manager.contexts.set(1, {
-        controller: mockController,
-        page: { isClosed: () => false },
-    });
+  manager.contexts.set(0, {
+    controller: mockController,
+    page: { isClosed: () => false },
+  });
+  manager.contexts.set(1, {
+    controller: mockController,
+    page: { isClosed: () => false },
+  });
 
-    const rotateSpy = jest.spyOn(manager, "rotateActiveContext").mockResolvedValue();
+  const rotateSpy = jest.spyOn(manager, "rotateActiveContext").mockResolvedValue();
 
-    // Run one iteration or loop
-    await manager.executeTick(1, 1, 1);
+  // Run one iteration or loop
+  await manager.executeTick(1, 1, 1);
 
-    // In paused mode:
-    expect(mockController.performActiveMicroActions).not.toHaveBeenCalled();
-    expect(rotateSpy).not.toHaveBeenCalled();
-    expect(mockController.sendHeartbeat).toHaveBeenCalled();
+  // In paused mode:
+  expect(mockController.performActiveMicroActions).not.toHaveBeenCalled();
+  expect(rotateSpy).not.toHaveBeenCalled();
+  expect(mockController.sendHeartbeat).toHaveBeenCalled();
 
-    // Now resume
-    paused = false;
-    await manager.executeTick(2, 1, 1);
-    expect(mockController.performActiveMicroActions).toHaveBeenCalled();
-    expect(rotateSpy).toHaveBeenCalled();
+  // Now resume
+  paused = false;
+  await manager.executeTick(2, 1, 1);
+  expect(mockController.performActiveMicroActions).toHaveBeenCalled();
+  expect(rotateSpy).toHaveBeenCalled();
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/cloudshell_manager.test.js`
 Expected: FAIL (`executeTick` or pause check not yet implemented)
 
-- [ ] **Step 3: 重构 `CloudShellManager.js` 支持暂停感知**
+- [x] **Step 3: 重构 `CloudShellManager.js` 支持暂停感知**
 
 1. 新增辅助方法 `isAntiDetectionPaused()`：
    ```javascript
@@ -236,12 +242,12 @@ Expected: FAIL (`executeTick` or pause check not yet implemented)
 3. 在 `startRotationAndKeepAliveLoop()` 中调用 `await this.executeTick(...)`；
 4. 在 `stop()` 时调用 `this.stateTracker.clearState()`，清理状态及 `paused.flag`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/cloudshell_manager.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/CloudShellManager.js test/cloudshell/cloudshell_manager.test.js
@@ -253,36 +259,38 @@ git commit -m "feat(cloudshell): dynamically respect pause flag in CloudShellMan
 ### Task 4: 在 `runCloudShell.js` 中接入 `pause` 与 `resume` 处理
 
 **Files:**
+
 - Modify: `scripts/cloudshell/runCloudShell.js`
 - Modify: `test/cloudshell/run_cloudshell.test.js`
 
 **Interfaces:**
+
 - CLI entrypoint handling `pause` and `resume` subcommands
 
-- [ ] **Step 1: 编写 CLI 入口 `pause` 与 `resume` 的单元测试**
+- [x] **Step 1: 编写 CLI 入口 `pause` 与 `resume` 的单元测试**
 
 在 `test/cloudshell/run_cloudshell.test.js` 中新增测试：
 
 ```javascript
 test("cloudshell pause outputs message when daemon is not running", () => {
-    const res = spawnSync("node", [scriptPath, "pause"], { encoding: "utf-8" });
-    expect(res.status).toBe(0);
-    expect(res.stdout).toContain("not running");
+  const res = spawnSync("node", [scriptPath, "pause"], { encoding: "utf-8" });
+  expect(res.status).toBe(0);
+  expect(res.stdout).toContain("not running");
 });
 
 test("cloudshell resume outputs message when daemon is not running", () => {
-    const res = spawnSync("node", [scriptPath, "resume"], { encoding: "utf-8" });
-    expect(res.status).toBe(0);
-    expect(res.stdout).toContain("not running");
+  const res = spawnSync("node", [scriptPath, "resume"], { encoding: "utf-8" });
+  expect(res.status).toBe(0);
+  expect(res.stdout).toContain("not running");
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/run_cloudshell.test.js`
 Expected: FAIL (因为 `runCloudShell.js` 尚不支持分发 `pause` 和 `resume`)
 
-- [ ] **Step 3: 在 `runCloudShell.js` 中实现分发逻辑**
+- [x] **Step 3: 在 `runCloudShell.js` 中实现分发逻辑**
 
 1. 实现 `handlePause(stateTracker, daemonManager)`：
    - 获取 PID 检查是否运行中；
@@ -302,12 +310,12 @@ Expected: FAIL (因为 `runCloudShell.js` 尚不支持分发 `pause` 和 `resume
      ```
 3. 在 `main` 的 `switch (options.command)` 中添加 `pause` 与 `resume` 分支。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/run_cloudshell.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/runCloudShell.js test/cloudshell/run_cloudshell.test.js
@@ -319,23 +327,24 @@ git commit -m "feat(cloudshell): handle pause and resume subcommands in CLI entr
 ### Task 5: 文档更新、全量测试回归与质量验收 (Docs & Lint)
 
 **Files:**
+
 - Modify: `scripts/cloudshell/README.md`
 
-- [ ] **Step 1: 更新 `scripts/cloudshell/README.md`**
+- [x] **Step 1: 更新 `scripts/cloudshell/README.md`**
 
 增加 `pause` 和 `resume` 命令的使用说明，详述临时手动排查场景与命令用法。
 
-- [ ] **Step 2: 代码规范检查与格式化**
+- [x] **Step 2: 代码规范检查与格式化**
 
 Run: `npm run format && npm run lint`
 Expected: 0 错误，代码排版与格式符合规范。
 
-- [ ] **Step 3: 运行全量测试套件**
+- [x] **Step 3: 运行全量测试套件**
 
 Run: `npx jest test/cloudshell/`
 Expected: 全部测试套件（11 个测试套件，60+ 用例）100% 通过。
 
-- [ ] **Step 4: 提交更改**
+- [x] **Step 4: 提交更改**
 
 ```bash
 git add scripts/cloudshell/README.md
