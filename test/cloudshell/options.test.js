@@ -81,4 +81,3 @@ describe("CloudShell CLI Options Parser", () => {
         spy.mockRestore();
     });
 });
-

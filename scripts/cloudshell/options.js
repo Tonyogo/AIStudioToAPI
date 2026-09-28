@@ -206,7 +206,9 @@ const printHelp = () => {
     console.log("");
     console.log("Options:");
     console.log("  -h, --help                 Show this help message");
-    console.log("  --auth <indices>           Auth index or range in configs/auth/auth-N.json (e.g. 0, 0,1,2, 0-3; default: 0)");
+    console.log(
+        "  --auth <indices>           Auth index or range in configs/auth/auth-N.json (e.g. 0, 0,1,2, 0-3; default: 0)"
+    );
     console.log("  --all                      Automatically discover and load all configs/auth/auth-N.json accounts");
     console.log("  --switch-interval <min>    Active context rotation interval in minutes (default: 10)");
     console.log("  --keep-alive <min>         Keep-alive duration in minutes (-1=infinite, default: -1)");
@@ -227,4 +229,3 @@ module.exports = {
     parseCliArgs,
     printHelp,
 };
-

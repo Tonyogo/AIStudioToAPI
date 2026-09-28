@@ -187,13 +187,11 @@ const launchCloudShellBrowser = async (options = {}) => {
 };
 
 module.exports = {
-    FIREFOX_DOH_DISABLED_PREFS,
     createBrowserContext,
+    FIREFOX_DOH_DISABLED_PREFS,
     generatePrivacyInitScript,
     launchBrowser,
     launchCloudShellBrowser,
     loadAuthStorageState,
     resolveBrowserExecutablePath,
 };
-
-

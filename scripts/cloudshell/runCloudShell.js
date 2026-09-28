@@ -70,9 +70,7 @@ const main = async () => {
         console.log(`   Mode: ${options.headless ? "Headless" : "Headed"}`);
         if (options.proxy) console.log(`   Proxy: ${options.proxy}`);
         console.log(
-            `   Keep-alive: ${
-                options.keepAliveMinutes === -1 ? "Infinite" : `${options.keepAliveMinutes} min`
-            }`
+            `   Keep-alive: ${options.keepAliveMinutes === -1 ? "Infinite" : `${options.keepAliveMinutes} min`}`
         );
         if (manager.authIndices.length > 1) {
             console.log(`   Rotation interval: every ${options.switchIntervalMinutes} min`);

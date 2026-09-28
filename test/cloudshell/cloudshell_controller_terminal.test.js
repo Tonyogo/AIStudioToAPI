@@ -85,4 +85,3 @@ describe("CloudShellController Terminal Piercing & Focus", () => {
         expect(textareaFocused).toBe(true);
     });
 });
-

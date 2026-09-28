@@ -34,4 +34,3 @@ describe("CloudShell CLI Entrypoint Smoke Test", () => {
         expect(res.stderr || res.stdout).toContain("auth-987654.json does not exist");
     });
 });
-

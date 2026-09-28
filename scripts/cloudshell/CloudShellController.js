@@ -200,6 +200,7 @@ class CloudShellController {
                     width: 1920,
                 };
                 if (typeof this.page.evaluate === "function") {
+                    // eslint-disable-next-line no-undef
                     await this.page.evaluate(() => window.scrollBy(0, (Math.random() - 0.5) * 20));
                 }
                 const x = Math.floor(Math.random() * (vp.width * 0.8));

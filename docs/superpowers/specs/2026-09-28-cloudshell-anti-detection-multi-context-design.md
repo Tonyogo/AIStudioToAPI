@@ -9,10 +9,12 @@
 ## 1. 概述与背景
 
 AIStudioToAPI 项目的 Cloud Shell 脚本主要用于利用 Google Cloud Shell 虚拟机提供稳定的长驻运行与反检测环境。原项目 `src/core/BrowserManager.js` 具备成熟的：
+
 1. 拟人鼠标移动防检测（3段微抖动平滑移动、微滚动、左上角防挂起移动）；
 2. 多 Context 管理与活跃 Context 激活/切换机制。
 
 当前 `scripts/cloudshell/` 仅支持单账号启动，且保留了 `--cmd` 与 `--file` 指令执行逻辑。本设计将：
+
 - 移除 `--cmd` 与 `--file`，将定位聚焦于多账号 Cloud Shell 终端长驻保活与防检测服务；
 - 支持多账号同时拉起（支持 `--auth 0,1,2`、`--auth 0-3`、`--all`），并在单个 Browser 进程中维护独立的 BrowserContext；
 - 实现对标原项目的防检测微操作与防休眠体系，维护当前选中的 `currentAuthIndex`（Active Context）；
@@ -23,23 +25,24 @@ AIStudioToAPI 项目的 Cloud Shell 脚本主要用于利用 Google Cloud Shell 
 ## 2. 命令行参数体系 (CLI Options)
 
 ### 2.1 彻底移除的参数
+
 - `--cmd <command>`：已废弃并移除，不再支持命令行下发执行代码。
 - `--file <path>`：已废弃并移除，不再支持读取文件执行代码。
 
 ### 2.2 参数定义与规则
 
-| 参数项 | 默认值 | 类型 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `-h`, `--help` | - | Flag | 显示帮助信息并退出 |
-| `--auth <indices>` | `[0]` | 字符串/数组 | 账号索引。支持：`0`、`0,1,2`、`0-3`。若未传且未指定 `--all`，默认启动 `[0]` |
-| `--all` | `false` | Flag | 自动扫描 `configs/auth/auth-N.json` 目录下的所有有效凭据并全部拉起 |
-| `--switch-interval <min>` | `10` | 正整数 | 轮询切换 Active Context 的周期（分钟）。多账号时生效 |
-| `--keep-alive <min>` | `-1` | 整数 | 保活总时长（分钟）。`-1` 表示无限期长驻（Ctrl+C 安全退出），`>0` 为指定分钟 |
-| `--heartbeat-interval <s>` | `120` | 正整数 | 键盘心跳（`Space` + `Backspace`）间隔（秒） |
-| `--headless [true\|false]` | `true` | 布尔/Flag | 是否无头模式运行。支持 `--headless false` |
-| `--headed` | - | Flag | 有头模式运行（等价于 `--headless false`） |
-| `--proxy <url>` | 读 `.env` | 字符串 | 代理地址，若未传则读取 `.env` 中 `HTTPS_PROXY` |
-| `--debug` | `false` | Flag | 异常或关键节点保存截图与 HTML DOM 快照至 `logs/cloudshell/` |
+| 参数项                     | 默认值    | 类型        | 说明                                                                        |
+| :------------------------- | :-------- | :---------- | :-------------------------------------------------------------------------- |
+| `-h`, `--help`             | -         | Flag        | 显示帮助信息并退出                                                          |
+| `--auth <indices>`         | `[0]`     | 字符串/数组 | 账号索引。支持：`0`、`0,1,2`、`0-3`。若未传且未指定 `--all`，默认启动 `[0]` |
+| `--all`                    | `false`   | Flag        | 自动扫描 `configs/auth/auth-N.json` 目录下的所有有效凭据并全部拉起          |
+| `--switch-interval <min>`  | `10`      | 正整数      | 轮询切换 Active Context 的周期（分钟）。多账号时生效                        |
+| `--keep-alive <min>`       | `-1`      | 整数        | 保活总时长（分钟）。`-1` 表示无限期长驻（Ctrl+C 安全退出），`>0` 为指定分钟 |
+| `--heartbeat-interval <s>` | `120`     | 正整数      | 键盘心跳（`Space` + `Backspace`）间隔（秒）                                 |
+| `--headless [true\|false]` | `true`    | 布尔/Flag   | 是否无头模式运行。支持 `--headless false`                                   |
+| `--headed`                 | -         | Flag        | 有头模式运行（等价于 `--headless false`）                                   |
+| `--proxy <url>`            | 读 `.env` | 字符串      | 代理地址，若未传则读取 `.env` 中 `HTTPS_PROXY`                              |
+| `--debug`                  | `false`   | Flag        | 异常或关键节点保存截图与 HTML DOM 快照至 `logs/cloudshell/`                 |
 
 ---
 
@@ -75,6 +78,7 @@ AIStudioToAPI 项目的 Cloud Shell 脚本主要用于利用 Google Cloud Shell 
 ```
 
 ### 3.1 `CloudShellManager` 职责
+
 1. **多账号会话编排**：
    - 启动单个共享的 `browser` 实例；
    - 依次或并发为每一个 `authIndex` 加载对应 `configs/auth/auth-N.json` 创建独立 `BrowserContext`，并初始化对应 `Page` 和 `CloudShellController`；
@@ -93,6 +97,7 @@ AIStudioToAPI 项目的 Cloud Shell 脚本主要用于利用 Google Cloud Shell 
    - 监听 `SIGINT` 与 `SIGTERM`，停止所有定时器，优雅关闭所有 `BrowserContext` 并关闭 `browser` 进程。
 
 ### 3.2 `CloudShellController` 防检测与防休眠能力
+
 1. **拟人化鼠标移动算法 (`simulateHumanMovement(page, targetX, targetY)`)**：
    - 将轨迹分成 3 个 segments；
    - 前两段添加随机偏移偏差：`intermediate = target + (Math.random() - 0.5) * (100 / i)`；

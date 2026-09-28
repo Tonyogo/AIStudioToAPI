@@ -68,7 +68,9 @@ class CloudShellManager {
             }
         }
         if (indices.length === 0) {
-            throw new Error(`No auth files found in ${authDir} matching auth-N.json. Please run 'npm run save-auth' first.`);
+            throw new Error(
+                `No auth files found in ${authDir} matching auth-N.json. Please run 'npm run save-auth' first.`
+            );
         }
         return Array.from(new Set(indices)).sort((a, b) => a - b);
     }
@@ -135,6 +137,7 @@ class CloudShellManager {
                 await entry.page.bringToFront();
             }
             if (typeof entry.page.evaluate === "function") {
+                // eslint-disable-next-line no-undef
                 await entry.page.evaluate(() => window.focus()).catch(() => {});
             }
             if (entry.controller) {

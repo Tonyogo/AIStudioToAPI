@@ -1,5 +1,4 @@
 /* eslint-env jest */
-const express = require("express");
 const ProxyServerSystem = require("../../src/core/ProxyServerSystem");
 
 describe("CORS Expose Headers", () => {
@@ -13,18 +12,18 @@ describe("CORS Expose Headers", () => {
 
     test("includes x-account-name in Access-Control-Expose-Headers", async () => {
         const req = {
+            headers: {},
             method: "GET",
             path: "/health",
-            headers: {},
         };
         const headers = {};
         const res = {
             header: (name, val) => {
                 headers[name] = val;
             },
+            json: jest.fn(),
             sendStatus: jest.fn(),
             status: jest.fn().mockReturnThis(),
-            json: jest.fn(),
             use: jest.fn(),
         };
 
