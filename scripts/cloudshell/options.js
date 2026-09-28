@@ -56,7 +56,7 @@ const parseAuthIndices = raw => {
     return Array.from(new Set(result)).sort((a, b) => a - b);
 };
 
-const VALID_COMMANDS = new Set(["start", "status", "stop", "restart", "logs"]);
+const VALID_COMMANDS = new Set(["start", "status", "stop", "restart", "logs", "pause", "resume"]);
 
 const parseCliArgs = (args = []) => {
     let command = "status";
@@ -65,7 +65,9 @@ const parseCliArgs = (args = []) => {
     if (args.length > 0 && !args[0].startsWith("-")) {
         const cmd = args[0].toLowerCase();
         if (!VALID_COMMANDS.has(cmd)) {
-            throw new Error(`Unknown command: ${args[0]}. Available commands: start, status, stop, restart, logs`);
+            throw new Error(
+                `Unknown command: ${args[0]}. Available commands: start, status, stop, restart, logs, pause, resume`
+            );
         }
         command = cmd;
         startIndex = 1;
@@ -255,6 +257,8 @@ const printHelp = () => {
     console.log("  stop                       Stop running Cloud Shell daemon");
     console.log("  restart                    Restart Cloud Shell daemon");
     console.log("  logs                       View or follow Cloud Shell daemon logs");
+    console.log("  pause                      Pause anti-detection micro-actions and auto-rotation");
+    console.log("  resume                     Resume anti-detection micro-actions and auto-rotation");
     console.log("");
     console.log("Options:");
     console.log("  -h, --help                 Show this help message");
@@ -279,6 +283,8 @@ const printHelp = () => {
     console.log("  npm run cloudshell -- start --all --headed");
     console.log("  npm run cloudshell -- status");
     console.log("  npm run cloudshell -- logs -f");
+    console.log("  npm run cloudshell -- pause");
+    console.log("  npm run cloudshell -- resume");
     console.log("  npm run cloudshell -- stop");
 };
 

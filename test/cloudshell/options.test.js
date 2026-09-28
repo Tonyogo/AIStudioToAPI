@@ -83,6 +83,11 @@ describe("CloudShell CLI Options Parser", () => {
         expect(parseCliArgs(["logs", "-f"]).command).toBe("logs");
     });
 
+    test("parses pause and resume subcommands correctly", () => {
+        expect(parseCliArgs(["pause"]).command).toBe("pause");
+        expect(parseCliArgs(["resume"]).command).toBe("resume");
+    });
+
     test("defaults command to status when no subcommand provided", () => {
         const opts = parseCliArgs([]);
         expect(opts.command).toBe("status");
