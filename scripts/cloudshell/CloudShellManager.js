@@ -45,6 +45,9 @@ class CloudShellManager {
         this.heartbeatIntervalSeconds = options.heartbeatIntervalSeconds || 120;
         this.proxy = options.proxy || null;
         this.debug = Boolean(options.debug);
+        this.startupDelayRange = options.startupDelayRange || [1000, 3000];
+        this.sleep = options.sleepFn || (ms => new Promise(r => setTimeout(r, ms)));
+        this.createControllerFn = options.createControllerFn || null;
 
         this.stateTracker = options.stateTracker || new StateTracker();
         this.startedAt = new Date().toISOString();
@@ -129,14 +132,32 @@ class CloudShellManager {
 
     async init() {
         this.log(`🚀 Initializing Cloud Shell contexts for account(s): [${this.authIndices.join(", ")}]...`);
-        for (const authIndex of this.authIndices) {
+        for (let i = 0; i < this.authIndices.length; i++) {
+            const authIndex = this.authIndices[i];
+            if (i > 0) {
+                const [minDelay, maxDelay] = this.startupDelayRange;
+                const delayMs =
+                    minDelay === maxDelay ? minDelay : Math.floor(minDelay + Math.random() * (maxDelay - minDelay));
+                if (delayMs > 0) {
+                    this.log(
+                        `⏳ Waiting ${(delayMs / 1000).toFixed(1)}s before initializing account #${authIndex} to avoid detection...`
+                    );
+                    await this.sleep(delayMs);
+                }
+            }
             this.log(`Initializing account #${authIndex}...`);
             const context = await this.createContextForAuth(authIndex);
             const page = await context.newPage();
-            const controller = new CloudShellController(page, {
-                ...this.options,
-                authIndex,
-            });
+            const controller =
+                typeof this.createControllerFn === "function"
+                    ? this.createControllerFn(page, {
+                          ...this.options,
+                          authIndex,
+                      })
+                    : new CloudShellController(page, {
+                          ...this.options,
+                          authIndex,
+                      });
 
             await controller.navigate();
             await controller.waitForTerminalReady();

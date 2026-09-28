@@ -130,4 +130,63 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
             })
         );
     });
+
+    test("waits between context initializations when multiple accounts are present", async () => {
+        const sleepCalls = [];
+        const mockSleep = ms => {
+            sleepCalls.push(ms);
+            return Promise.resolve();
+        };
+
+        const mockController = {
+            navigate: jest.fn().mockResolvedValue(),
+            simulateHumanMovement: jest.fn().mockResolvedValue(),
+            waitForTerminalReady: jest.fn().mockResolvedValue(),
+        };
+
+        const manager = new CloudShellManager(null, {
+            authIndices: [0, 1, 2],
+            createContextFn: jest.fn().mockResolvedValue({
+                newPage: jest.fn().mockResolvedValue({ isClosed: () => false }),
+            }),
+            sleepFn: mockSleep,
+            startupDelayRange: [1000, 3000],
+        });
+
+        // Mock controller factory or bypass navigation
+        manager.createControllerFn = () => mockController;
+
+        await manager.init();
+
+        // 3 accounts: first account 0 delay, second account 1 delay, third account 1 delay => total 2 sleep calls
+        expect(sleepCalls.length).toBe(2);
+        expect(sleepCalls[0]).toBeGreaterThanOrEqual(1000);
+        expect(sleepCalls[0]).toBeLessThanOrEqual(3000);
+        expect(sleepCalls[1]).toBeGreaterThanOrEqual(1000);
+        expect(sleepCalls[1]).toBeLessThanOrEqual(3000);
+    });
+
+    test("does not wait when only a single account is initialized", async () => {
+        const sleepCalls = [];
+        const mockSleep = ms => {
+            sleepCalls.push(ms);
+            return Promise.resolve();
+        };
+
+        const manager = new CloudShellManager(null, {
+            authIndices: [0],
+            createContextFn: jest.fn().mockResolvedValue({
+                newPage: jest.fn().mockResolvedValue({ isClosed: () => false }),
+            }),
+            sleepFn: mockSleep,
+        });
+        manager.createControllerFn = () => ({
+            navigate: jest.fn().mockResolvedValue(),
+            simulateHumanMovement: jest.fn().mockResolvedValue(),
+            waitForTerminalReady: jest.fn().mockResolvedValue(),
+        });
+
+        await manager.init();
+        expect(sleepCalls.length).toBe(0);
+    });
 });
