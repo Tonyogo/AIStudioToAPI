@@ -6,7 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const { CloudShellController } = require("./CloudShellController");
-const { createBrowserContext } = require("./browserSetup");
+const { createBrowserContext, loadAuthStorageState } = require("./browserSetup");
 const { parseProxyFromEnv } = require("../../src/utils/ProxyUtils");
 
 class CloudShellManager {
@@ -34,6 +34,12 @@ class CloudShellManager {
             this.proxyConfig = { server: this.proxy };
         } else {
             this.proxyConfig = parseProxyFromEnv();
+        }
+    }
+
+    validateAuthFiles() {
+        for (const authIndex of this.authIndices) {
+            loadAuthStorageState(authIndex);
         }
     }
 

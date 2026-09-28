@@ -147,8 +147,8 @@ const createBrowserContext = async (browser, authIndex = 0, proxyConfig = null) 
     return context;
 };
 
-const launchCloudShellBrowser = async (options = {}) => {
-    const { authIndex = 0, headless = true, proxy = null } = options;
+const launchBrowser = async (options = {}) => {
+    const { headless = true, proxy = null } = options;
 
     const executablePath = resolveBrowserExecutablePath();
 
@@ -166,7 +166,21 @@ const launchCloudShellBrowser = async (options = {}) => {
         ...(proxyConfig ? { proxy: proxyConfig } : {}),
     };
 
-    const browser = await firefox.launch(launchOpts);
+    return await firefox.launch(launchOpts);
+};
+
+const launchCloudShellBrowser = async (options = {}) => {
+    const { authIndex = 0, proxy = null } = options;
+
+    const browser = await launchBrowser(options);
+
+    let proxyConfig = null;
+    if (proxy) {
+        proxyConfig = { server: proxy };
+    } else {
+        proxyConfig = parseProxyFromEnv();
+    }
+
     const context = await createBrowserContext(browser, authIndex, proxyConfig);
 
     return { browser, context };
@@ -176,8 +190,10 @@ module.exports = {
     FIREFOX_DOH_DISABLED_PREFS,
     createBrowserContext,
     generatePrivacyInitScript,
+    launchBrowser,
     launchCloudShellBrowser,
     loadAuthStorageState,
     resolveBrowserExecutablePath,
 };
+
 

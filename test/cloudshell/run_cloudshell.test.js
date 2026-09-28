@@ -11,7 +11,19 @@ describe("CloudShell CLI Entrypoint Smoke Test", () => {
         });
         expect(res.status).toBe(0);
         expect(res.stdout).toContain("Usage: node scripts/cloudshell/runCloudShell.js");
-        expect(res.stdout).toContain("--auth <index>");
+        expect(res.stdout).toContain("--auth <indices>");
+        expect(res.stdout).toContain("--all");
+        expect(res.stdout).toContain("--switch-interval <min>");
+        expect(res.stdout).not.toContain("--cmd <command>");
+        expect(res.stdout).not.toContain("--file <path>");
+    });
+
+    test("deprecated --cmd exits with error code 1 and warning message", () => {
+        const res = spawnSync("node", [scriptPath, "--cmd", "echo test"], {
+            encoding: "utf-8",
+        });
+        expect(res.status).toBe(1);
+        expect(res.stderr || res.stdout).toContain("--cmd is deprecated and no longer supported");
     });
 
     test("missing auth file exits with error code 1 and helpful message", () => {
@@ -22,3 +34,4 @@ describe("CloudShell CLI Entrypoint Smoke Test", () => {
         expect(res.stderr || res.stdout).toContain("auth-987654.json does not exist");
     });
 });
+

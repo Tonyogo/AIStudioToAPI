@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 /**
  * File: scripts/cloudshell/runCloudShell.js
- * Description: Standalone CLI entrypoint for Google Cloud Shell automation
+ * Description: Standalone CLI entrypoint for Google Cloud Shell multi-context runner
  */
 
-const fs = require("fs");
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "..", "..", ".env") });
 
 const { parseCliArgs, printHelp } = require("./options");
-const { launchCloudShellBrowser } = require("./browserSetup");
-const { CloudShellController } = require("./CloudShellController");
+const { launchBrowser } = require("./browserSetup");
+const { CloudShellManager } = require("./CloudShellManager");
 
 const main = async () => {
     let options;
@@ -27,48 +26,22 @@ const main = async () => {
         process.exit(0);
     }
 
-    let commandsToExecute = [];
-    if (options.cmd) {
-        commandsToExecute.push(...options.cmd.split(/\r?\n/));
-    }
-    if (options.filePath) {
-        const fullScriptPath = path.resolve(process.cwd(), options.filePath);
-        if (!fs.existsSync(fullScriptPath)) {
-            console.error(`[CloudShell] ❌ Script file not found: ${fullScriptPath}`);
-            process.exit(1);
-        }
-        const fileContent = fs.readFileSync(fullScriptPath, "utf-8");
-        const lines = fileContent.split(/\r?\n/);
-        commandsToExecute = commandsToExecute.concat(lines);
-    }
-
-    console.log("==================================================");
-    console.log(`🚀 [CloudShell] Starting runner for Account #${options.authIndex}`);
-    console.log(`   Mode: ${options.headless ? "Headless" : "Headed"}`);
-    if (options.proxy) console.log(`   Proxy: ${options.proxy}`);
-    console.log(`   Keep-alive: ${options.keepAliveMinutes === -1 ? "Infinite" : `${options.keepAliveMinutes} min`}`);
-    console.log("==================================================");
-
     let browser = null;
-    let context = null;
-    let controller = null;
+    let manager = null;
 
     const cleanup = async () => {
-        if (controller) {
-            controller.stopKeepAliveLoop();
-        }
-        if (context) {
+        if (manager) {
             try {
-                await context.close();
+                await manager.stop();
             } catch {
-                // ignore context close error
+                // ignore
             }
         }
         if (browser) {
             try {
                 await browser.close();
             } catch {
-                // ignore browser close error
+                // ignore
             }
         }
     };
@@ -86,29 +59,30 @@ const main = async () => {
     });
 
     try {
-        const launched = await launchCloudShellBrowser(options);
-        browser = launched.browser;
-        context = launched.context;
+        manager = new CloudShellManager(null, options);
+        manager.validateAuthFiles();
 
-        const page = await context.newPage();
-        controller = new CloudShellController(page, options);
+        browser = await launchBrowser(options);
+        manager.browser = browser;
 
-        await controller.navigate();
-        await controller.waitForTerminalReady();
-
-        if (commandsToExecute.length > 0) {
-            console.log(`[CloudShell] 📋 Executing ${commandsToExecute.length} command(s)...`);
-            await controller.executeCommands(commandsToExecute);
-        } else {
-            console.log("[CloudShell] ℹ️ No command provided to execute (--cmd or --file).");
+        console.log("==================================================");
+        console.log(`🚀 [CloudShell] Starting runner for Account(s): [${manager.authIndices.join(", ")}]`);
+        console.log(`   Mode: ${options.headless ? "Headless" : "Headed"}`);
+        if (options.proxy) console.log(`   Proxy: ${options.proxy}`);
+        console.log(
+            `   Keep-alive: ${
+                options.keepAliveMinutes === -1 ? "Infinite" : `${options.keepAliveMinutes} min`
+            }`
+        );
+        if (manager.authIndices.length > 1) {
+            console.log(`   Rotation interval: every ${options.switchIntervalMinutes} min`);
         }
+        console.log("==================================================");
 
-        if (options.debug) {
-            await controller.saveDebugArtifacts("completed");
-        }
+        await manager.init();
 
         if (options.keepAliveMinutes !== 0) {
-            await controller.startKeepAliveLoop(options.keepAliveMinutes, options.heartbeatIntervalSeconds);
+            await manager.startRotationAndKeepAliveLoop();
         }
 
         console.log("[CloudShell] ✅ All operations completed successfully.");
@@ -116,9 +90,6 @@ const main = async () => {
         process.exit(0);
     } catch (err) {
         console.error(`[CloudShell] ❌ Fatal error: ${err.message}`);
-        if (controller && options.debug) {
-            await controller.saveDebugArtifacts("fatal_error");
-        }
         await cleanup();
         process.exit(1);
     }
