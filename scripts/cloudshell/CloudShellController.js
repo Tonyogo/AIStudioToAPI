@@ -26,6 +26,7 @@ class CloudShellController {
         this.options = options;
         this.targetUrl = options.targetUrl || "https://shell.cloud.google.com/?show=terminal";
         this.logPrefix = `[CloudShell#${options.authIndex || 0}]`;
+        this.sleep = options.sleepFn || (ms => new Promise(r => setTimeout(r, ms)));
     }
 
     log(msg) {
@@ -78,6 +79,49 @@ class CloudShellController {
         }
     }
 
+    async clickElementSimulated(targetLocator, label = "button") {
+        let box = null;
+        try {
+            if (typeof targetLocator.boundingBox === "function") {
+                box = await targetLocator.boundingBox().catch(() => null);
+            }
+        } catch {
+            box = null;
+        }
+
+        if (box && this.page && this.page.mouse) {
+            try {
+                const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
+                const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+
+                await this.simulateHumanMovement(targetX, targetY);
+                await this.sleep(150 + Math.random() * 150);
+                await this.page.mouse.down();
+                await this.sleep(150 + Math.random() * 200);
+                await this.page.mouse.up();
+                this.log(`🖱️ Physical click executed on "${label}". Verifying...`);
+
+                await this.sleep(800);
+                const stillVisible =
+                    typeof targetLocator.isVisible === "function"
+                        ? await targetLocator.isVisible({ timeout: 500 }).catch(() => false)
+                        : false;
+
+                if (!stillVisible) {
+                    return true;
+                }
+            } catch (err) {
+                this.warn(`Physical click error on "${label}": ${err.message}`);
+            }
+        }
+
+        this.warn(
+            `⚠️ Physical click ineffective or boundingBox unavailable for "${label}", falling back to JS force click...`
+        );
+        await targetLocator.click({ force: true, timeout: 3000 });
+        return true;
+    }
+
     async bypassModalsOnce() {
         const frames = this.page.frames();
         const buttonSelectors = [
@@ -104,7 +148,7 @@ class CloudShellController {
                         const target = btn.first();
                         if (await target.isVisible({ timeout: 300 })) {
                             this.log(`Detected dialog button: "${selector}". Clicking to bypass...`);
-                            await target.click({ timeout: 5000 });
+                            await this.clickElementSimulated(target, selector);
                             return true;
                         }
                     }

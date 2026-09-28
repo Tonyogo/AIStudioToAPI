@@ -25,14 +25,14 @@ describe("CloudShellController Lifecycle & Modals", () => {
     });
 
     test("bypassModalsOnce clicks Authorize button if found in frame", async () => {
-        let clicked = false;
+        let physicalClicked = false;
+        let visible = true;
         const mockButton = {
             count: async () => 1,
             first: () => ({
-                click: async () => {
-                    clicked = true;
-                },
-                isVisible: async () => true,
+                boundingBox: async () => ({ height: 40, width: 100, x: 200, y: 300 }),
+                click: jest.fn().mockResolvedValue(),
+                isVisible: async () => visible,
             }),
         };
         const mockFrame = {
@@ -45,12 +45,22 @@ describe("CloudShellController Lifecycle & Modals", () => {
         };
         const mockPage = {
             frames: () => [mockFrame],
+            mouse: {
+                down: async () => {},
+                move: async () => {},
+                up: async () => {
+                    physicalClicked = true;
+                    visible = false;
+                },
+            },
             title: async () => "Google Cloud Shell",
             url: () => "https://shell.cloud.google.com/?show=terminal",
         };
-        const controller = new CloudShellController(mockPage);
+        const controller = new CloudShellController(mockPage, {
+            sleepFn: () => Promise.resolve(),
+        });
         const didBypass = await controller.bypassModalsOnce();
         expect(didBypass).toBe(true);
-        expect(clicked).toBe(true);
+        expect(physicalClicked).toBe(true);
     });
 });
