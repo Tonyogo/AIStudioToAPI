@@ -3,6 +3,14 @@
  * Description: CLI options parser and help generator for Cloud Shell runner
  */
 
+const parseBooleanLike = value => {
+    if (value === undefined || value === null || value === "") return undefined;
+    const normalized = String(value).trim().toLowerCase();
+    if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+    return undefined;
+};
+
 const parseCliArgs = (args = []) => {
     const options = {
         authIndex: 0,
@@ -29,8 +37,25 @@ const parseCliArgs = (args = []) => {
             continue;
         }
 
+        if (arg.startsWith("--headless=")) {
+            const rawVal = arg.slice("--headless=".length);
+            const parsed = parseBooleanLike(rawVal);
+            if (parsed === undefined) {
+                throw new Error(`Invalid boolean value for --headless: ${rawVal}. Must be true or false.`);
+            }
+            options.headless = parsed;
+            continue;
+        }
+
         if (arg === "--headless") {
-            options.headless = true;
+            const nextArg = args[i + 1];
+            const parsed = parseBooleanLike(nextArg);
+            if (parsed !== undefined) {
+                options.headless = parsed;
+                i++;
+            } else {
+                options.headless = true;
+            }
             continue;
         }
 
@@ -131,8 +156,8 @@ const printHelp = () => {
     console.log("  --file <path>              Path to script file containing commands");
     console.log("  --keep-alive <min>         Keep-alive duration in minutes (0=exit after commands, -1=infinite)");
     console.log("  --heartbeat-interval <s>   Anti-idle keypress interval in seconds (default: 120)");
-    console.log("  --headless                 Run in headless mode (default: true)");
-    console.log("  --headed                   Run with visible browser window");
+    console.log("  --headless [true|false]    Run in headless mode (default: true)");
+    console.log("  --headed                   Shortcut for --headless false (visible window)");
     console.log("  --proxy <url>              Proxy server URL (e.g. http://127.0.0.1:7890)");
     console.log("  --debug                    Capture screenshots and HTML dumps to logs/cloudshell/");
     console.log("");

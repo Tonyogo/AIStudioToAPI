@@ -75,8 +75,8 @@ npm run cloudshell -- --keep-alive -1
 | `--file <path>` | `null` | 字符串 | 读取本地 shell 脚本文件，按行依次向终端键入执行 |
 | `--keep-alive <min>` | `0` | 整数 | 命令执行后的终端保活时长（分钟）。<br>• `0`：命令执行完毕后立即关闭退出；<br>• `>0`���例如 `30`，保活 30 分钟后自动退出；<br>• `-1`：无限期长驻保活，直至手动按 `Ctrl+C` 终止 |
 | `--heartbeat-interval <s>` | `120` | 整数 | 保活期间发送防休眠心跳按键的间隔（秒） |
-| `--headless` | 默认启用 | Flag | 无头静默模式运行（无浏览器窗口弹出） |
-| `--headed` | - | Flag | 有头模式运行（弹出浏览器窗口，直观查看页面加载过程） |
+| `--headless [true\|false]` | `true` | 布尔/Flag | 是否以���头模式运行。<br>• 默认 `true`（静默后台运行）；<br>• 支持显式传参 `--headless false` 或 `--headless=false` 本地弹出窗口调试；<br>• 也可直接使用简写 `--headed` |
+| `--headed` | - | Flag | 有头模式运行（快捷方式，等价于 `--headless false`） |
 | `--proxy <url>` | 读取 `.env` | 字符串 | 显式指定代理地址，例如 `http://127.0.0.1:7890`（若不指定则自动读取 `.env` 中的 `HTTPS_PROXY`） |
 | `--debug` | `false` | Flag | 启用诊断导出：在完成或异常时导出截图与 HTML 到 `logs/cloudshell/` |
 
@@ -118,8 +118,12 @@ npm run cloudshell -- --keep-alive -1 --heartbeat-interval 60
 ```
 
 ### 5. 可视化界面排查调试 (Headed 模式)
-在初次使用或遇到页面卡住时，建议开启 `--headed` 查看真实页面渲染：
+在初次使用或遇到页面卡住时，建议开启有头模式查看真实页面渲染：
 ```bash
+# 方式 A：使用显式传参 --headless false 或 --headless=false
+npm run cloudshell -- --headless false --cmd "echo 'Hello from local'" --keep-alive 5
+
+# 方式 B：使用快捷参数 --headed
 npm run cloudshell -- --headed --cmd "echo 'Hello from local'" --keep-alive 5
 ```
 

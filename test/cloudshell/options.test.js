@@ -47,6 +47,17 @@ describe("CloudShell CLI Options Parser", () => {
         expect(opts.keepAliveMinutes).toBe(-1);
     });
 
+    test("parses explicit --headless arguments", () => {
+        expect(parseCliArgs(["--headless=false"]).headless).toBe(false);
+        expect(parseCliArgs(["--headless", "false"]).headless).toBe(false);
+        expect(parseCliArgs(["--headless=0"]).headless).toBe(false);
+        expect(parseCliArgs(["--headless", "0"]).headless).toBe(false);
+        expect(parseCliArgs(["--headless=true"]).headless).toBe(true);
+        expect(parseCliArgs(["--headless", "true"]).headless).toBe(true);
+        expect(parseCliArgs(["--headless"]).headless).toBe(true);
+        expect(parseCliArgs(["--headed"]).headless).toBe(false);
+    });
+
     test("throws error when auth index is negative", () => {
         expect(() => parseCliArgs(["--auth", "-1"])).toThrow(/auth index/i);
     });
