@@ -129,10 +129,27 @@ const generatePrivacyInitScript = (seedSource = "cloudshell_seed") => {
     `;
 };
 
+const createBrowserContext = async (browser, authIndex = 0, proxyConfig = null) => {
+    const storageState = loadAuthStorageState(authIndex);
+    const randomWidth = 1920 + Math.floor(Math.random() * 50);
+    const randomHeight = 1080 + Math.floor(Math.random() * 50);
+
+    const context = await browser.newContext({
+        deviceScaleFactor: 1,
+        storageState,
+        viewport: { height: randomHeight, width: randomWidth },
+        ...(proxyConfig ? { proxy: proxyConfig } : {}),
+    });
+
+    const privacyScript = generatePrivacyInitScript(`account_auth_${authIndex}`);
+    await context.addInitScript(privacyScript);
+
+    return context;
+};
+
 const launchCloudShellBrowser = async (options = {}) => {
     const { authIndex = 0, headless = true, proxy = null } = options;
 
-    const storageState = loadAuthStorageState(authIndex);
     const executablePath = resolveBrowserExecutablePath();
 
     let proxyConfig = null;
@@ -150,27 +167,17 @@ const launchCloudShellBrowser = async (options = {}) => {
     };
 
     const browser = await firefox.launch(launchOpts);
-
-    const randomWidth = 1920 + Math.floor(Math.random() * 50);
-    const randomHeight = 1080 + Math.floor(Math.random() * 50);
-
-    const context = await browser.newContext({
-        deviceScaleFactor: 1,
-        storageState,
-        viewport: { height: randomHeight, width: randomWidth },
-        ...(proxyConfig ? { proxy: proxyConfig } : {}),
-    });
-
-    const privacyScript = generatePrivacyInitScript(`account_auth_${authIndex}`);
-    await context.addInitScript(privacyScript);
+    const context = await createBrowserContext(browser, authIndex, proxyConfig);
 
     return { browser, context };
 };
 
 module.exports = {
     FIREFOX_DOH_DISABLED_PREFS,
+    createBrowserContext,
     generatePrivacyInitScript,
     launchCloudShellBrowser,
     loadAuthStorageState,
     resolveBrowserExecutablePath,
 };
+
