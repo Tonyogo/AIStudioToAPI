@@ -56,11 +56,29 @@ const parseAuthIndices = raw => {
     return Array.from(new Set(result)).sort((a, b) => a - b);
 };
 
+const VALID_COMMANDS = new Set(["start", "status", "stop", "restart", "logs"]);
+
 const parseCliArgs = (args = []) => {
+    let command = "status";
+    let startIndex = 0;
+
+    if (args.length > 0 && !args[0].startsWith("-")) {
+        const cmd = args[0].toLowerCase();
+        if (!VALID_COMMANDS.has(cmd)) {
+            throw new Error(`Unknown command: ${args[0]}. Available commands: start, status, stop, restart, logs`);
+        }
+        command = cmd;
+        startIndex = 1;
+    }
+
     const options = {
         all: false,
         authIndices: [0],
+        command,
         debug: false,
+        follow: false,
+        force: false,
+        foreground: false,
         headless: true,
         heartbeatIntervalSeconds: 120,
         help: false,
@@ -69,7 +87,7 @@ const parseCliArgs = (args = []) => {
         switchIntervalMinutes: 10,
     };
 
-    for (let i = 0; i < args.length; i++) {
+    for (let i = startIndex; i < args.length; i++) {
         const arg = args[i];
 
         if (arg === "-h" || arg === "--help") {
@@ -84,6 +102,32 @@ const parseCliArgs = (args = []) => {
 
         if (arg === "--all") {
             options.all = true;
+            continue;
+        }
+
+        if (arg === "--foreground") {
+            options.foreground = true;
+            continue;
+        }
+
+        if (arg === "--force") {
+            options.force = true;
+            continue;
+        }
+
+        if (arg === "--follow") {
+            options.follow = true;
+            continue;
+        }
+
+        if (arg === "-f") {
+            if (options.command === "logs") {
+                options.follow = true;
+            } else if (options.command === "stop") {
+                options.force = true;
+            } else {
+                options.foreground = true;
+            }
             continue;
         }
 
@@ -111,6 +155,7 @@ const parseCliArgs = (args = []) => {
 
         if (arg === "--headed") {
             options.headless = false;
+            options.foreground = true;
             continue;
         }
 
@@ -202,10 +247,20 @@ const parseCliArgs = (args = []) => {
 };
 
 const printHelp = () => {
-    console.log("Usage: node scripts/cloudshell/runCloudShell.js [options]");
+    console.log("Usage: node scripts/cloudshell/runCloudShell.js <command> [options]");
+    console.log("");
+    console.log("Commands:");
+    console.log("  start                      Start Cloud Shell daemon (or foreground if --foreground / --headed)");
+    console.log("  status                     Show Cloud Shell daemon status and account state (default)");
+    console.log("  stop                       Stop running Cloud Shell daemon");
+    console.log("  restart                    Restart Cloud Shell daemon");
+    console.log("  logs                       View or follow Cloud Shell daemon logs");
     console.log("");
     console.log("Options:");
     console.log("  -h, --help                 Show this help message");
+    console.log("  -f, --foreground           Run in foreground (start command only)");
+    console.log("  -f, --follow               Follow log output in real-time (logs command only)");
+    console.log("  --force                    Force stop immediately (SIGKILL) (stop command only)");
     console.log(
         "  --auth <indices>           Auth index or range in configs/auth/auth-N.json (e.g. 0, 0,1,2, 0-3; default: 0)"
     );
@@ -214,14 +269,17 @@ const printHelp = () => {
     console.log("  --keep-alive <min>         Keep-alive duration in minutes (-1=infinite, default: -1)");
     console.log("  --heartbeat-interval <s>   Anti-idle keypress interval in seconds (default: 120)");
     console.log("  --headless [true|false]    Run in headless mode (default: true)");
-    console.log("  --headed                   Shortcut for --headless false (visible window)");
+    console.log("  --headed                   Shortcut for --headless false (visible window, forces foreground)");
     console.log("  --proxy <url>              Proxy server URL (e.g. http://127.0.0.1:7890)");
     console.log("  --debug                    Capture screenshots and HTML dumps to logs/cloudshell/");
     console.log("");
     console.log("Examples:");
-    console.log("  npm run cloudshell -- --auth 0");
-    console.log("  npm run cloudshell -- --auth 0-2 --switch-interval 15");
-    console.log("  npm run cloudshell -- --all --headed");
+    console.log("  npm run cloudshell -- start --auth 0");
+    console.log("  npm run cloudshell -- start --auth 0-2 --switch-interval 15");
+    console.log("  npm run cloudshell -- start --all --headed");
+    console.log("  npm run cloudshell -- status");
+    console.log("  npm run cloudshell -- logs -f");
+    console.log("  npm run cloudshell -- stop");
 };
 
 module.exports = {

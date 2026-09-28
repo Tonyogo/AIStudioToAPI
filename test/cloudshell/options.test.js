@@ -75,6 +75,37 @@ describe("CloudShell CLI Options Parser", () => {
         expect(() => parseCliArgs(["--auth", "abc"])).toThrow(/auth index/i);
     });
 
+    test("parses subcommands start, stop, status, restart, logs correctly", () => {
+        expect(parseCliArgs(["start", "--auth", "0,1"]).command).toBe("start");
+        expect(parseCliArgs(["stop"]).command).toBe("stop");
+        expect(parseCliArgs(["status"]).command).toBe("status");
+        expect(parseCliArgs(["restart", "--all"]).command).toBe("restart");
+        expect(parseCliArgs(["logs", "-f"]).command).toBe("logs");
+    });
+
+    test("defaults command to status when no subcommand provided", () => {
+        const opts = parseCliArgs([]);
+        expect(opts.command).toBe("status");
+    });
+
+    test("parses --foreground, --force, --follow flags", () => {
+        expect(parseCliArgs(["start", "--foreground"]).foreground).toBe(true);
+        expect(parseCliArgs(["start", "-f"]).foreground).toBe(true);
+        expect(parseCliArgs(["stop", "--force"]).force).toBe(true);
+        expect(parseCliArgs(["logs", "--follow"]).follow).toBe(true);
+        expect(parseCliArgs(["logs", "-f"]).follow).toBe(true);
+    });
+
+    test("enables foreground automatically when --headed is passed to start", () => {
+        const opts = parseCliArgs(["start", "--headed"]);
+        expect(opts.headless).toBe(false);
+        expect(opts.foreground).toBe(true);
+    });
+
+    test("throws error when unknown subcommand provided", () => {
+        expect(() => parseCliArgs(["invalidCommand"])).toThrow(/unknown command/i);
+    });
+
     test("printHelp does not throw", () => {
         const spy = jest.spyOn(console, "log").mockImplementation(() => {});
         expect(() => printHelp()).not.toThrow();
