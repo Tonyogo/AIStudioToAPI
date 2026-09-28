@@ -189,4 +189,52 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
         await manager.init();
         expect(sleepCalls.length).toBe(0);
     });
+
+    test("skips micro-actions and rotation when paused, but continues heartbeats", async () => {
+        let paused = true;
+        const mockStateTracker = {
+            clearState: jest.fn(),
+            isPaused: () => paused,
+            saveState: jest.fn(),
+        };
+
+        const mockController = {
+            bypassModalsOnce: jest.fn().mockResolvedValue(false),
+            performActiveMicroActions: jest.fn().mockResolvedValue(),
+            sendHeartbeat: jest.fn().mockResolvedValue(),
+        };
+
+        const manager = new CloudShellManager(null, {
+            authIndices: [0, 1],
+            heartbeatIntervalSeconds: 4, // 1 tick
+            keepAliveMinutes: 0.001, // short loop
+            stateTracker: mockStateTracker,
+            switchIntervalMinutes: 0.05,
+        });
+
+        manager.contexts.set(0, {
+            controller: mockController,
+            page: { isClosed: () => false },
+        });
+        manager.contexts.set(1, {
+            controller: mockController,
+            page: { isClosed: () => false },
+        });
+
+        const rotateSpy = jest.spyOn(manager, "rotateActiveContext").mockResolvedValue();
+
+        // Run one iteration or loop
+        await manager.executeTick(1, 1, 1);
+
+        // In paused mode:
+        expect(mockController.performActiveMicroActions).not.toHaveBeenCalled();
+        expect(rotateSpy).not.toHaveBeenCalled();
+        expect(mockController.sendHeartbeat).toHaveBeenCalled();
+
+        // Now resume
+        paused = false;
+        await manager.executeTick(2, 1, 1);
+        expect(mockController.performActiveMicroActions).toHaveBeenCalled();
+        expect(rotateSpy).toHaveBeenCalled();
+    });
 });

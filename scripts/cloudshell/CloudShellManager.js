@@ -31,6 +31,7 @@ class CloudShellManager {
         this.options = options;
         this.contexts = new Map();
         this._running = false;
+        this._wasPaused = false;
         this.logPrefix = "[CloudShellManager]";
 
         if (options.all) {
@@ -240,6 +241,65 @@ class CloudShellManager {
         await this.switchActiveContext(nextAuthIndex);
     }
 
+    isAntiDetectionPaused() {
+        if (typeof this.options.isPausedFn === "function") {
+            return this.options.isPausedFn();
+        }
+        if (this.stateTracker && typeof this.stateTracker.isPaused === "function") {
+            return this.stateTracker.isPaused();
+        }
+        return false;
+    }
+
+    async executeTick(tickCount, heartbeatTicks, switchTicks) {
+        const isPaused = this.isAntiDetectionPaused();
+        if (isPaused) {
+            if (!this._wasPaused) {
+                this.log("⏸️ Anti-detection micro-actions and auto-rotation are paused (manual mode active).");
+                this._wasPaused = true;
+            }
+        } else if (this._wasPaused) {
+            this.log("▶️ Anti-detection micro-actions and auto-rotation have resumed.");
+            this._wasPaused = false;
+        }
+
+        // 1. Micro-actions on active context (skipped if paused)
+        if (!isPaused) {
+            const activeEntry = this.contexts.get(this.currentAuthIndex);
+            if (activeEntry && activeEntry.controller && activeEntry.page && !activeEntry.page.isClosed()) {
+                try {
+                    await activeEntry.controller.performActiveMicroActions(tickCount);
+                } catch (err) {
+                    this.warn(`Active micro-actions error on Account #${this.currentAuthIndex}: ${err.message}`);
+                }
+            }
+        }
+
+        // 2. Periodic anti-idle heartbeat and modal bypass on all contexts (always performed)
+        if (tickCount % heartbeatTicks === 0) {
+            for (const [authIndex, entry] of this.contexts) {
+                if (entry.page && !entry.page.isClosed() && entry.controller) {
+                    try {
+                        await entry.controller.sendHeartbeat();
+                        await entry.controller.bypassModalsOnce();
+                        const accMeta = this.accountMetadata.get(authIndex);
+                        if (accMeta) {
+                            accMeta.lastHeartbeatAt = new Date().toISOString();
+                        }
+                        this.syncState("running");
+                    } catch (err) {
+                        this.warn(`Heartbeat/modal bypass error on Account #${authIndex}: ${err.message}`);
+                    }
+                }
+            }
+        }
+
+        // 3. Periodic active context rotation if multiple accounts exist (skipped if paused)
+        if (!isPaused && this.authIndices.length > 1 && tickCount % switchTicks === 0) {
+            await this.rotateActiveContext();
+        }
+    }
+
     async startRotationAndKeepAliveLoop() {
         if (this.keepAliveMinutes === 0) {
             this.log("Keep-alive duration is 0. Exiting without loop.");
@@ -281,39 +341,7 @@ class CloudShellManager {
 
             tickCount++;
 
-            // 1. Micro-actions on active context
-            const activeEntry = this.contexts.get(this.currentAuthIndex);
-            if (activeEntry && activeEntry.controller && activeEntry.page && !activeEntry.page.isClosed()) {
-                try {
-                    await activeEntry.controller.performActiveMicroActions(tickCount);
-                } catch (err) {
-                    this.warn(`Active micro-actions error on Account #${this.currentAuthIndex}: ${err.message}`);
-                }
-            }
-
-            // 2. Periodic anti-idle heartbeat and modal bypass on all contexts
-            if (tickCount % heartbeatTicks === 0) {
-                for (const [authIndex, entry] of this.contexts) {
-                    if (entry.page && !entry.page.isClosed() && entry.controller) {
-                        try {
-                            await entry.controller.sendHeartbeat();
-                            await entry.controller.bypassModalsOnce();
-                            const accMeta = this.accountMetadata.get(authIndex);
-                            if (accMeta) {
-                                accMeta.lastHeartbeatAt = new Date().toISOString();
-                            }
-                            this.syncState("running");
-                        } catch (err) {
-                            this.warn(`Heartbeat/modal bypass error on Account #${authIndex}: ${err.message}`);
-                        }
-                    }
-                }
-            }
-
-            // 3. Periodic active context rotation if multiple accounts exist
-            if (this.authIndices.length > 1 && tickCount % switchTicks === 0) {
-                await this.rotateActiveContext();
-            }
+            await this.executeTick(tickCount, heartbeatTicks, switchTicks);
 
             // Sleep 4s responsive to this._running
             const sleepChunk = 500;
@@ -331,6 +359,9 @@ class CloudShellManager {
     async stop() {
         this._running = false;
         this.syncState("stopped");
+        if (this.stateTracker && typeof this.stateTracker.clearState === "function") {
+            this.stateTracker.clearState();
+        }
         for (const [, entry] of this.contexts) {
             try {
                 if (entry.controller) {
