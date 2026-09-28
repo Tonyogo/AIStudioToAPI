@@ -28,7 +28,7 @@
 - Consumes: `process.argv.slice(2)`
 - Produces: `parseCliArgs(args)` returning `{ command: string, authIndices: number[], all: boolean, foreground: boolean, force: boolean, follow: boolean, switchIntervalMinutes: number, keepAliveMinutes: number, heartbeatIntervalSeconds: number, headless: boolean, proxy: string|null, debug: boolean, help: boolean }`
 
-- [ ] **Step 1: 编写子命令解析失败测试**
+- [x] **Step 1: 编写子命令解析失败测试**
 
 在 `test/cloudshell/options.test.js` 中新增子命令与新参数的测试：
 
@@ -61,12 +61,12 @@ test("enables foreground automatically when --headed is passed to start", () => 
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/options.test.js`
 Expected: FAIL (因为 `options.js` 尚不支持子命令 `command` 字段及 `--foreground` 等标志)
 
-- [ ] **Step 3: 实现 `options.js` 中的子命令解析逻辑**
+- [x] **Step 3: 实现 `options.js` 中的子命令解析逻辑**
 
 1. 识别第一个非 option 参数作为 `command`（可选集合：`start`, `stop`, `status`, `restart`, `logs`）；若第一个参数以 `-` 开头或为空，且不是 `-h`/`--help`，则默认 `command = "status"`；
 2. 识别 `--foreground` / `-f`（在 `logs` 下解析为 `follow`，在 `start` 下解析为 `foreground`）；
@@ -74,12 +74,12 @@ Expected: FAIL (因为 `options.js` 尚不支持子命令 `command` 字段及 `-
 4. 当指定 `--headed` 时，将 `foreground` 自动置为 `true`；
 5. 更新 `printHelp()` 函数，展示子命令格式 `node scripts/cloudshell/runCloudShell.js <command> [options]`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/options.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/options.js test/cloudshell/options.test.js
@@ -102,7 +102,7 @@ git commit -m "feat(cloudshell): support subcommands and management flags in CLI
     - `clearState()`: 移除状态文件
     - `formatStatusOutput(state, isAlive)`: 格式化生成终端展示的 ASCII 表格与账号状态文本
 
-- [ ] **Step 1: 编写 `stateTracker` 单元测试**
+- [x] **Step 1: 编写 `stateTracker` 单元测试**
 
 创建 `test/cloudshell/state_tracker.test.js`：
 
@@ -167,12 +167,12 @@ describe("CloudShell StateTracker", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/state_tracker.test.js`
 Expected: FAIL (`stateTracker.js` not found)
 
-- [ ] **Step 3: 编写 `scripts/cloudshell/stateTracker.js`**
+- [x] **Step 3: 编写 `scripts/cloudshell/stateTracker.js`**
 
 1. 实现 `StateTracker` 类，默认状态文件路径指向 `path.join(process.cwd(), "logs", "cloudshell", "state.json")`；
 2. `saveState(data)`：合并现有内存状态与新数据，写入同目录下临时文件后 `fs.renameSync`，确保原子性；
@@ -180,12 +180,12 @@ Expected: FAIL (`stateTracker.js` not found)
 4. `clearState()`：清理状态文件；
 5. `formatStatusOutput(state, isAlive)`：生成清晰的美化格式，展示 PID、启动时间、Uptime、当前选中的 Active Account、各账号列表与心跳时间。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/state_tracker.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/stateTracker.js test/cloudshell/state_tracker.test.js
@@ -209,7 +209,7 @@ git commit -m "feat(cloudshell): implement StateTracker for runtime persistence 
     - `stopDaemon(force = false)`: 读取 PID 发送 `SIGTERM`，循环等待退出；超时则 `SIGKILL`，清理 PID 文件
     - `tailLogs(follow = false)`: 读取或流式追踪 `logs/cloudshell/daemon.log`
 
-- [ ] **Step 1: 编写 `daemonManager` 单元测试**
+- [x] **Step 1: 编写 `daemonManager` 单元测试**
 
 创建 `test/cloudshell/daemon_manager.test.js`，Mock `child_process.spawn` 与 `process.kill`：
 
@@ -253,12 +253,12 @@ describe("CloudShell DaemonManager", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/daemon_manager.test.js`
 Expected: FAIL (`daemonManager.js` not found)
 
-- [ ] **Step 3: 编写 `scripts/cloudshell/daemonManager.js`**
+- [x] **Step 3: 编写 `scripts/cloudshell/daemonManager.js`**
 
 1. 管理 `logs/cloudshell/daemon.pid` 与 `logs/cloudshell/daemon.log`；
 2. 实现 `isProcessAlive(pid)`，使用 `process.kill(pid, 0)` 进行无副作用探测；
@@ -273,12 +273,12 @@ Expected: FAIL (`daemonManager.js` not found)
    - 检查 `daemon.log` 是否存在；
    - 若 `follow` 则通过 `fs.watch` 或追加读取流输出，若普通读取则打印末尾 50 行。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/daemon_manager.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/daemonManager.js test/cloudshell/daemon_manager.test.js
@@ -297,7 +297,7 @@ git commit -m "feat(cloudshell): implement DaemonManager for background process 
 - Consumes: `StateTracker` instance
 - Produces: 实时将各账号就绪状态、最后心跳时间、当前选中的 `currentAuthIndex` 持久化到 `state.json`
 
-- [ ] **Step 1: 编写 `CloudShellManager` 与状态同步的测试**
+- [x] **Step 1: 编写 `CloudShellManager` 与状态同步的测试**
 
 在 `test/cloudshell/cloudshell_manager.test.js` 中增加状态更新断言：
 
@@ -323,12 +323,12 @@ test("synchronizes state on account ready and context switch", async () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/cloudshell_manager.test.js`
 Expected: FAIL (`syncState` is not a function)
 
-- [ ] **Step 3: 在 `CloudShellManager.js` 中集成 `StateTracker`**
+- [x] **Step 3: 在 `CloudShellManager.js` 中集成 `StateTracker`**
 
 1. 构造函数中支持传入或默认初始化 `this.stateTracker = options.stateTracker || new StateTracker()`；
 2. 实现 `syncState(status = "running")` 方法，收集当前已初始化的各账号（`authIndex`, `status`, `accountName`, `lastHeartbeatAt`）并落盘；
@@ -337,12 +337,12 @@ Expected: FAIL (`syncState` is not a function)
 5. 在 `sendHeartbeat()` 发送心跳成功后更新对应账号的 `lastHeartbeatAt`；
 6. 在 `stop()` 时将状态更新为 `stopped`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx jest test/cloudshell/cloudshell_manager.test.js`
 Expected: PASS
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/CloudShellManager.js test/cloudshell/cloudshell_manager.test.js
@@ -360,7 +360,7 @@ git commit -m "feat(cloudshell): integrate state tracker into CloudShellManager 
 **Interfaces:**
 - CLI entrypoint handling `start`, `stop`, `status`, `restart`, `logs` commands
 
-- [ ] **Step 1: 编写 CLI 入口子命令分发测试**
+- [x] **Step 1: 编写 CLI 入口子命令分发测试**
 
 在 `test/cloudshell/run_cloudshell.test.js` 中：
 
@@ -378,12 +378,12 @@ test("cloudshell stop outputs message when not running", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试以确认失败**
+- [x] **Step 2: 运行测试以确认失败**
 
 Run: `npx jest test/cloudshell/run_cloudshell.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 重构 `runCloudShell.js`**
+- [x] **Step 3: 重构 `runCloudShell.js`**
 
 1. 解析命令行参数得到 `options` 与 `options.command`；
 2. 分发逻辑：
@@ -395,12 +395,12 @@ Expected: FAIL
      - 若未传 `--foreground` 且不是 `--headed`：调用 `daemonManager.startDaemon(options)`，打印 PID、日志路径并退出；
      - 若为前台模式：执行原有的浏览器启动与 `CloudShellManager` 长驻循环逻辑，并在进程退出时清理 PID 与状态。
 
-- [ ] **Step 4: 运行所有测试确认通过**
+- [x] **Step 4: 运行所有测试确认通过**
 
 Run: `npx jest test/cloudshell/`
 Expected: PASS (所有测试套件全部通过)
 
-- [ ] **Step 5: 提交更改**
+- [x] **Step 5: 提交更改**
 
 ```bash
 git add scripts/cloudshell/runCloudShell.js test/cloudshell/run_cloudshell.test.js
@@ -414,21 +414,21 @@ git commit -m "feat(cloudshell): dispatch start, status, stop, restart, and logs
 **Files:**
 - Modify: `scripts/cloudshell/README.md`
 
-- [ ] **Step 1: 更新 `scripts/cloudshell/README.md`**
+- [x] **Step 1: 更新 `scripts/cloudshell/README.md`**
 
 增加 `start`、`status`、`stop`、`restart`、`logs` 管理命令完整使用说明，包括后台常驻启动、在线账号状态查看及停止方法。
 
-- [ ] **Step 2: 执行代码格式化与 Lint 校验**
+- [x] **Step 2: 执行代码格式化与 Lint 校验**
 
 Run: `npm run format && npm run lint`
 Expected: 无语法与规范报错，自动格式化整洁。
 
-- [ ] **Step 3: 运行全量测试套件**
+- [x] **Step 3: 运行全量测试套件**
 
 Run: `npx jest test/cloudshell/`
 Expected: 所有测试 100% 通过。
 
-- [ ] **Step 4: 提交更改**
+- [x] **Step 4: 提交更改**
 
 ```bash
 git add scripts/cloudshell/README.md
