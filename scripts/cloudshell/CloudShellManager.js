@@ -7,7 +7,23 @@ const fs = require("fs");
 const path = require("path");
 const { CloudShellController } = require("./CloudShellController");
 const { createBrowserContext, loadAuthStorageState } = require("./browserSetup");
+const { StateTracker } = require("./stateTracker");
 const { parseProxyFromEnv } = require("../../src/utils/ProxyUtils");
+
+const getAccountNameForIndex = authIndex => {
+    try {
+        const filePath = path.join(process.cwd(), "configs", "auth", `auth-${authIndex}.json`);
+        if (fs.existsSync(filePath)) {
+            const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+            if (parsed && typeof parsed.accountName === "string" && parsed.accountName.trim()) {
+                return parsed.accountName.trim();
+            }
+        }
+    } catch {
+        // ignore
+    }
+    return `auth-${authIndex}.json`;
+};
 
 class CloudShellManager {
     constructor(browser, options = {}) {
@@ -29,6 +45,18 @@ class CloudShellManager {
         this.heartbeatIntervalSeconds = options.heartbeatIntervalSeconds || 120;
         this.proxy = options.proxy || null;
         this.debug = Boolean(options.debug);
+
+        this.stateTracker = options.stateTracker || new StateTracker();
+        this.startedAt = new Date().toISOString();
+        this.accountMetadata = new Map();
+        for (const authIndex of this.authIndices) {
+            this.accountMetadata.set(authIndex, {
+                accountName: getAccountNameForIndex(authIndex),
+                authIndex,
+                lastHeartbeatAt: null,
+                status: "initializing",
+            });
+        }
 
         if (this.proxy) {
             this.proxyConfig = { server: this.proxy };
@@ -75,6 +103,23 @@ class CloudShellManager {
         return Array.from(new Set(indices)).sort((a, b) => a - b);
     }
 
+    syncState(status = "running") {
+        if (!this.stateTracker) return;
+        try {
+            const accounts = Array.from(this.accountMetadata.values());
+            this.stateTracker.saveState({
+                accounts,
+                currentAuthIndex: this.currentAuthIndex,
+                pid: process.pid,
+                startedAt: this.startedAt,
+                status,
+                switchIntervalMinutes: this.switchIntervalMinutes,
+            });
+        } catch (err) {
+            this.warn(`Failed to synchronize state: ${err.message}`);
+        }
+    }
+
     async createContextForAuth(authIndex) {
         if (typeof this.options.createContextFn === "function") {
             return await this.options.createContextFn(this.browser, authIndex);
@@ -101,6 +146,11 @@ class CloudShellManager {
                 controller,
                 page,
             });
+            const accMeta = this.accountMetadata.get(authIndex);
+            if (accMeta) {
+                accMeta.status = "ready";
+            }
+            this.syncState("running");
             this.log(`✅ Account #${authIndex} initialized successfully.`);
         }
 
@@ -125,6 +175,15 @@ class CloudShellManager {
             return;
         }
         this.currentAuthIndex = targetAuthIndex;
+        for (const [idx, acc] of this.accountMetadata) {
+            if (idx === targetAuthIndex) {
+                acc.status = "active";
+            } else if (acc.status === "active") {
+                acc.status = "ready";
+            }
+        }
+        this.syncState("running");
+
         const entry = this.contexts.get(targetAuthIndex);
         if (!entry || !entry.page || (typeof entry.page.isClosed === "function" && entry.page.isClosed())) {
             this.warn(`Page for auth #${targetAuthIndex} is closed or invalid.`);
@@ -218,6 +277,11 @@ class CloudShellManager {
                         try {
                             await entry.controller.sendHeartbeat();
                             await entry.controller.bypassModalsOnce();
+                            const accMeta = this.accountMetadata.get(authIndex);
+                            if (accMeta) {
+                                accMeta.lastHeartbeatAt = new Date().toISOString();
+                            }
+                            this.syncState("running");
                         } catch (err) {
                             this.warn(`Heartbeat/modal bypass error on Account #${authIndex}: ${err.message}`);
                         }
@@ -245,6 +309,7 @@ class CloudShellManager {
 
     async stop() {
         this._running = false;
+        this.syncState("stopped");
         for (const [, entry] of this.contexts) {
             try {
                 if (entry.controller) {

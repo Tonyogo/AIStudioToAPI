@@ -110,4 +110,24 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
         expect(stopKeepAlive).toHaveBeenCalledTimes(2);
         expect(manager.contexts.size).toBe(0);
     });
+
+    test("synchronizes state on account ready and context switch", async () => {
+        const mockStateTracker = {
+            clearState: jest.fn(),
+            saveState: jest.fn(),
+        };
+
+        const manager = new CloudShellManager(null, {
+            authIndices: [0],
+            stateTracker: mockStateTracker,
+        });
+
+        manager.syncState("running");
+        expect(mockStateTracker.saveState).toHaveBeenCalledWith(
+            expect.objectContaining({
+                currentAuthIndex: 0,
+                status: "running",
+            })
+        );
+    });
 });

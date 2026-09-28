@@ -25,3 +25,4 @@ ui/dist/
 
 # Logs
 *.log
+logs/
