@@ -66,10 +66,13 @@ describe("CloudShell StateTracker", () => {
     test("clearState removes state file safely", () => {
         const tracker = new StateTracker(testStateFile);
         tracker.saveState({ pid: 1234 });
+        tracker.setPaused(true);
         expect(fs.existsSync(testStateFile)).toBe(true);
+        expect(fs.existsSync(tracker.flagFilePath)).toBe(true);
 
         tracker.clearState();
         expect(fs.existsSync(testStateFile)).toBe(false);
+        expect(fs.existsSync(tracker.flagFilePath)).toBe(false);
 
         // Clearing again should not throw
         expect(() => tracker.clearState()).not.toThrow();
@@ -102,5 +105,34 @@ describe("CloudShell StateTracker", () => {
         expect(runningOutput).toContain("Running (PID: 9999)");
         expect(runningOutput).toContain("test@gmail.com");
         expect(runningOutput).toContain("Active");
+    });
+
+    test("sets and gets paused flag correctly", () => {
+        const tracker = new StateTracker(testStateFile);
+        expect(tracker.isPaused()).toBe(false);
+
+        tracker.setPaused(true);
+        expect(tracker.isPaused()).toBe(true);
+        expect(fs.existsSync(tracker.flagFilePath)).toBe(true);
+
+        tracker.setPaused(false);
+        expect(tracker.isPaused()).toBe(false);
+        expect(fs.existsSync(tracker.flagFilePath)).toBe(false);
+    });
+
+    test("formatStatusOutput displays Paused status when antiDetectionPaused is true", () => {
+        const tracker = new StateTracker(testStateFile);
+        const runningState = {
+            accounts: [{ accountName: "test@gmail.com", authIndex: 0, status: "active" }],
+            antiDetectionPaused: true,
+            currentAuthIndex: 0,
+            pid: 8888,
+            startedAt: new Date().toISOString(),
+            status: "running",
+            switchIntervalMinutes: 10,
+        };
+        const output = tracker.formatStatusOutput(runningState, true);
+        expect(output).toContain("Paused (Manual Mode)");
+        expect(output).toContain("Auto-Rotation:      ⏸️ Paused");
     });
 });

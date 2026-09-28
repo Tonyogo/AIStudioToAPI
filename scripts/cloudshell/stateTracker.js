@@ -21,6 +21,33 @@ const formatDuration = seconds => {
 class StateTracker {
     constructor(stateFilePath) {
         this.stateFilePath = stateFilePath || path.join(process.cwd(), "logs", "cloudshell", "state.json");
+        this.flagFilePath = path.join(path.dirname(this.stateFilePath), "paused.flag");
+    }
+
+    isPaused() {
+        try {
+            return fs.existsSync(this.flagFilePath);
+        } catch {
+            return false;
+        }
+    }
+
+    setPaused(paused) {
+        const isPaused = Boolean(paused);
+        this.saveState({ antiDetectionPaused: isPaused });
+
+        const dir = path.dirname(this.flagFilePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        if (isPaused) {
+            fs.writeFileSync(this.flagFilePath, new Date().toISOString(), "utf-8");
+        } else if (fs.existsSync(this.flagFilePath)) {
+            fs.unlinkSync(this.flagFilePath);
+        }
+
+        return isPaused;
     }
 
     loadState() {
@@ -63,6 +90,13 @@ class StateTracker {
         } catch {
             // Ignore removal errors
         }
+        try {
+            if (fs.existsSync(this.flagFilePath)) {
+                fs.unlinkSync(this.flagFilePath);
+            }
+        } catch {
+            // Ignore removal errors
+        }
     }
 
     formatStatusOutput(state, isAlive) {
@@ -81,9 +115,16 @@ class StateTracker {
             uptimeStr = formatDuration(diffSeconds);
         }
 
+        const isPaused = Boolean(state.antiDetectionPaused);
+        const autoRotationStr = isPaused
+            ? "⏸️ Paused"
+            : `▶️ Active (Every ${state.switchIntervalMinutes ? `${state.switchIntervalMinutes} min` : "N/A"})`;
+
         const lines = [
             "==================================================",
             `Cloud Shell Status: Running (PID: ${state.pid})`,
+            `Anti-Detection:     ${isPaused ? "⏸️ Paused (Manual Mode)" : "▶️ Active (Enabled)"}`,
+            `Auto-Rotation:      ${autoRotationStr}`,
             `Started At:         ${state.startedAt || "N/A"}`,
             `Uptime:             ${uptimeStr}`,
             `Switch Interval:    ${state.switchIntervalMinutes ? `${state.switchIntervalMinutes} min` : "N/A"}`,
