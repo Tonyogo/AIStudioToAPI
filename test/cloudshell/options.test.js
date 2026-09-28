@@ -4,22 +4,43 @@ const { parseCliArgs, printHelp } = require("../../scripts/cloudshell/options");
 describe("CloudShell CLI Options Parser", () => {
     test("returns default values when no args provided", () => {
         const opts = parseCliArgs([]);
-        expect(opts.authIndex).toBe(0);
-        expect(opts.cmd).toBeNull();
-        expect(opts.filePath).toBeNull();
-        expect(opts.keepAliveMinutes).toBe(0);
+        expect(opts.authIndices).toEqual([0]);
+        expect(opts.all).toBe(false);
+        expect(opts.switchIntervalMinutes).toBe(10);
+        expect(opts.keepAliveMinutes).toBe(-1);
         expect(opts.heartbeatIntervalSeconds).toBe(120);
         expect(opts.headless).toBe(true);
         expect(opts.debug).toBe(false);
         expect(opts.help).toBe(false);
+        expect(opts.proxy).toBeNull();
+    });
+
+    test("parses multi-auth indices and ranges correctly", () => {
+        expect(parseCliArgs(["--auth", "0,1,2"]).authIndices).toEqual([0, 1, 2]);
+        expect(parseCliArgs(["--auth", "0-3"]).authIndices).toEqual([0, 1, 2, 3]);
+        expect(parseCliArgs(["--auth=1,3"]).authIndices).toEqual([1, 3]);
+        expect(parseCliArgs(["--auth", "3,1,1,2"]).authIndices).toEqual([1, 2, 3]);
+        expect(parseCliArgs(["--all"]).all).toBe(true);
+    });
+
+    test("parses custom switch-interval", () => {
+        expect(parseCliArgs(["--switch-interval", "15"]).switchIntervalMinutes).toBe(15);
+        expect(parseCliArgs(["--switch-interval=5"]).switchIntervalMinutes).toBe(5);
+        expect(() => parseCliArgs(["--switch-interval", "-1"])).toThrow(/switch-interval/i);
+        expect(() => parseCliArgs(["--switch-interval", "0"])).toThrow(/switch-interval/i);
+    });
+
+    test("throws error when cmd or file is provided with helpful deprecation message", () => {
+        expect(() => parseCliArgs(["--cmd", "echo 1"])).toThrow(/--cmd is deprecated and no longer supported/i);
+        expect(() => parseCliArgs(["--cmd=echo 1"])).toThrow(/--cmd is deprecated and no longer supported/i);
+        expect(() => parseCliArgs(["--file", "script.sh"])).toThrow(/--file is deprecated and no longer supported/i);
+        expect(() => parseCliArgs(["--file=script.sh"])).toThrow(/--file is deprecated and no longer supported/i);
     });
 
     test("parses custom options correctly", () => {
         const args = [
             "--auth",
             "2",
-            "--cmd",
-            "echo test",
             "--keep-alive",
             "30",
             "--heartbeat-interval",
@@ -30,21 +51,12 @@ describe("CloudShell CLI Options Parser", () => {
             "--debug",
         ];
         const opts = parseCliArgs(args);
-        expect(opts.authIndex).toBe(2);
-        expect(opts.cmd).toBe("echo test");
+        expect(opts.authIndices).toEqual([2]);
         expect(opts.keepAliveMinutes).toBe(30);
         expect(opts.heartbeatIntervalSeconds).toBe(60);
         expect(opts.headless).toBe(false);
         expect(opts.proxy).toBe("http://127.0.0.1:7890");
         expect(opts.debug).toBe(true);
-    });
-
-    test("parses equals syntax like --auth=3", () => {
-        const args = ["--auth=3", "--cmd=ls -la", "--keep-alive=-1"];
-        const opts = parseCliArgs(args);
-        expect(opts.authIndex).toBe(3);
-        expect(opts.cmd).toBe("ls -la");
-        expect(opts.keepAliveMinutes).toBe(-1);
     });
 
     test("parses explicit --headless arguments", () => {
@@ -58,8 +70,9 @@ describe("CloudShell CLI Options Parser", () => {
         expect(parseCliArgs(["--headed"]).headless).toBe(false);
     });
 
-    test("throws error when auth index is negative", () => {
+    test("throws error when auth index is invalid or negative", () => {
         expect(() => parseCliArgs(["--auth", "-1"])).toThrow(/auth index/i);
+        expect(() => parseCliArgs(["--auth", "abc"])).toThrow(/auth index/i);
     });
 
     test("printHelp does not throw", () => {
@@ -68,3 +81,4 @@ describe("CloudShell CLI Options Parser", () => {
         spy.mockRestore();
     });
 });
+
