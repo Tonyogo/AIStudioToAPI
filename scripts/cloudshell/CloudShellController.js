@@ -169,6 +169,57 @@ class CloudShellController {
         return null;
     }
 
+    async simulateHumanMovement(targetX, targetY) {
+        if (!this.page || (typeof this.page.isClosed === "function" && this.page.isClosed())) return;
+        try {
+            const steps = 3;
+            for (let i = 1; i <= steps; i++) {
+                const intermediateX = targetX + (Math.random() - 0.5) * (100 / i);
+                const intermediateY = targetY + (Math.random() - 0.5) * (100 / i);
+
+                const destX = i === steps ? targetX : intermediateX;
+                const destY = i === steps ? targetY : intermediateY;
+
+                await this.page.mouse.move(destX, destY, {
+                    steps: 5 + Math.floor(Math.random() * 5),
+                });
+            }
+        } catch {
+            // Ignore movement errors if page is closed or closing
+        }
+    }
+
+    async performActiveMicroActions(tickCount = 0) {
+        if (!this.page || (typeof this.page.isClosed === "function" && this.page.isClosed())) return;
+
+        // 1. Keep-Alive: Random micro-actions (30% chance)
+        if (Math.random() < 0.3) {
+            try {
+                const vp = (typeof this.page.viewportSize === "function" && this.page.viewportSize()) || {
+                    height: 1080,
+                    width: 1920,
+                };
+                if (typeof this.page.evaluate === "function") {
+                    await this.page.evaluate(() => window.scrollBy(0, (Math.random() - 0.5) * 20));
+                }
+                const x = Math.floor(Math.random() * (vp.width * 0.8));
+                const y = Math.floor(Math.random() * (vp.height * 0.8));
+                await this.simulateHumanMovement(x, y);
+            } catch {
+                // ignore
+            }
+        }
+
+        // 2. Anti-Timeout: Move to top-left corner (1, 1) every ~1 minute (15 ticks)
+        if (tickCount > 0 && tickCount % 15 === 0) {
+            try {
+                await this.simulateHumanMovement(1, 1);
+            } catch {
+                // ignore
+            }
+        }
+    }
+
     async waitForTerminalReady(timeoutMs = 180000) {
         this.log(`⏳ Waiting for Cloud Shell machine provisioning & terminal ready (max ${timeoutMs / 1000}s)...`);
         const startTime = Date.now();
@@ -176,6 +227,20 @@ class CloudShellController {
         while (Date.now() - startTime < timeoutMs) {
             await this.checkPageStatus();
             await this.bypassModalsOnce();
+
+            if (Math.random() < 0.3) {
+                try {
+                    const vp = (typeof this.page.viewportSize === "function" && this.page.viewportSize()) || {
+                        height: 1080,
+                        width: 1920,
+                    };
+                    const x = Math.floor(Math.random() * (vp.width * 0.5));
+                    const y = Math.floor(Math.random() * (vp.height * 0.5));
+                    await this.simulateHumanMovement(x, y);
+                } catch {
+                    // ignore
+                }
+            }
 
             const target = await this.findTerminalTarget();
             if (target) {
@@ -205,34 +270,6 @@ class CloudShellController {
             return true;
         } catch {
             return false;
-        }
-    }
-
-    async executeCommand(command) {
-        if (!command || typeof command !== "string") return;
-        this.log(`⌨️ Executing command: "${command}"`);
-
-        await this.focusTerminal();
-        await new Promise(r => setTimeout(r, 100));
-
-        await this.page.keyboard.type(command, { delay: 15 });
-        await new Promise(r => setTimeout(r, 200));
-        await this.page.keyboard.press("Enter");
-        this.log(`✅ Command dispatched: "${command}"`);
-    }
-
-    async executeCommands(commands = []) {
-        const flattened = [];
-        for (const item of commands) {
-            if (typeof item === "string") {
-                flattened.push(...item.split(/\r?\n/));
-            }
-        }
-        for (const cmd of flattened) {
-            const trimmed = (cmd || "").trim();
-            if (!trimmed || trimmed.startsWith("#")) continue;
-            await this.executeCommand(trimmed);
-            await new Promise(r => setTimeout(r, 1000));
         }
     }
 
