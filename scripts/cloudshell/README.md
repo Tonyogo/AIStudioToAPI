@@ -8,7 +8,12 @@
 
 - [功能特性](#功能特性)
 - [前置准备](#前置准备)
-- [快速开始](#快速开始)
+- [快速开始与管理子命令](#快速开始与管理子命令)
+  - [1. 启动守护进程 (start)](#1-启动守护进程-start)
+  - [2. 查询运行状态 (status)](#2-查询运行状态-status)
+  - [3. 查看实时日志 (logs)](#3-查看实时日志-logs)
+  - [4. 停止运行 (stop)](#4-停止运行-stop)
+  - [5. 重启服务 (restart)](#5-重启服务-restart)
 - [命令行参数详解](#命令行参数详解)
 - [常见使用场景](#常见使用场景)
   - [1. 单账号长驻保活](#1-单账号长驻保活)
@@ -24,15 +29,17 @@
 ## 功能特性
 
 1. **零交互认证注入**：直接加载 `configs/auth/auth-N.json` 中的 Playwright `storageState`（Cookie & LocalStorage），无需手动登录 Google 账号。
-2. **反指纹与隐身伪装**：自动注入防指纹脚本，屏蔽 `navigator.webdriver` 并伪装 WebGL 与插件信息，防止自动化风控拦截。
-3. **拟人化鼠标移动防检测**：复刻 3 段带随机抖动的平滑步进拟人化鼠标移动算法，打破机械化自动化特征。
-4. **双层防休眠长驻守护**：
+2. **后台守护进程（Daemon）脱离运行**：`start` 默认派生独立后台进程，关闭终端或断开 SSH 会话不影响 Cloud Shell 长驻运行，PID 写入 `logs/cloudshell/daemon.pid`。
+3. **运行时状态持久化与可视化查询**：通过 `status` 命令查看守护进程 PID、运行时间（Uptime）、活跃账号与各账号最后心跳时间。
+4. **反指纹与隐身伪装**：自动注入防指纹脚本，屏蔽 `navigator.webdriver` 并伪装 WebGL 与插件信息，防止自动化风控拦截。
+5. **拟人化鼠标移动防检测**：复刻 3 段带随机抖动的平滑步进拟人化鼠标移动算法，打破机械化自动化特征。
+6. **双层防休眠长驻守护**：
    - **活跃上下文 (Active Context)**：每 4 秒运行一次微操作轮询，30% 概率触发视口微滚动与随机坐标拟人移动，每 15 个 tick 平滑回归左上角 `(1, 1)` 重置倒计时；
    - **全量上下文 (All Contexts)**：按 `--heartbeat-interval` 周期性向终端下发无害键位（`Space` + `Backspace`），并扫描穿透阻断弹窗。
-5. **多账号并发与自动轮换**：单例浏览器下支持多 `BrowserContext` 并发管理，支持 `--auth 0,1,2`、`--auth 0-3` 与 `--all` 自动扫描，按 `--switch-interval` 自动轮流切换活跃上下文并调用 `bringToFront()` 唤醒。
-6. **弹窗智能自动旁路**：自动侦测并点击 Cloud Shell 常见的置备弹窗、`Authorize`（授权凭据调用）、`Reconnect`（会话恢复）、服务条款等阻断弹窗。
-7. **多层 Iframe 穿透定位**：自动递归穿透嵌套的 Webview/Frame 容器，精准定位 `xterm.js` 辅助输入框与终端渲染画布。
-8. **完整的诊断支持**：支持 `--debug` 参数，在发生超时或关键节点自动将整页截图和 DOM 树保存至 `logs/cloudshell/`。
+7. **多账号并发与自动轮换**：单例浏览器下支持多 `BrowserContext` 并发管理，支持 `--auth 0,1,2`、`--auth 0-3` 与 `--all` 自动扫描，按 `--switch-interval` 自动轮流切换活跃上下文并调用 `bringToFront()` 唤醒。
+8. **弹窗智能自动旁路**：自动侦测并点击 Cloud Shell 常见的置备弹窗、`Authorize`（授权凭据调用）、`Reconnect`（会话恢复）、服务条款等阻断弹窗。
+9. **多层 Iframe 穿透定位**：自动递归穿透嵌套的 Webview/Frame 容器，精准定位 `xterm.js` 辅助输入框与终端渲染画布。
+10. **完整的诊断支持**：支持 `--debug` 参数，在发生超时或关键节点自动将整页截图和 DOM 树保存至 `logs/cloudshell/`。
 
 ---
 
@@ -50,25 +57,88 @@
 
 ---
 
-## 快速开始
+## 快速开始与管理子命令
 
-可以通过 npm script 快捷调用：
+可以通过 npm script 快捷调用完整的管理命令：`start`、`status`、`stop`、`restart`、`logs`。若未传子命令，默认执行 `status` 并打印帮助。
+
+### 1. 启动守护进程 (start)
+
+`start` 默认以守护进程（Daemon）在后台运行，输出重定向至 `logs/cloudshell/daemon.log`：
 
 ```bash
-# 查看完整帮助说明
-npm run cloudshell -- --help
+# 启动 0 号账号后台长驻
+npm run cloudshell -- start --auth 0
 
-# 启动 0 号账号长驻保活（默认无限长驻，按 Ctrl+C 退出）
-npm run cloudshell -- --auth 0
+# 启动 0, 1, 2 三个账号后台并发轮换
+npm run cloudshell -- start --auth 0-2 --switch-interval 15
 
-# 同时启动 0, 1, 2 三个账号并发保活，每 10 分钟自动轮转活跃上下文
-npm run cloudshell -- --auth 0-2
+# 全量账号后台启动
+npm run cloudshell -- start --all
 
-# 自动发现 configs/auth/ 下所有账号并启动轮询长驻
-npm run cloudshell -- --all
+# 前台阻塞运行（通过 --foreground 或 -f）
+npm run cloudshell -- start --auth 0 --foreground
+
+# 有头可视化窗口调试（自动在前台阻塞运行）
+npm run cloudshell -- start --auth 0 --headed
 ```
 
-> **提示**：通过 `npm run cloudshell -- [选项]` 传参时，`--` 是必需的，用于将后续参数原样转发给底层的 node 脚本。
+### 2. 查询运行状态 (status)
+
+查看当前后台守护进程状态、运行时长、当前活跃账号及各账号心跳：
+
+```bash
+npm run cloudshell -- status
+# 或直接不带参数（默认执行 status）
+npm run cloudshell
+```
+
+输出示例：
+
+```text
+==================================================
+Cloud Shell Status: Running (PID: 12345)
+Started At:         2026-09-28T06:00:00.000Z
+Uptime:             2h 15m 30s
+Switch Interval:    10 min
+Current Active:     Auth 0
+--------------------------------------------------
+Accounts:
+* [Auth 0] user1@gmail.com | Status: Active (Heartbeat: 2026-09-28T08:15:20.000Z)
+  [Auth 1] user2@gmail.com | Status: Ready (Heartbeat: 2026-09-28T08:14:50.000Z)
+==================================================
+```
+
+### 3. 查看实时日志 (logs)
+
+查看或持续追踪后台守护进程的输出日志：
+
+```bash
+# 查看末尾日志
+npm run cloudshell -- logs
+
+# 实时流式追踪日志（类似 tail -f）
+npm run cloudshell -- logs -f
+```
+
+### 4. 停止运行 (stop)
+
+向后台守护进程发送 `SIGTERM` 优雅关闭信号，清理资源后退出：
+
+```bash
+# 优雅停止（等待资源释放）
+npm run cloudshell -- stop
+
+# 强制立即停止（SIGKILL）
+npm run cloudshell -- stop --force
+```
+
+### 5. 重启服务 (restart)
+
+停止当前运行中的后台进程，并使用新参数重新启动守护进程：
+
+```bash
+npm run cloudshell -- restart --all
+```
 
 ---
 
@@ -77,13 +147,16 @@ npm run cloudshell -- --all
 | 参数项                     | 默认值      | 类型        | 说明                                                                                                                                                                   |
 | :------------------------- | :---------- | :---------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-h`, `--help`             | -           | Flag        | 显示帮助信息并退出                                                                                                                                                     |
+| `-f`, `--foreground`       | `false`     | Flag        | 在前台阻塞运行（仅用于 `start` 子命令）                                                                                                                                |
+| `-f`, `--follow`           | `false`     | Flag        | 实时追踪日志输出（仅用于 `logs` 子命令）                                                                                                                               |
+| `--force`                  | `false`     | Flag        | 强制立即终止进程（仅用于 `stop` 子命令）                                                                                                                               |
 | `--auth <indices>`         | `0`         | 字符串/范围 | 认证序号或范围（支持单数字 `0`、逗号分隔 `0,1,2`、短横线范围 `0-3`）                                                                                                   |
 | `--all`                    | `false`     | Flag        | 自动扫描并加载 `configs/auth/auth-N.json` 中的所有账号凭据                                                                                                             |
 | `--switch-interval <min>`  | `10`        | 整数        | 多账号轮换活跃上下文的间隔（分钟）                                                                                                                                     |
-| `--keep-alive <min>`       | `-1`        | 整数        | 终端保活时长（分钟）。<br>• `-1`：无限期长驻保活（默认），直至手动按 `Ctrl+C` 终止；<br>• `>0`：例如 `60`，保活 60 分钟后自动退出；<br>• `0`：初始化完成并就绪后退出   |
+| `--keep-alive <min>`       | `-1`        | 整数        | 终端保活时长（分钟）。<br>• `-1`：无限期长驻保活（默认），直至手动终止；<br>• `>0`：例如 `60`，保活 60 分钟后自动退出；<br>• `0`：初始化完成并就绪后退出               |
 | `--heartbeat-interval <s>` | `120`       | 整数        | 所有上下文发送防休眠心跳按键与旁路弹窗的周期（秒）                                                                                                                     |
 | `--headless [true\|false]` | `true`      | 布尔/Flag   | 是否以无头模式运行。<br>• 默认 `true`（静默后台运行）；<br>• 支持显式传参 `--headless false` 或 `--headless=false` 本地弹出窗口调试；<br>• 也可直接使用简写 `--headed` |
-| `--headed`                 | -           | Flag        | 有头模式运行（快捷方式，等价于 `--headless false`）                                                                                                                    |
+| `--headed`                 | -           | Flag        | 有头模式运行（快捷方式，等价于 `--headless false`，自动在前台运行）                                                                                                    |
 | `--proxy <url>`            | 读取 `.env` | 字符串      | 显式指定代理地址，例如 `http://127.0.0.1:7890`（若不指定则自动读取 `.env` 中的 `HTTPS_PROXY`）                                                                         |
 | `--debug`                  | `false`     | Flag        | 启用诊断导出：在完成或异常时导出截图与 HTML 到 `logs/cloudshell/`                                                                                                      |
 
@@ -93,42 +166,42 @@ npm run cloudshell -- --all
 
 ### 1. 单账号长驻保活
 
-启动单个指定账号并持续保活（默认无限期长驻，随时可按 Ctrl+C 退出）：
+启动单个指定账号后台守护保活（默认无限期长驻）：
 
 ```bash
-npm run cloudshell -- --auth 0
+npm run cloudshell -- start --auth 0
 ```
 
 ### 2. 多账号并发与定时自动轮换
 
-启动多个账号，后台独立运行各自会话，并在前台按 `--switch-interval` 自动轮转活跃页面：
+启动多个账号，后台独立运行各自会话，并在后台按 `--switch-interval` 自动轮转活跃页面：
 
 ```bash
 # 逗号分隔
-npm run cloudshell -- --auth 0,2,3
+npm run cloudshell -- start --auth 0,2,3
 
 # 范围语法（启动 0, 1, 2, 3 号账号，每 15 分钟轮换一次）
-npm run cloudshell -- --auth 0-3 --switch-interval 15
+npm run cloudshell -- start --auth 0-3 --switch-interval 15
 ```
 
 ### 3. 全量账号自动发现长驻 (--all)
 
-自动扫描 `configs/auth/` 目录下的所有 `auth-N.json` 文件并全部拉起并发保活：
+自动扫描 `configs/auth/` 目录下的所有 `auth-N.json` 文件并全部拉起后台并发保活：
 
 ```bash
-npm run cloudshell -- --all
+npm run cloudshell -- start --all
 ```
 
 ### 4. 可视化界面排查调试 (Headed 模式)
 
-在初次使用或排查页面状态时，建议开启有头模式观察页面实际渲染与拟人移动：
+在初次使用或排查页面状态时，建议开启有头模式观察页面实际渲染与拟人移动（在前台阻塞运行，按 Ctrl+C 退出）：
 
 ```bash
 # 方式 A：使用快捷参数 --headed
-npm run cloudshell -- --auth 0 --headed
+npm run cloudshell -- start --auth 0 --headed
 
 # 方式 B：使用显式传参 --headless false
-npm run cloudshell -- --all --headless false
+npm run cloudshell -- start --all --headless false
 ```
 
 ### 5. 自定义心跳与轮换间隔
@@ -136,7 +209,7 @@ npm run cloudshell -- --all --headless false
 自定义每 60 秒发送一次心跳按键，每 5 分钟轮换一次活跃账号，保活 120 分钟后自动退出：
 
 ```bash
-npm run cloudshell -- --auth 0-2 --heartbeat-interval 60 --switch-interval 5 --keep-alive 120
+npm run cloudshell -- start --auth 0-2 --heartbeat-interval 60 --switch-interval 5 --keep-alive 120
 ```
 
 ---
