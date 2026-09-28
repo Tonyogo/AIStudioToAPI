@@ -27,10 +27,29 @@ describe("CloudShell CLI Entrypoint Smoke Test", () => {
     });
 
     test("missing auth file exits with error code 1 and helpful message", () => {
-        const res = spawnSync("node", [scriptPath, "--auth", "987654"], {
+        const res = spawnSync("node", [scriptPath, "start", "--auth", "987654"], {
             encoding: "utf-8",
         });
         expect(res.status).toBe(1);
         expect(res.stderr || res.stdout).toContain("auth-987654.json does not exist");
+    });
+
+    test("cloudshell status outputs stopped when no daemon is running", () => {
+        const res = spawnSync("node", [scriptPath, "status"], { encoding: "utf-8" });
+        expect(res.status).toBe(0);
+        expect(res.stdout).toContain("Stopped");
+    });
+
+    test("cloudshell stop outputs message when not running", () => {
+        const res = spawnSync("node", [scriptPath, "stop"], { encoding: "utf-8" });
+        expect(res.status).toBe(0);
+        expect(res.stdout).toContain("not running");
+    });
+
+    test("default without subcommand outputs status and usage", () => {
+        const res = spawnSync("node", [scriptPath], { encoding: "utf-8" });
+        expect(res.status).toBe(0);
+        expect(res.stdout).toContain("Stopped");
+        expect(res.stdout).toContain("Usage:");
     });
 });
