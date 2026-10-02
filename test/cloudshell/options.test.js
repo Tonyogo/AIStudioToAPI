@@ -101,10 +101,15 @@ describe("CloudShell CLI Options Parser", () => {
         expect(parseCliArgs(["logs", "-f"]).follow).toBe(true);
     });
 
-    test("enables foreground automatically when --headed is passed to start", () => {
+    test("sets headless to false without forcing foreground when --headed is passed", () => {
         const opts = parseCliArgs(["start", "--headed"]);
         expect(opts.headless).toBe(false);
-        expect(opts.foreground).toBe(true);
+        expect(opts.foreground).toBe(false);
+    });
+
+    test("sets foreground to true when -f or --foreground is combined with --headed", () => {
+        expect(parseCliArgs(["start", "--headed", "-f"]).foreground).toBe(true);
+        expect(parseCliArgs(["start", "--headed", "--foreground"]).foreground).toBe(true);
     });
 
     test("throws error when unknown subcommand provided", () => {

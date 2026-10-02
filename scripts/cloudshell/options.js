@@ -157,7 +157,6 @@ const parseCliArgs = (args = []) => {
 
         if (arg === "--headed") {
             options.headless = false;
-            options.foreground = true;
             continue;
         }
 
