@@ -190,7 +190,7 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
         expect(sleepCalls.length).toBe(0);
     });
 
-    test("skips micro-actions and rotation when paused, but continues heartbeats", async () => {
+    test("freezes all interactions (micro-actions, rotation, heartbeat, modal bypass) when paused, and resumes on unpause", async () => {
         let paused = true;
         const mockStateTracker = {
             clearState: jest.fn(),
@@ -207,7 +207,7 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
         const manager = new CloudShellManager(null, {
             authIndices: [0, 1],
             heartbeatIntervalSeconds: 4, // 1 tick
-            keepAliveMinutes: 0.001, // short loop
+            keepAliveMinutes: 0.001,
             stateTracker: mockStateTracker,
             switchIntervalMinutes: 0.05,
         });
@@ -216,25 +216,24 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
             controller: mockController,
             page: { isClosed: () => false },
         });
-        manager.contexts.set(1, {
-            controller: mockController,
-            page: { isClosed: () => false },
-        });
 
         const rotateSpy = jest.spyOn(manager, "rotateActiveContext").mockResolvedValue();
 
-        // Run one iteration or loop
+        // 1. In paused mode (tick 1 matches heartbeat and switch ticks):
         await manager.executeTick(1, 1, 1);
 
-        // In paused mode:
         expect(mockController.performActiveMicroActions).not.toHaveBeenCalled();
+        expect(mockController.sendHeartbeat).not.toHaveBeenCalled();
+        expect(mockController.bypassModalsOnce).not.toHaveBeenCalled();
         expect(rotateSpy).not.toHaveBeenCalled();
-        expect(mockController.sendHeartbeat).toHaveBeenCalled();
 
-        // Now resume
+        // 2. Unpause and execute tick 2:
         paused = false;
         await manager.executeTick(2, 1, 1);
+
         expect(mockController.performActiveMicroActions).toHaveBeenCalled();
+        expect(mockController.sendHeartbeat).toHaveBeenCalled();
+        expect(mockController.bypassModalsOnce).toHaveBeenCalled();
         expect(rotateSpy).toHaveBeenCalled();
     });
 });

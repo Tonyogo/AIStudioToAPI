@@ -133,6 +133,7 @@ describe("CloudShell StateTracker", () => {
         };
         const output = tracker.formatStatusOutput(runningState, true);
         expect(output).toContain("Paused (Manual Mode)");
+        expect(output).toContain("Heartbeat:          ⏸️ Paused (Manual Mode)");
         expect(output).toContain("Auto-Rotation:      ⏸️ Paused");
     });
 });

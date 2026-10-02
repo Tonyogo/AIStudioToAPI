@@ -255,11 +255,15 @@ class CloudShellManager {
         const isPaused = this.isAntiDetectionPaused();
         if (isPaused) {
             if (!this._wasPaused) {
-                this.log("⏸️ Anti-detection micro-actions and auto-rotation are paused (manual mode active).");
+                this.log(
+                    "⏸️ Anti-detection micro-actions, auto-rotation, heartbeats and modal clicking are PAUSED (manual mode active)."
+                );
                 this._wasPaused = true;
             }
         } else if (this._wasPaused) {
-            this.log("▶️ Anti-detection micro-actions and auto-rotation have resumed.");
+            this.log(
+                "▶️ Anti-detection micro-actions, auto-rotation, heartbeats and modal clicking have RESUMED."
+            );
             this._wasPaused = false;
         }
 
@@ -275,8 +279,8 @@ class CloudShellManager {
             }
         }
 
-        // 2. Periodic anti-idle heartbeat and modal bypass on all contexts (always performed)
-        if (tickCount % heartbeatTicks === 0) {
+        // 2. Periodic anti-idle heartbeat and modal bypass on all contexts (skipped if paused)
+        if (!isPaused && tickCount % heartbeatTicks === 0) {
             for (const [authIndex, entry] of this.contexts) {
                 if (entry.page && !entry.page.isClosed() && entry.controller) {
                     try {

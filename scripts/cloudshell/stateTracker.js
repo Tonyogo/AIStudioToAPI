@@ -119,11 +119,13 @@ class StateTracker {
         const autoRotationStr = isPaused
             ? "⏸️ Paused"
             : `▶️ Active (Every ${state.switchIntervalMinutes ? `${state.switchIntervalMinutes} min` : "N/A"})`;
+        const heartbeatStr = isPaused ? "⏸️ Paused (Manual Mode)" : "▶️ Active (Enabled)";
 
         const lines = [
             "==================================================",
             `Cloud Shell Status: Running (PID: ${state.pid})`,
             `Anti-Detection:     ${isPaused ? "⏸️ Paused (Manual Mode)" : "▶️ Active (Enabled)"}`,
+            `Heartbeat:          ${heartbeatStr}`,
             `Auto-Rotation:      ${autoRotationStr}`,
             `Started At:         ${state.startedAt || "N/A"}`,
             `Uptime:             ${uptimeStr}`,
