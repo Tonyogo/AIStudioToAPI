@@ -71,6 +71,17 @@ describe("CloudShell DaemonManager", () => {
         );
     });
 
+    test("buildForwardArgs includes --headless false when options.headless is false", () => {
+        const dm = new DaemonManager({ logFile, pidFile });
+        const args = dm.buildForwardArgs({
+            authIndices: [0],
+            headless: false,
+        });
+        expect(args).toContain("--headless");
+        const idx = args.indexOf("--headless");
+        expect(args[idx + 1]).toBe("false");
+    });
+
     test("stopDaemon returns message when not running", async () => {
         const dm = new DaemonManager({ logFile, pidFile });
         const result = await dm.stopDaemon();

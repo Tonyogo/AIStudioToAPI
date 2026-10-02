@@ -78,6 +78,9 @@ class DaemonManager {
         if (options.proxy) {
             args.push("--proxy", options.proxy);
         }
+        if (options.headless === false) {
+            args.push("--headless", "false");
+        }
         if (options.debug) {
             args.push("--debug");
         }
