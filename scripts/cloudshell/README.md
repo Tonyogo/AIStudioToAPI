@@ -81,13 +81,16 @@ npm run cloudshell -- start --all
 # 前台阻塞运行（通过 --foreground 或 -f）
 npm run cloudshell -- start --auth 0 --foreground
 
-# 有头可视化窗口调试（自动在前台阻塞运行）
+# 有头可视化窗口调试（默认后台守护运行，并在桌面弹出窗口）
 npm run cloudshell -- start --auth 0 --headed
+
+# 有头前台阻塞运行（添加 -f / --foreground）
+npm run cloudshell -- start --auth 0 --headed -f
 ```
 
 ### 2. 查询运行状态 (status)
 
-查看当前后台守护进程状态、防检测模式、多账号自动切屏状态、运行时长、当前活跃账号及各账号心跳：
+查看当前后台守护进程状态、防检测模式、心跳、多账号自动切屏状态、运行时长、当前活跃账号及各账号心跳：
 
 ```bash
 npm run cloudshell -- status
@@ -101,6 +104,7 @@ npm run cloudshell
 ==================================================
 Cloud Shell Status: Running (PID: 12345)
 Anti-Detection:     ▶️ Active (Enabled)
+Heartbeat:          ▶️ Active (Enabled)
 Auto-Rotation:      ▶️ Active (Every 10 min)
 Started At:         2026-09-28T06:00:00.000Z
 Uptime:             2h 15m 30s
@@ -119,6 +123,7 @@ Accounts:
 ==================================================
 Cloud Shell Status: Running (PID: 12345)
 Anti-Detection:     ⏸️ Paused (Manual Mode)
+Heartbeat:          ⏸️ Paused (Manual Mode)
 Auto-Rotation:      ⏸️ Paused
 Started At:         2026-09-28T06:00:00.000Z
 Uptime:             2h 15m 30s
@@ -209,7 +214,7 @@ npm run cloudshell -- restart --all
 | `--keep-alive <min>`       | `-1`        | 整数        | 终端保活时长（分钟）。<br>• `-1`：无限期长驻保活（默认），直至手动终止；<br>• `>0`：例如 `60`，保活 60 分钟后自动退出；<br>• `0`：初始化完成并就绪后退出               |
 | `--heartbeat-interval <s>` | `120`       | 整数        | 所有上下文发送防休眠心跳按键与旁路弹窗的周期（秒）                                                                                                                     |
 | `--headless [true\|false]` | `true`      | 布尔/Flag   | 是否以无头模式运行。<br>• 默认 `true`（静默后台运行）；<br>• 支持显式传参 `--headless false` 或 `--headless=false` 本地弹出窗口调试；<br>• 也可直接使用简写 `--headed` |
-| `--headed`                 | -           | Flag        | 有头模式运行（快捷方式，等价于 `--headless false`，自动在前台运行）                                                                                                    |
+| `--headed`                 | -           | Flag        | 在桌面环境中弹出可视化浏览器窗口（快捷方式，等价于 `--headless false`；默认后台守护运行，添加 `-f` 可在前台阻塞运行）                                                  |
 | `--proxy <url>`            | 读取 `.env` | 字符串      | 显式指定代理地址，例如 `http://127.0.0.1:7890`（若不指定则自动读取 `.env` 中的 `HTTPS_PROXY`）                                                                         |
 | `--debug`                  | `false`     | Flag        | 启用诊断导出：在完成或异常时导出截图与 HTML 到 `logs/cloudshell/`                                                                                                      |
 
@@ -247,13 +252,16 @@ npm run cloudshell -- start --all
 
 ### 4. 可视化界面排查调试 (Headed 模式)
 
-在初次使用或排查页面状态时，建议开启有头模式观察页面实际渲染与拟人移动（在前台阻塞运行，按 Ctrl+C 退出）：
+在初次使用或排查页面状态时，建议开启有头模式观察页面实际渲染与拟人移动。执行 `start --headed` 默认将在后台守护运行并打开桌面浏览器窗口；若需要前台阻塞运行观察终端实时日志输出，可添加 `-f` / `--foreground`：
 
 ```bash
-# 方式 A：使用快捷参数 --headed
+# 后台守护运行并弹出桌面浏览器窗口（推荐）
 npm run cloudshell -- start --auth 0 --headed
 
-# 方式 B：使用显式传参 --headless false
+# 前台阻塞运行（观察实时输出，按 Ctrl+C 退出）
+npm run cloudshell -- start --auth 0 --headed -f
+
+# 也可以使用显式传参 --headless false
 npm run cloudshell -- start --all --headless false
 ```
 
@@ -269,17 +277,17 @@ npm run cloudshell -- start --auth 0-2 --heartbeat-interval 60 --switch-interval
 
 在多账号后台保活或前台调试期间，若需要手动在 Cloud Shell 终端键入长命令、排查报错或查看环境状态：
 
-1. **暂停自动微操作**：
+1. **暂停自动微操作与心跳**：
    ```bash
    npm run cloudshell -- pause
    ```
-   此时页面自动切屏与鼠标晃动将立即静止，后台基础键盘心跳与弹窗旁路继续保留。
-2. **执行手动排查**：在终端窗口中安心执行手动输入与调试，无鼠标夺取或窗口跳出干扰。
+   此时页面自动切屏、拟人鼠标移动、键盘防休眠心跳（Space/Backspace）与弹窗模拟点击将**彻底静默与冻结**，完全让出输入焦点，杜绝抢焦与按键污染。
+2. **执行纯净手动排查**：在终端窗口中安心执行手动输入与调试，无任何自动化动作干扰。
 3. **恢复自动化保活**：
    ```bash
    npm run cloudshell -- resume
    ```
-   微操作与定时切屏立即恢复调度。
+   微操作、心跳、弹窗旁路与定时切屏立即恢复调度。
 
 ---
 

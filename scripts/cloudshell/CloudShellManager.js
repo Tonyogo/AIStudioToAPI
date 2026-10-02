@@ -261,9 +261,7 @@ class CloudShellManager {
                 this._wasPaused = true;
             }
         } else if (this._wasPaused) {
-            this.log(
-                "▶️ Anti-detection micro-actions, auto-rotation, heartbeats and modal clicking have RESUMED."
-            );
+            this.log("▶️ Anti-detection micro-actions, auto-rotation, heartbeats and modal clicking have RESUMED.");
             this._wasPaused = false;
         }
 
