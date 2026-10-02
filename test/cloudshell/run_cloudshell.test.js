@@ -77,6 +77,30 @@ describe("CloudShell CLI Entrypoint Smoke Test", () => {
         spyLog.mockRestore();
     });
 
+    test("handleStart launches daemon when headless is false but foreground is false", async () => {
+        const { handleStart } = require("../../scripts/cloudshell/runCloudShell");
+        const { CloudShellManager } = require("../../scripts/cloudshell/CloudShellManager");
+        expect(typeof handleStart).toBe("function");
+
+        const mockValidate = jest.spyOn(CloudShellManager.prototype, "validateAuthFiles").mockImplementation(() => {});
+        const mockTracker = {};
+        const mockDaemon = {
+            logFile: "/dummy/path.log",
+            startDaemon: jest.fn().mockReturnValue({ pid: 5678 }),
+        };
+        const mockExit = jest.spyOn(process, "exit").mockImplementation(() => {});
+        const mockConsole = jest.spyOn(console, "log").mockImplementation(() => {});
+
+        await handleStart({ authIndices: [0], foreground: false, headless: false }, mockTracker, mockDaemon);
+
+        expect(mockDaemon.startDaemon).toHaveBeenCalled();
+        expect(mockExit).toHaveBeenCalledWith(0);
+
+        mockValidate.mockRestore();
+        mockExit.mockRestore();
+        mockConsole.mockRestore();
+    });
+
     test("default without subcommand outputs status and usage", () => {
         const res = spawnSync("node", [scriptPath], { encoding: "utf-8" });
         expect(res.status).toBe(0);

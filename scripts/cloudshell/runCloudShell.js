@@ -74,13 +74,14 @@ const handleStart = async (options, stateTracker, daemonManager) => {
     const manager = new CloudShellManager(null, { ...options, stateTracker });
     manager.validateAuthFiles();
 
-    if (!options.foreground && options.headless) {
+    if (!options.foreground) {
         const result = daemonManager.startDaemon(options);
         console.log(`🚀 [CloudShell] Daemon started in background (PID: ${result.pid}).`);
         console.log(`   Log file: ${daemonManager.logFile}`);
         console.log(`   Run 'npm run cloudshell -- status' to check status.`);
         console.log(`   Run 'npm run cloudshell -- logs -f' to view logs.`);
         process.exit(0);
+        return;
     }
 
     daemonManager.writePid(process.pid);
@@ -213,4 +214,4 @@ if (require.main === module) {
     main();
 }
 
-module.exports = { handlePause, handleResume, main };
+module.exports = { handlePause, handleResume, handleStart, main };
