@@ -19,6 +19,8 @@
         "setup-auth": "node scripts/auth/setupAuth.js",
         "setup-auth-batch": "node scripts/auth/setupAuthBatch.js",
         "cloudshell": "node scripts/cloudshell/runCloudShell.js",
+        "test": "jest",
+        "test:cloudshell": "jest test/cloudshell",
         "prepare": "husky install",
         "lint": "eslint . && stylelint \"ui/**/*.{css,less}\"",
         "lint:fix": "eslint . --fix && stylelint \"ui/**/*.{css,less}\" --fix",
@@ -46,6 +48,7 @@
         "@babel/core": "^7.28.5",
         "@babel/eslint-parser": "^7.28.5",
         "@vitejs/plugin-vue": "^5.1.0",
+        "@vue/shared": "^3.4.26",
         "concurrently": "^9.2.1",
         "cross-env": "^7.0.3",
         "element-plus": "^2.7.2",
@@ -56,6 +59,7 @@
         "eslint-plugin-sort-keys-fix": "^1.1.2",
         "eslint-plugin-vue": "^9.33.0",
         "husky": "^8.0.3",
+        "jest": "^30.5.2",
         "less": "^4.4.2",
         "less-plugin-clean-css": "^1.6.0",
         "lint-staged": "^14.0.0",
@@ -69,8 +73,7 @@
         "vite": "^5.4.8",
         "vue": "^3.4.26",
         "vue-eslint-parser": "^10.2.0",
-        "vue-router": "^4.3.2",
-        "@vue/shared": "^3.4.26"
+        "vue-router": "^4.3.2"
     },
     "lint-staged": {
         "*.{js,jsx,ts,tsx}": [

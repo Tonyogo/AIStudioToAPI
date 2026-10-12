@@ -6,7 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const { CloudShellController } = require("./CloudShellController");
-const { createBrowserContext, loadAuthStorageState } = require("./browserSetup");
+const browserSetup = require("./browserSetup");
 const { StateTracker } = require("./stateTracker");
 const { parseProxyFromEnv } = require("../../src/utils/ProxyUtils");
 
@@ -70,8 +70,19 @@ class CloudShellManager {
     }
 
     validateAuthFiles() {
+        let validCount = 0;
+        let lastError = null;
         for (const authIndex of this.authIndices) {
-            loadAuthStorageState(authIndex);
+            try {
+                browserSetup.loadAuthStorageState(authIndex);
+                validCount++;
+            } catch (err) {
+                this.warn(`Auth validation warning for account #${authIndex}: ${err.message}`);
+                lastError = err;
+            }
+        }
+        if (validCount === 0 && lastError) {
+            throw lastError;
         }
     }
 
@@ -128,7 +139,7 @@ class CloudShellManager {
         if (typeof this.options.createContextFn === "function") {
             return await this.options.createContextFn(this.browser, authIndex);
         }
-        return await createBrowserContext(this.browser, authIndex, this.proxyConfig);
+        return await browserSetup.createBrowserContext(this.browser, authIndex, this.proxyConfig);
     }
 
     async init() {
@@ -147,48 +158,98 @@ class CloudShellManager {
                 }
             }
             this.log(`Initializing account #${authIndex}...`);
-            const context = await this.createContextForAuth(authIndex);
-            const page = await context.newPage();
-            const controller =
-                typeof this.createControllerFn === "function"
-                    ? this.createControllerFn(page, {
-                          ...this.options,
-                          authIndex,
-                      })
-                    : new CloudShellController(page, {
-                          ...this.options,
-                          authIndex,
-                      });
+            let context = null;
+            let page = null;
+            let controller = null;
 
-            await controller.navigate();
-            await controller.waitForTerminalReady();
+            try {
+                context = await this.createContextForAuth(authIndex);
+                page = await context.newPage();
+                controller =
+                    typeof this.createControllerFn === "function"
+                        ? this.createControllerFn(page, {
+                              ...this.options,
+                              authIndex,
+                          })
+                        : new CloudShellController(page, {
+                              ...this.options,
+                              authIndex,
+                          });
 
-            this.contexts.set(authIndex, {
-                context,
-                controller,
-                page,
-            });
-            const accMeta = this.accountMetadata.get(authIndex);
-            if (accMeta) {
-                accMeta.status = "ready";
+                await controller.navigate();
+                await controller.waitForTerminalReady();
+
+                this.contexts.set(authIndex, {
+                    context,
+                    controller,
+                    page,
+                });
+                const accMeta = this.accountMetadata.get(authIndex);
+                if (accMeta) {
+                    accMeta.status = "ready";
+                }
+                this.syncState("running");
+                this.log(`✅ Account #${authIndex} initialized successfully.`);
+            } catch (err) {
+                this.error(`Failed to initialize account #${authIndex}: ${err.message}`);
+                const accMeta = this.accountMetadata.get(authIndex);
+                if (accMeta) {
+                    accMeta.error = err.message;
+                    accMeta.status = "error";
+                }
+                this.syncState("running");
+
+                if (controller && typeof controller.stopKeepAliveLoop === "function") {
+                    try {
+                        controller.stopKeepAliveLoop();
+                    } catch {
+                        // ignore
+                    }
+                }
+                if (page && typeof page.close === "function") {
+                    try {
+                        await page.close().catch(() => {});
+                    } catch {
+                        // ignore
+                    }
+                }
+                if (context && typeof context.close === "function") {
+                    try {
+                        await context.close().catch(() => {});
+                    } catch {
+                        // ignore
+                    }
+                }
             }
-            this.syncState("running");
-            this.log(`✅ Account #${authIndex} initialized successfully.`);
         }
 
-        if (this.authIndices.length > 0) {
-            await this.switchActiveContext(this.authIndices[0]);
+        if (this.contexts.size === 0) {
+            throw new Error(`Failed to initialize any Cloud Shell accounts out of [${this.authIndices.join(", ")}].`);
+        }
+
+        const readyIndices = this.authIndices.filter(idx => this.contexts.has(idx));
+        if (readyIndices.length > 0) {
+            await this.switchActiveContext(readyIndices[0]);
         }
     }
 
     getNextAuthIndex() {
-        if (!this.authIndices || this.authIndices.length === 0) return 0;
-        const currentIndex = this.authIndices.indexOf(this.currentAuthIndex);
+        const candidateIndices =
+            this.contexts.size > 0
+                ? this.authIndices.filter(idx => {
+                      const entry = this.contexts.get(idx);
+                      return (
+                          entry && entry.page && (typeof entry.page.isClosed !== "function" || !entry.page.isClosed())
+                      );
+                  })
+                : this.authIndices;
+        if (!candidateIndices || candidateIndices.length === 0) return 0;
+        const currentIndex = candidateIndices.indexOf(this.currentAuthIndex);
         if (currentIndex === -1) {
-            return this.authIndices[0];
+            return candidateIndices[0];
         }
-        const nextIndex = (currentIndex + 1) % this.authIndices.length;
-        return this.authIndices[nextIndex];
+        const nextIndex = (currentIndex + 1) % candidateIndices.length;
+        return candidateIndices[nextIndex];
     }
 
     async switchActiveContext(targetAuthIndex) {
@@ -238,7 +299,9 @@ class CloudShellManager {
 
     async rotateActiveContext() {
         const nextAuthIndex = this.getNextAuthIndex();
-        await this.switchActiveContext(nextAuthIndex);
+        if (nextAuthIndex !== this.currentAuthIndex) {
+            await this.switchActiveContext(nextAuthIndex);
+        }
     }
 
     isAntiDetectionPaused() {

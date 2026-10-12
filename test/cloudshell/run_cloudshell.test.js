@@ -107,4 +107,91 @@ describe("CloudShell CLI Entrypoint Smoke Test", () => {
         expect(res.stdout).toContain("Stopped");
         expect(res.stdout).toContain("Usage:");
     });
+
+    test("handleStart registers uncaughtException and unhandledRejection handlers that perform cleanup and remove PID", async () => {
+        const { handleStart } = require("../../scripts/cloudshell/runCloudShell");
+        const { CloudShellManager } = require("../../scripts/cloudshell/CloudShellManager");
+        const browserSetup = require("../../scripts/cloudshell/browserSetup");
+
+        const mockValidate = jest.spyOn(CloudShellManager.prototype, "validateAuthFiles").mockImplementation(() => {});
+        const mockTracker = {
+            clearState: jest.fn(),
+            saveState: jest.fn(),
+        };
+        const mockDaemon = {
+            removePid: jest.fn(),
+            writePid: jest.fn(),
+        };
+
+        const onListeners = {};
+        const mockProcessOn = jest.spyOn(process, "on").mockImplementation((event, handler) => {
+            onListeners[event] = handler;
+            return process;
+        });
+
+        const mockLaunch = jest.spyOn(browserSetup, "launchBrowser").mockImplementation(
+            () => new Promise(() => {}) // pend indefinitely
+        );
+
+        const mockExit = jest.spyOn(process, "exit").mockImplementation(() => {});
+        const mockError = jest.spyOn(console, "error").mockImplementation(() => {});
+
+        // Start in foreground
+        handleStart({ authIndices: [0], foreground: true }, mockTracker, mockDaemon);
+
+        expect(mockDaemon.writePid).toHaveBeenCalled();
+        expect(typeof onListeners["uncaughtException"]).toBe("function");
+        expect(typeof onListeners["unhandledRejection"]).toBe("function");
+
+        // Trigger uncaughtException
+        await onListeners["uncaughtException"](new Error("Simulated uncaught crash"));
+
+        expect(mockDaemon.removePid).toHaveBeenCalled();
+        expect(mockExit).toHaveBeenCalledWith(1);
+
+        // Reset and trigger unhandledRejection
+        mockDaemon.removePid.mockClear();
+        mockExit.mockClear();
+        await onListeners["unhandledRejection"](new Error("Simulated unhandled rejection"));
+        expect(mockExit).toHaveBeenCalledWith(1);
+
+        mockValidate.mockRestore();
+        mockProcessOn.mockRestore();
+        mockLaunch.mockRestore();
+        mockExit.mockRestore();
+        mockError.mockRestore();
+    });
+
+    test("cleanup removes PID even if manager.stop rejects", async () => {
+        const { handleStart } = require("../../scripts/cloudshell/runCloudShell");
+        const { CloudShellManager } = require("../../scripts/cloudshell/CloudShellManager");
+        const browserSetup = require("../../scripts/cloudshell/browserSetup");
+
+        const spyVal = jest.spyOn(CloudShellManager.prototype, "validateAuthFiles").mockImplementation(() => {});
+        const spyStop = jest.spyOn(CloudShellManager.prototype, "stop").mockRejectedValue(new Error("Stop exploded"));
+
+        const mockTracker = { clearState: jest.fn(), saveState: jest.fn() };
+        const mockDaemon = { removePid: jest.fn(), writePid: jest.fn() };
+        const onListeners = {};
+        const spyOn = jest.spyOn(process, "on").mockImplementation((event, handler) => {
+            onListeners[event] = handler;
+            return process;
+        });
+        const spyLaunch = jest.spyOn(browserSetup, "launchBrowser").mockImplementation(() => new Promise(() => {}));
+        const mockExit = jest.spyOn(process, "exit").mockImplementation(() => {});
+        const mockError = jest.spyOn(console, "error").mockImplementation(() => {});
+
+        handleStart({ authIndices: [0], foreground: true }, mockTracker, mockDaemon);
+        await onListeners["uncaughtException"](new Error("Simulated crash"));
+
+        expect(mockDaemon.removePid).toHaveBeenCalled();
+        expect(mockExit).toHaveBeenCalledWith(1);
+
+        spyVal.mockRestore();
+        spyStop.mockRestore();
+        spyOn.mockRestore();
+        spyLaunch.mockRestore();
+        mockExit.mockRestore();
+        mockError.mockRestore();
+    });
 });

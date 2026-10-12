@@ -129,4 +129,94 @@ describe("CloudShell DaemonManager", () => {
         dm.tailLogs(false, 2);
         expect(stdoutSpy).toHaveBeenCalledWith("line 2\nline 3\n");
     });
+
+    test("getProcessCommandLine returns command string for valid pid and null for non-existent", () => {
+        const dm = new DaemonManager({ logFile, pidFile });
+        const cmd = dm.getProcessCommandLine(process.pid);
+        expect(typeof cmd).toBe("string");
+        expect(cmd.length).toBeGreaterThan(0);
+
+        expect(dm.getProcessCommandLine(9999999)).toBeNull();
+        expect(dm.getProcessCommandLine(-1)).toBeNull();
+        expect(dm.getProcessCommandLine(null)).toBeNull();
+    });
+
+    test("isCloudShellProcess validates expected script in command line", () => {
+        const dm = new DaemonManager({ logFile, pidFile });
+
+        // Current process is recognized
+        expect(dm.isCloudShellProcess(process.pid)).toBe(true);
+
+        // Foreign PID running cloudshell
+        jest.spyOn(dm, "getProcessCommandLine").mockReturnValue("node /app/scripts/cloudshell/runCloudShell.js start");
+        expect(dm.isCloudShellProcess(55555)).toBe(true);
+
+        // Foreign PID running an unrelated process
+        dm.getProcessCommandLine.mockReturnValue("nginx: master process /usr/sbin/nginx");
+        expect(dm.isCloudShellProcess(55555)).toBe(false);
+    });
+
+    test("isProcessAlive validates process command line by default", () => {
+        const dm = new DaemonManager({ logFile, pidFile });
+        jest.spyOn(process, "kill").mockImplementation(() => true); // simulate process alive
+
+        // Command matches CloudShell
+        jest.spyOn(dm, "getProcessCommandLine").mockReturnValue("node scripts/cloudshell/runCloudShell.js start");
+        expect(dm.isProcessAlive(55555)).toBe(true);
+
+        // Command belongs to another process (PID reuse)
+        dm.getProcessCommandLine.mockReturnValue("/usr/bin/python3 -m http.server 8080");
+        expect(dm.isProcessAlive(55555)).toBe(false);
+        // But alive without command check
+        expect(dm.isProcessAlive(55555, false)).toBe(true);
+    });
+
+    test("stopDaemon protects against PID reuse and does not kill unrelated process", async () => {
+        const dm = new DaemonManager({ logFile, pidFile });
+        dm.writePid(44444);
+
+        const killSpy = jest.spyOn(process, "kill").mockImplementation((pid, sig) => {
+            if (sig === 0) return true; // process exists
+            return true;
+        });
+
+        // PID is running an unrelated system process
+        jest.spyOn(dm, "getProcessCommandLine").mockReturnValue("/usr/sbin/cron -f");
+
+        const result = await dm.stopDaemon();
+        expect(result.stopped).toBe(false);
+        expect(killSpy).not.toHaveBeenCalledWith(44444, "SIGTERM");
+        expect(killSpy).not.toHaveBeenCalledWith(44444, "SIGKILL");
+        expect(dm.getPid()).toBeNull();
+    });
+
+    test("isCloudShellProcess rejects commands from tools like git, grep, and cat even when referencing script file", () => {
+        const dm = new DaemonManager({ logFile, pidFile });
+        const spyCmd = jest.spyOn(dm, "getProcessCommandLine");
+
+        spyCmd.mockReturnValue("git diff scripts/cloudshell/runCloudShell.js");
+        expect(dm.isCloudShellProcess(55555)).toBe(false);
+
+        spyCmd.mockReturnValue("cat scripts/cloudshell/runCloudShell.js");
+        expect(dm.isCloudShellProcess(55555)).toBe(false);
+
+        spyCmd.mockReturnValue("grep -rn runCloudShell .");
+        expect(dm.isCloudShellProcess(55555)).toBe(false);
+
+        spyCmd.mockRestore();
+    });
+
+    test("stopDaemon accurately reports SIGKILL vs graceful termination", async () => {
+        const dm = new DaemonManager({ logFile, pidFile });
+        dm.writePid(33333);
+
+        jest.spyOn(dm, "isProcessAlive").mockReturnValue(true);
+        const killSpy = jest.spyOn(process, "kill").mockImplementation(() => true);
+
+        const result = await dm.stopDaemon(false, { pollIntervalMs: 5, timeoutMs: 20 });
+        expect(result.stopped).toBe(true);
+        expect(killSpy).toHaveBeenCalledWith(33333, "SIGTERM");
+        expect(killSpy).toHaveBeenCalledWith(33333, "SIGKILL");
+        expect(result.message).toContain("killed with SIGKILL");
+    });
 });

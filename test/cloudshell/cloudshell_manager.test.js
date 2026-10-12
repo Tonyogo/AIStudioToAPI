@@ -236,4 +236,89 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
         expect(mockController.bypassModalsOnce).toHaveBeenCalled();
         expect(rotateSpy).toHaveBeenCalled();
     });
+
+    test("init isolates single-account failure and continues initializing subsequent accounts", async () => {
+        const mockPage1 = {
+            bringToFront: jest.fn().mockResolvedValue(),
+            evaluate: jest.fn().mockResolvedValue(),
+            isClosed: () => false,
+            viewportSize: () => ({ height: 1080, width: 1920 }),
+        };
+        const mockContext1 = { newPage: jest.fn().mockResolvedValue(mockPage1) };
+
+        const mockController1 = {
+            navigate: jest.fn().mockResolvedValue(),
+            simulateHumanMovement: jest.fn().mockResolvedValue(),
+            waitForTerminalReady: jest.fn().mockResolvedValue(),
+        };
+
+        const manager = new CloudShellManager(null, {
+            authIndices: [0, 1],
+            createContextFn: jest.fn().mockImplementation((browser, authIndex) => {
+                if (authIndex === 0) {
+                    throw new Error("Account 0 cookie expired");
+                }
+                return Promise.resolve(mockContext1);
+            }),
+            sleepFn: () => Promise.resolve(),
+        });
+        manager.createControllerFn = (page, opts) => {
+            if (opts.authIndex === 1) return mockController1;
+            return null;
+        };
+
+        await manager.init();
+
+        // Account 0 failed
+        expect(manager.contexts.has(0)).toBe(false);
+        const meta0 = manager.accountMetadata.get(0);
+        expect(meta0.status).toBe("error");
+        expect(meta0.error).toContain("Account 0 cookie expired");
+
+        // Account 1 succeeded and became active
+        expect(manager.contexts.has(1)).toBe(true);
+        expect(manager.currentAuthIndex).toBe(1);
+        const meta1 = manager.accountMetadata.get(1);
+        expect(meta1.status).toBe("active");
+    });
+
+    test("init throws error if all accounts fail to initialize", async () => {
+        const manager = new CloudShellManager(null, {
+            authIndices: [0, 1],
+            createContextFn: jest.fn().mockRejectedValue(new Error("Global network failure")),
+            sleepFn: () => Promise.resolve(),
+        });
+
+        await expect(manager.init()).rejects.toThrow(/Failed to initialize any Cloud Shell accounts/);
+        expect(manager.contexts.size).toBe(0);
+    });
+
+    test("validateAuthFiles tolerates partial failures and only throws when all accounts fail", () => {
+        const browserSetup = require("../../scripts/cloudshell/browserSetup");
+        const spyLoad = jest.spyOn(browserSetup, "loadAuthStorageState").mockImplementation(idx => {
+            if (idx === 0) return { cookies: [] };
+            throw new Error(`auth-${idx}.json missing`);
+        });
+
+        // Partial success: account 0 valid, account 1 missing
+        const managerPartial = new CloudShellManager(null, { authIndices: [0, 1] });
+        expect(() => managerPartial.validateAuthFiles()).not.toThrow();
+
+        // Total failure: only account 1 requested
+        const managerTotal = new CloudShellManager(null, { authIndices: [1] });
+        expect(() => managerTotal.validateAuthFiles()).toThrow(/auth-1\.json missing/);
+
+        spyLoad.mockRestore();
+    });
+
+    test("rotateActiveContext does not switch when only one context is available", async () => {
+        const manager = new CloudShellManager(null, { authIndices: [0, 1] });
+        manager.contexts.set(0, {
+            page: { isClosed: () => false },
+        });
+
+        const switchSpy = jest.spyOn(manager, "switchActiveContext").mockResolvedValue();
+        await manager.rotateActiveContext();
+        expect(switchSpy).not.toHaveBeenCalled();
+    });
 });

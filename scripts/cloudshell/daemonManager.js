@@ -47,16 +47,120 @@ class DaemonManager {
         }
     }
 
-    isProcessAlive(pid) {
+    getProcessCommandLine(pid) {
+        if (!pid || typeof pid !== "number" || Number.isNaN(pid) || pid <= 0) {
+            return null;
+        }
+
+        if (process.platform === "linux") {
+            try {
+                const cmdlinePath = `/proc/${pid}/cmdline`;
+                if (fs.existsSync(cmdlinePath)) {
+                    const data = fs.readFileSync(cmdlinePath, "utf-8");
+                    const cmd = data.split("\0").filter(Boolean).join(" ");
+                    if (cmd) return cmd;
+                }
+            } catch {
+                // fall through to ps
+            }
+        }
+
+        if (process.platform === "win32") {
+            try {
+                const stdout = childProcess.execFileSync(
+                    "powershell",
+                    [
+                        "-NoProfile",
+                        "-Command",
+                        `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`,
+                    ],
+                    { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 }
+                );
+                return stdout ? stdout.trim() : null;
+            } catch {
+                return null;
+            }
+        }
+
+        try {
+            const stdout = childProcess.execFileSync("ps", ["-o", "command=", "-p", String(pid)], {
+                encoding: "utf-8",
+                stdio: ["ignore", "pipe", "ignore"],
+                timeout: 3000,
+            });
+            return stdout ? stdout.trim() : null;
+        } catch {
+            return null;
+        }
+    }
+
+    isCloudShellProcess(pid) {
         if (!pid || typeof pid !== "number" || Number.isNaN(pid) || pid <= 0) {
             return false;
         }
+        if (pid === process.pid) {
+            return true;
+        }
+        const cmd = this.getProcessCommandLine(pid);
+        if (!cmd) {
+            return false;
+        }
+
+        const firstToken = cmd.trim().split(/\s+/)[0];
+        const baseBinary = path.basename(firstToken).toLowerCase();
+        const nonTargetBinaries = new Set([
+            "ag",
+            "awk",
+            "bat",
+            "cat",
+            "code",
+            "echo",
+            "egrep",
+            "emacs",
+            "fgrep",
+            "git",
+            "grep",
+            "head",
+            "less",
+            "more",
+            "nano",
+            "nvim",
+            "rg",
+            "sed",
+            "tail",
+            "vi",
+            "vim",
+            "whereis",
+            "which",
+        ]);
+        if (nonTargetBinaries.has(baseBinary)) {
+            return false;
+        }
+
+        const scriptBase = path.basename(this.scriptPath);
+        const scriptBaseNoExt = scriptBase.replace(/\.[^/.]+$/, "");
+        const scriptPattern = new RegExp(`(?:^|\\s|[\\/\\\\])${scriptBaseNoExt}(?:\\.js)?(?:\\s|$)`);
+        return cmd.includes(this.scriptPath) || cmd.includes(scriptBase) || scriptPattern.test(cmd);
+    }
+
+    isProcessAlive(pid, validateCommand = true) {
+        if (!pid || typeof pid !== "number" || Number.isNaN(pid) || pid <= 0) {
+            return false;
+        }
+        let alive = false;
         try {
             process.kill(pid, 0);
-            return true;
+            alive = true;
         } catch (err) {
-            return err.code === "EPERM";
+            alive = err.code === "EPERM";
         }
+        if (!alive) {
+            return false;
+        }
+        if (validateCommand) {
+            return this.isCloudShellProcess(pid);
+        }
+        return true;
     }
 
     buildForwardArgs(options = {}) {
@@ -150,7 +254,7 @@ class DaemonManager {
 
         const startTime = Date.now();
         while (Date.now() - startTime < timeoutMs) {
-            if (!this.isProcessAlive(pid)) {
+            if (!this.isProcessAlive(pid, false)) {
                 this.removePid();
                 if (this.stateTracker) {
                     this.stateTracker.clearState();
@@ -160,9 +264,11 @@ class DaemonManager {
             await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
         }
 
-        if (this.isProcessAlive(pid)) {
+        let killedWithSigkill = false;
+        if (this.isProcessAlive(pid, true)) {
             try {
                 process.kill(pid, "SIGKILL");
+                killedWithSigkill = true;
             } catch {
                 // Ignore kill errors
             }
@@ -173,7 +279,9 @@ class DaemonManager {
             this.stateTracker.clearState();
         }
         return {
-            message: `CloudShell process ${pid} did not exit within ${timeoutMs / 1000}s, killed with SIGKILL`,
+            message: killedWithSigkill
+                ? `CloudShell process ${pid} did not exit within ${timeoutMs / 1000}s, killed with SIGKILL`
+                : `Stopped CloudShell process ${pid}`,
             pid,
             stopped: true,
         };

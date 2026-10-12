@@ -8,7 +8,7 @@ const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "..", "..", ".env") });
 
 const { parseCliArgs, printHelp } = require("./options");
-const { launchBrowser } = require("./browserSetup");
+const browserSetup = require("./browserSetup");
 const { CloudShellManager } = require("./CloudShellManager");
 const { StateTracker } = require("./stateTracker");
 const { DaemonManager } = require("./daemonManager");
@@ -87,22 +87,28 @@ const handleStart = async (options, stateTracker, daemonManager) => {
     daemonManager.writePid(process.pid);
 
     let browser = null;
+    let isCleaningUp = false;
     const cleanup = async () => {
-        if (manager) {
-            try {
-                await manager.stop();
-            } catch {
-                // ignore
+        if (isCleaningUp) return;
+        isCleaningUp = true;
+        try {
+            if (manager) {
+                try {
+                    await Promise.race([manager.stop(), new Promise(resolve => setTimeout(resolve, 5000))]);
+                } catch {
+                    // ignore
+                }
             }
-        }
-        if (browser) {
-            try {
-                await browser.close();
-            } catch {
-                // ignore
+            if (browser) {
+                try {
+                    await Promise.race([browser.close(), new Promise(resolve => setTimeout(resolve, 5000))]);
+                } catch {
+                    // ignore
+                }
             }
+        } finally {
+            daemonManager.removePid();
         }
-        daemonManager.removePid();
     };
 
     process.on("SIGINT", async () => {
@@ -117,8 +123,20 @@ const handleStart = async (options, stateTracker, daemonManager) => {
         process.exit(0);
     });
 
+    process.on("uncaughtException", async err => {
+        console.error(`\n[CloudShell] 💥 Uncaught Exception: ${err && err.stack ? err.stack : err}`);
+        await cleanup();
+        process.exit(1);
+    });
+
+    process.on("unhandledRejection", async reason => {
+        console.error(`\n[CloudShell] 💥 Unhandled Rejection: ${reason && reason.stack ? reason.stack : reason}`);
+        await cleanup();
+        process.exit(1);
+    });
+
     try {
-        browser = await launchBrowser(options);
+        browser = await browserSetup.launchBrowser(options);
         manager.browser = browser;
 
         console.log("==================================================");
