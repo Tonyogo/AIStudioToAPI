@@ -69,11 +69,11 @@ const resolveBrowserExecutablePath = () => {
 };
 
 const loadAuthStorageState = (authIndex = 0) => {
-    const authFilePath = path.join(process.cwd(), "configs", "auth", `auth-${authIndex}.json`);
+    const authFilePath = path.join(process.cwd(), "configs", "cloudshell", `auth-${authIndex}.json`);
     if (!fs.existsSync(authFilePath)) {
         throw new Error(
-            `Auth file configs/auth/auth-${authIndex}.json does not exist. ` +
-                `Please run 'npm run save-auth' first to generate credentials for account #${authIndex}.`
+            `Auth file configs/cloudshell/auth-${authIndex}.json does not exist. ` +
+                `Please place valid credentials in configs/cloudshell/ for account #${authIndex}.`
         );
     }
 
@@ -81,11 +81,11 @@ const loadAuthStorageState = (authIndex = 0) => {
         const content = fs.readFileSync(authFilePath, "utf-8");
         const parsed = JSON.parse(content);
         if (!parsed.cookies || !Array.isArray(parsed.cookies)) {
-            throw new Error(`Auth file configs/auth/auth-${authIndex}.json does not contain valid cookies.`);
+            throw new Error(`Auth file configs/cloudshell/auth-${authIndex}.json does not contain valid cookies.`);
         }
         return parsed;
     } catch (err) {
-        throw new Error(`Failed to parse auth file configs/auth/auth-${authIndex}.json: ${err.message}`);
+        throw new Error(`Failed to parse auth file configs/cloudshell/auth-${authIndex}.json: ${err.message}`);
     }
 };
 

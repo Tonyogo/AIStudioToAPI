@@ -31,7 +31,7 @@
 
 ## 功能特性
 
-1. **零交互认证注入**：直接加载 `configs/auth/auth-N.json` 中的 Playwright `storageState`（Cookie & LocalStorage），无需手动登录 Google 账号。
+1. **零交互认证注入**：直接加载 `configs/cloudshell/auth-N.json` 中的 Playwright `storageState`（Cookie & LocalStorage），无需手动登录 Google 账号。
 2. **后台守护进程（Daemon）脱离运行**：`start` 默认派生独立后台进程，关闭终端或断开 SSH 会话不影响 Cloud Shell 长驻运行，PID 写入 `logs/cloudshell/daemon.pid`。
 3. **运行时状态持久化与可视化查询**：通过 `status` 命令查看守护进程 PID、运行时间（Uptime）、活跃账号与各账号最后心跳时间。
 4. **反指纹与隐身伪装**：自动注入防指纹脚本，屏蔽 `navigator.webdriver` 并伪装 WebGL 与插件信息，防止自动化风控拦截。
@@ -50,13 +50,9 @@
 
 在运行 Cloud Shell 脚本前，请确保至少存在一个有效的认证凭据：
 
-- 凭据文件存放于项目根目录：`configs/auth/auth-0.json`（或 `auth-1.json`、`auth-2.json`...）。
-- 若尚未配置或凭据已失效，请先运行认证录入命令：
-  ```bash
-  npm run save-auth
-  # 或使用辅助向导
-  npm run setup-auth
-  ```
+- 凭据文件存放于 Cloud Shell 专属凭据目录：`configs/cloudshell/auth-0.json`（或 `auth-1.json`、`auth-2.json`...）。
+- Cloud Shell 认证文件已与原项目的 `configs/auth/` 相互独立隔离。
+- 请将包含有效登录态的凭据 JSON 文件放置或复制到 `configs/cloudshell/` 目录下。
 
 ---
 
@@ -209,7 +205,7 @@ npm run cloudshell -- restart --all
 | `-f`, `--follow`           | `false`     | Flag        | 实时追踪日志输出（仅用于 `logs` 子命令）                                                                                                                               |
 | `--force`                  | `false`     | Flag        | 强制立即终止进程（仅用于 `stop` 子命令）                                                                                                                               |
 | `--auth <indices>`         | `0`         | 字符串/范围 | 认证序号或范围（支持单数字 `0`、逗号分隔 `0,1,2`、短横线范围 `0-3`）                                                                                                   |
-| `--all`                    | `false`     | Flag        | 自动扫描并加载 `configs/auth/auth-N.json` 中的所有账号凭据                                                                                                             |
+| `--all`                    | `false`     | Flag        | 自动扫描并加载 `configs/cloudshell/auth-N.json` 中的所有账号凭据                                                                                                       |
 | `--switch-interval <min>`  | `10`        | 整数        | 多账号轮换活跃上下文的间隔（分钟）                                                                                                                                     |
 | `--keep-alive <min>`       | `-1`        | 整数        | 终端保活时长（分钟）。<br>• `-1`：无限期长驻保活（默认），直至手动终止；<br>• `>0`：例如 `60`，保活 60 分钟后自动退出；<br>• `0`：初始化完成并就绪后退出               |
 | `--heartbeat-interval <s>` | `120`       | 整数        | 所有上下文发送防休眠心跳按键与旁路弹窗的周期（秒）                                                                                                                     |
@@ -244,7 +240,7 @@ npm run cloudshell -- start --auth 0-3 --switch-interval 15
 
 ### 3. 全量账号自动发现长驻 (--all)
 
-自动扫描 `configs/auth/` 目录下的所有 `auth-N.json` 文件并全部拉起后台并发保活：
+自动扫描 `configs/cloudshell/` 目录下的所有 `auth-N.json` 文件并全部拉起后台并发保活：
 
 ```bash
 npm run cloudshell -- start --all
@@ -336,13 +332,13 @@ npm run cloudshell -- start --auth 0-2 --heartbeat-interval 60 --switch-interval
 
 - **说明**：Cloud Shell 脚本目前专注于**多账号拟人防检测并发长驻与保活**。如需执行自定义脚本或命令，建议在长驻终端就绪后直接在 Cloud Shell 环境中进行交互或设置自启动服务。
 
-### Q2: 报错 `Auth file configs/auth/auth-0.json does not exist`？
+### Q2: 报错 `Auth file configs/cloudshell/auth-0.json does not exist`？
 
-- **解决方法**：说明本地还没有保存账号 0 的登录凭据。请先执行 `npm run save-auth` 录入并保存该账号的认证文件。
+- **解决方法**：说明本地 `configs/cloudshell/` 目录下还没有放置账号 0 的登录凭据。请将有效的 `auth-0.json` 放置到 `configs/cloudshell/auth-0.json`。
 
 ### Q3: 报错 `AuthExpiredError: Google authentication has expired`？
 
-- **解决方法**：说明该账号在 Google 端的 Session/Cookie 已经失效（已被登出）。请重新执行 `npm run save-auth -- --auth 0` 重新登录更新凭据。
+- **解决方法**：说明该账号在 Google 端的 Session/Cookie 已经失效（已被登出）。请重新获取最新有效的凭据并更新至 `configs/cloudshell/`。
 
 ### Q4: 报错 `RegionBlockedError: Google Cloud Shell is not available in the current region/IP`？
 

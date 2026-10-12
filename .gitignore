@@ -23,6 +23,7 @@ camoufox*.zip
 
 # Authentication files
 configs/auth/
+configs/cloudshell/
 auth-*.json
 users.csv
 cache/

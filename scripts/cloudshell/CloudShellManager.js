@@ -12,7 +12,7 @@ const { parseProxyFromEnv } = require("../../src/utils/ProxyUtils");
 
 const getAccountNameForIndex = authIndex => {
     try {
-        const filePath = path.join(process.cwd(), "configs", "auth", `auth-${authIndex}.json`);
+        const filePath = path.join(process.cwd(), "configs", "cloudshell", `auth-${authIndex}.json`);
         if (fs.existsSync(filePath)) {
             const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
             if (parsed && typeof parsed.accountName === "string" && parsed.accountName.trim()) {
@@ -98,7 +98,7 @@ class CloudShellManager {
         console.error(`${this.logPrefix} ❌ ${msg}`);
     }
 
-    static discoverAvailableAuthIndices(authDir = path.resolve(process.cwd(), "configs", "auth")) {
+    static discoverAvailableAuthIndices(authDir = path.resolve(process.cwd(), "configs", "cloudshell")) {
         if (!fs.existsSync(authDir)) {
             throw new Error(`Auth directory ${authDir} does not exist.`);
         }
@@ -112,7 +112,7 @@ class CloudShellManager {
         }
         if (indices.length === 0) {
             throw new Error(
-                `No auth files found in ${authDir} matching auth-N.json. Please run 'npm run save-auth' first.`
+                `No auth files found in ${authDir} matching auth-N.json. Please place valid credentials in configs/cloudshell/ first.`
             );
         }
         return Array.from(new Set(indices)).sort((a, b) => a - b);

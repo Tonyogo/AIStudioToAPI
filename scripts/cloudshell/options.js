@@ -265,14 +265,16 @@ const printHelp = () => {
     console.log("  -f, --follow               Follow log output in real-time (logs command only)");
     console.log("  --force                    Force stop immediately (SIGKILL) (stop command only)");
     console.log(
-        "  --auth <indices>           Auth index or range in configs/auth/auth-N.json (e.g. 0, 0,1,2, 0-3; default: 0)"
+        "  --auth <indices>           Auth index or range in configs/cloudshell/auth-N.json (e.g. 0, 0,1,2, 0-3; default: 0)"
     );
-    console.log("  --all                      Automatically discover and load all configs/auth/auth-N.json accounts");
+    console.log(
+        "  --all                      Automatically discover and load all configs/cloudshell/auth-N.json accounts"
+    );
     console.log("  --switch-interval <min>    Active context rotation interval in minutes (default: 10)");
     console.log("  --keep-alive <min>         Keep-alive duration in minutes (-1=infinite, default: -1)");
     console.log("  --heartbeat-interval <s>   Anti-idle keypress interval in seconds (default: 120)");
     console.log("  --headless [true|false]    Run in headless mode (default: true)");
-    console.log("  --headed                   Shortcut for --headless false (visible window, forces foreground)");
+    console.log("  --headed                   Shortcut for --headless false (visible window)");
     console.log("  --proxy <url>              Proxy server URL (e.g. http://127.0.0.1:7890)");
     console.log("  --debug                    Capture screenshots and HTML dumps to logs/cloudshell/");
     console.log("");

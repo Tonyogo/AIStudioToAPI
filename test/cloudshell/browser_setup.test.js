@@ -9,7 +9,7 @@ const {
 } = require("../../scripts/cloudshell/browserSetup");
 
 describe("CloudShell Browser Setup", () => {
-    const testAuthDir = path.join(process.cwd(), "configs", "auth");
+    const testAuthDir = path.join(process.cwd(), "configs", "cloudshell");
     const testAuthFile = path.join(testAuthDir, "auth-9999.json");
 
     beforeAll(() => {
@@ -35,6 +35,13 @@ describe("CloudShell Browser Setup", () => {
     afterAll(() => {
         if (fs.existsSync(testAuthFile)) {
             fs.unlinkSync(testAuthFile);
+        }
+        try {
+            if (fs.existsSync(testAuthDir) && fs.readdirSync(testAuthDir).length === 0) {
+                fs.rmdirSync(testAuthDir);
+            }
+        } catch {
+            // ignore
         }
     });
 
