@@ -71,6 +71,9 @@ const handleResume = (stateTracker, daemonManager) => {
 };
 
 const handleStart = async (options, stateTracker, daemonManager) => {
+    if (stateTracker && typeof stateTracker.setPaused === "function") {
+        stateTracker.setPaused(false);
+    }
     const manager = new CloudShellManager(null, { ...options, stateTracker });
     manager.validateAuthFiles();
 

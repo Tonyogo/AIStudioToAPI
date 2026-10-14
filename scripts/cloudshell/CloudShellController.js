@@ -77,6 +77,34 @@ class CloudShellController {
         ) {
             throw new RegionBlockedError();
         }
+
+        try {
+            if (typeof this.page.locator === "function") {
+                const limitLocator = this.page.locator("text=temporarily exceeded a Cloud Shell limit");
+                if ((await limitLocator.count().catch(() => 0)) > 0) {
+                    this.warn("⚠️ Detected 'temporarily exceeded a Cloud Shell limit' warning on page.");
+                }
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    async reloadAndRecover() {
+        this.log("🔄 Performing periodic page reload (20~30 min random schedule) to refresh connection...");
+        try {
+            await this.page.reload({
+                timeout: 180000,
+                waitUntil: "domcontentloaded",
+            });
+            await this.checkPageStatus();
+            await this.waitForTerminalReady();
+            this.log("✅ Page reloaded and terminal ready.");
+            return true;
+        } catch (err) {
+            this.warn(`Reload and recover error: ${err.message}`);
+            return false;
+        }
     }
 
     async clickElementSimulated(targetLocator, label = "button") {
@@ -198,12 +226,11 @@ class CloudShellController {
 
                 const hasScreen = (await screenLocator.count()) > 0 && (await screen.isVisible().catch(() => false));
                 if (hasScreen) {
-                    const hasTextarea =
-                        (await textareaLocator.count()) > 0 && (await textarea.isVisible().catch(() => false));
+                    const textareaCount = await textareaLocator.count().catch(() => 0);
                     return {
                         frame,
                         screen,
-                        textarea: hasTextarea ? textarea : null,
+                        textarea: textareaCount > 0 ? textarea : null,
                     };
                 }
             } catch {
@@ -310,7 +337,7 @@ class CloudShellController {
         try {
             await target.screen.click({ force: true, timeout: 2000 });
             if (target.textarea) {
-                await target.textarea.focus().catch(() => {});
+                await target.textarea.focus({ timeout: 1000 }).catch(() => {});
             }
             return true;
         } catch {
@@ -348,12 +375,14 @@ class CloudShellController {
         this.log(
             `🛡️ Starting keep-alive loop: ${
                 isInfinite ? "infinite" : `${keepAliveMinutes} min`
-            }, heartbeat every ${intervalSec}s... Press Ctrl+C to terminate.`
+            }, heartbeat every ${intervalSec}s, auto-reload every 20~30m... Press Ctrl+C to terminate.`
         );
 
         this._keepAliveRunning = true;
         const startTime = Date.now();
         const maxDurationMs = isInfinite ? Infinity : keepAliveMinutes * 60 * 1000;
+        const getRandomReloadDelay = () => Math.floor((20 + Math.random() * 10) * 60 * 1000);
+        let nextReloadAt = Date.now() + getRandomReloadDelay();
 
         while (this._keepAliveRunning && Date.now() - startTime < maxDurationMs) {
             if (this.page.isClosed()) {
@@ -361,8 +390,13 @@ class CloudShellController {
                 break;
             }
 
-            await this.sendHeartbeat();
-            await this.bypassModalsOnce();
+            if (Date.now() >= nextReloadAt) {
+                await this.reloadAndRecover();
+                nextReloadAt = Date.now() + getRandomReloadDelay();
+            } else {
+                await this.sendHeartbeat();
+                await this.bypassModalsOnce();
+            }
 
             const sleepSeconds = Math.min(intervalSec, 10);
             for (let i = 0; i < intervalSec / sleepSeconds; i++) {

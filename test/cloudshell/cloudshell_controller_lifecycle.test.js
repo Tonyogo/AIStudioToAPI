@@ -63,4 +63,24 @@ describe("CloudShellController Lifecycle & Modals", () => {
         expect(didBypass).toBe(true);
         expect(physicalClicked).toBe(true);
     });
+
+    test("reloadAndRecover reloads page and waits for terminal ready", async () => {
+        let reloaded = false;
+        const mockPage = {
+            reload: jest.fn().mockImplementation(async () => {
+                reloaded = true;
+            }),
+            title: async () => "Google Cloud Shell",
+            url: () => "https://shell.cloud.google.com/?show=terminal",
+        };
+        const controller = new CloudShellController(mockPage);
+        controller.checkPageStatus = jest.fn().mockResolvedValue();
+        controller.waitForTerminalReady = jest.fn().mockResolvedValue();
+
+        const success = await controller.reloadAndRecover();
+        expect(success).toBe(true);
+        expect(reloaded).toBe(true);
+        expect(controller.checkPageStatus).toHaveBeenCalled();
+        expect(controller.waitForTerminalReady).toHaveBeenCalled();
+    });
 });

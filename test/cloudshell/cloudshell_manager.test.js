@@ -321,4 +321,32 @@ describe("CloudShellManager Multi-Context Lifecycle", () => {
         await manager.rotateActiveContext();
         expect(switchSpy).not.toHaveBeenCalled();
     });
+
+    test("executeTick triggers periodic reload when nextReloadAt is reached", async () => {
+        const mockController = {
+            performActiveMicroActions: jest.fn().mockResolvedValue(),
+            reloadAndRecover: jest.fn().mockResolvedValue(true),
+        };
+        const mockPage = { isClosed: () => false };
+
+        const manager = new CloudShellManager(null, {
+            authIndices: [0],
+            reloadDelayRange: [1000, 2000],
+        });
+
+        // Set nextReloadAt in the past to trigger immediately
+        manager.contexts.set(0, {
+            controller: mockController,
+            isReloading: false,
+            nextReloadAt: Date.now() - 500,
+            page: mockPage,
+        });
+
+        await manager.executeTick(1, 10, 10);
+
+        expect(mockController.reloadAndRecover).toHaveBeenCalled();
+        const entry = manager.contexts.get(0);
+        expect(entry.isReloading).toBe(false);
+        expect(entry.nextReloadAt).toBeGreaterThan(Date.now());
+    });
 });

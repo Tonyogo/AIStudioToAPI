@@ -118,6 +118,14 @@ class CloudShellManager {
         return Array.from(new Set(indices)).sort((a, b) => a - b);
     }
 
+    getRandomReloadDelay() {
+        if (typeof this.options.getRandomReloadDelayFn === "function") {
+            return this.options.getRandomReloadDelayFn();
+        }
+        const [minMs, maxMs] = this.options.reloadDelayRange || [20 * 60 * 1000, 30 * 60 * 1000];
+        return Math.floor(minMs + Math.random() * (maxMs - minMs));
+    }
+
     syncState(status = "running") {
         if (!this.stateTracker) return;
         try {
@@ -182,6 +190,8 @@ class CloudShellManager {
                 this.contexts.set(authIndex, {
                     context,
                     controller,
+                    isReloading: false,
+                    nextReloadAt: Date.now() + this.getRandomReloadDelay(),
                     page,
                 });
                 const accMeta = this.accountMetadata.get(authIndex);
@@ -328,10 +338,55 @@ class CloudShellManager {
             this._wasPaused = false;
         }
 
-        // 1. Micro-actions on active context (skipped if paused)
+        // 1. Periodic random page reload (20~30m interval) to refresh connection and prevent disconnections
+        if (!isPaused) {
+            const now = Date.now();
+            for (const [authIndex, entry] of this.contexts) {
+                if (
+                    !entry.isReloading &&
+                    entry.page &&
+                    (typeof entry.page.isClosed !== "function" || !entry.page.isClosed()) &&
+                    entry.nextReloadAt &&
+                    now >= entry.nextReloadAt
+                ) {
+                    entry.isReloading = true;
+                    entry.nextReloadAt = now + this.getRandomReloadDelay();
+                    this.log(`🔄 [Account #${authIndex}] Scheduled 20~30m random reload triggered. Refreshing page...`);
+                    try {
+                        if (entry.controller && typeof entry.controller.reloadAndRecover === "function") {
+                            await entry.controller.reloadAndRecover();
+                        } else if (entry.page && typeof entry.page.reload === "function") {
+                            await entry.page.reload({ timeout: 180000, waitUntil: "domcontentloaded" });
+                            if (entry.controller && typeof entry.controller.waitForTerminalReady === "function") {
+                                await entry.controller.waitForTerminalReady();
+                            }
+                        }
+                        const accMeta = this.accountMetadata.get(authIndex);
+                        if (accMeta) {
+                            accMeta.lastHeartbeatAt = new Date().toISOString();
+                            accMeta.status = authIndex === this.currentAuthIndex ? "active" : "ready";
+                        }
+                        this.syncState("running");
+                        this.log(`✅ [Account #${authIndex}] Periodic reload and reconnect completed.`);
+                    } catch (err) {
+                        this.warn(`Periodic reload failed for Account #${authIndex}: ${err.message}`);
+                    } finally {
+                        entry.isReloading = false;
+                    }
+                }
+            }
+        }
+
+        // 2. Micro-actions on active context (skipped if paused or reloading)
         if (!isPaused) {
             const activeEntry = this.contexts.get(this.currentAuthIndex);
-            if (activeEntry && activeEntry.controller && activeEntry.page && !activeEntry.page.isClosed()) {
+            if (
+                activeEntry &&
+                !activeEntry.isReloading &&
+                activeEntry.controller &&
+                activeEntry.page &&
+                !activeEntry.page.isClosed()
+            ) {
                 try {
                     await activeEntry.controller.performActiveMicroActions(tickCount);
                 } catch (err) {
@@ -340,10 +395,15 @@ class CloudShellManager {
             }
         }
 
-        // 2. Periodic anti-idle heartbeat and modal bypass on all contexts (skipped if paused)
+        // 3. Periodic anti-idle heartbeat and modal bypass on all contexts (skipped if paused or reloading)
         if (!isPaused && tickCount % heartbeatTicks === 0) {
             for (const [authIndex, entry] of this.contexts) {
-                if (entry.page && !entry.page.isClosed() && entry.controller) {
+                if (
+                    entry.page &&
+                    !entry.page.isClosed() &&
+                    !entry.isReloading &&
+                    entry.controller
+                ) {
                     try {
                         await entry.controller.sendHeartbeat();
                         await entry.controller.bypassModalsOnce();
@@ -359,7 +419,7 @@ class CloudShellManager {
             }
         }
 
-        // 3. Periodic active context rotation if multiple accounts exist (skipped if paused)
+        // 4. Periodic active context rotation if multiple accounts exist (skipped if paused)
         if (!isPaused && this.authIndices.length > 1 && tickCount % switchTicks === 0) {
             await this.rotateActiveContext();
         }
